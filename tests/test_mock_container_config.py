@@ -16,7 +16,6 @@ def test_mock_container_configuration_excludes_private_data_and_secrets() -> Non
     assert "COPY knowledge ./knowledge" in dockerfile
     assert "COPY data" not in dockerfile
     assert "COPY artifacts" not in dockerfile
-    assert "AML_TOKENIZATION_SECRET" not in dockerfile
     assert "data/" in ignored
     assert "artifacts/" in ignored
     assert "volumes" not in compose["services"]["aml-demo"]

@@ -3,18 +3,15 @@
 环境名为 aml-evidence。普通依赖已通过清华 PyPI 镜像安装；CUDA PyTorch 2.5.1
 使用官方 cu121 轮子，并已在 NVIDIA GeForce RTX 2060 上验证 CUDA 可用。
 
-不要在项目文件、命令历史、Notebook 或版本库中保存真实的
-AML_TOKENIZATION_SECRET。首次处理私有 CSV 前，应从密钥管理工具将其仅注入当前
-PowerShell 会话。令牌化密钥和私有 API 令牌都必须是至少 32 个字符的随机值；示例
-配置文件中的空值不是可用占位符：
-
-    $env:AML_TOKENIZATION_SECRET = "<secret>"
+输入 CSV 中的账户标识已预先脱敏，因此数据转换不需要令牌化密钥。不要在项目文件、
+命令历史、Notebook 或版本库中保存真实交易明细或其他敏感数据。私有 API 令牌仍必须是
+至少 32 个字符的随机值；示例配置文件中的空值不是可用占位符。
 
 新项目的处理顺序如下：
 
-1. aml-profile-data 读取原始 CSV，只生成聚合数据清单。
-2. aml-convert-private-data 在内存中将账户标识 HMAC token 化，并写出按
-   event_date 和固定时间切分分区的私有 Parquet。
+1. aml-profile-data 读取已脱敏 CSV，只生成聚合数据清单。
+2. aml-convert-private-data 保留已脱敏账户标识，并写出按 event_date 和固定时间
+   切分分区的私有 Parquet。
 3. aml-build-pit-features 逐日构建因果特征。每笔交易只使用 [t-window, t) 的
    历史；同一时间戳的交易先全部评分，之后才共同进入历史。
 4. aml-train-table 仅使用训练/验证期拟合，之后一次性读取完整测试期作评估。
@@ -34,7 +31,7 @@ AML_GRAPHSAGE_MODEL_PATH 与 AML_FUSION_DIR，服务会恢复冻结的 GraphSAGE
 验证期校准器和验证期锁定阈值；融合器要求的任一组件缺失时会拒绝启动，而不会静默降级。
 
 运行产物只写到 artifacts/，其内容已被 Git 排除。公开演示将只使用后续生成的
-Mock 数据和聚合结果，绝不复制私有 Parquet、账户 token、交易记录、模型产物或密钥。
+Mock 数据和聚合结果，绝不复制私有 Parquet、脱敏账户标识、交易记录、模型产物或密钥。
 
 ## 可选 ECNU 调查注释
 
@@ -47,7 +44,7 @@ Mock 数据和聚合结果，绝不复制私有 Parquet、账户 token、交易�
     $env:AML_LLM_MODEL = "ecnu-max"
 
 发送到外部服务的内容会移除 alert ID、transaction ID、时间戳、来源版本和原始特征
-数值。返回内容必须只引用白名单 Evidence 字段，且不得带入数字、日期或实体 token；
+数值。返回内容必须只引用白名单 Evidence 字段，且不得带入数字、日期或实体标识；
 校验失败时报告状态为 rejected_facts，网络失败时降级为本地确定性模板。
 
 Golden Set 会记录每案端到端延迟、Prompt 版本、模型名和服务商响应中的 token 用量。

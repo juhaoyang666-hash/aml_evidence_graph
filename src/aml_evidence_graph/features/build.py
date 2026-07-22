@@ -1,4 +1,4 @@
-"""Build a date-partitioned Point-in-Time feature dataset from tokenized Parquet."""
+"""Build a date-partitioned Point-in-Time feature dataset from prepared Parquet."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def _discover_event_dates(input_root: Path) -> list[str]:
         event_dates.add(value)
     if not event_dates:
         raise FileNotFoundError(
-            f"No Hive event_date partitions found beneath tokenized dataset: {input_root}"
+            f"No Hive event_date partitions found beneath prepared dataset: {input_root}"
         )
     return sorted(event_dates)
 
@@ -86,13 +86,13 @@ def build_pit_feature_dataset(
 ) -> FeatureBuildSummary:
     """Create causal transaction features one complete event-date at a time.
 
-    Input must be the tokenized dataset produced by the ingestion module. Each
+    Input must be the prepared de-identified dataset produced by ingestion. Each
     event-date is fully scored before its next date is read, and the history
     state persists across dates. The implementation never joins a transaction
     to a future event and does not use labels during feature calculation.
     """
     if not input_root.is_dir():
-        raise FileNotFoundError(f"Tokenized input dataset does not exist: {input_root}")
+        raise FileNotFoundError(f"Prepared input dataset does not exist: {input_root}")
     event_dates = _discover_event_dates(input_root)
     _prepare_output_root(output_root, overwrite=overwrite)
 
@@ -159,7 +159,7 @@ def build_pit_feature_dataset(
         output_dir=output_root,
         command="aml-build-pit-features",
         random_seed=0,
-        input_paths={"tokenized_dataset": input_root},
+        input_paths={"prepared_dataset": input_root},
         config_paths={
             "feature_registry": feature_registry_path,
             **({"rules": rules_path} if rules_path is not None else {}),
@@ -206,7 +206,7 @@ def _write_rule_hits(output_root: Path, event_date: str, hits: list[RuleHit]) ->
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, required=True, help="Tokenized Parquet dataset.")
+    parser.add_argument("--input", type=Path, required=True, help="Prepared Parquet dataset.")
     parser.add_argument("--output", type=Path, required=True, help="Private feature dataset.")
     parser.add_argument("--rules", type=Path, help="Versioned rule YAML; optional.")
     parser.add_argument(

@@ -28,7 +28,7 @@ LABEL_COLUMNS = frozenset({CANONICAL.is_laundering, CANONICAL.laundering_type})
 
 @dataclass
 class _AccountAccumulator:
-    """Bounded score summary for one tokenized account."""
+    """Bounded score summary for one de-identified account."""
 
     top_n: int
     scored_transaction_count: int = 0
@@ -183,7 +183,7 @@ def _normalise_scored_transactions(
             frame[account_column].astype(str).str.len().eq(0).any()
         )
         if is_missing_or_empty:
-            raise ValueError(f"{account_column} must contain non-empty account tokens.")
+            raise ValueError(f"{account_column} must contain non-empty de-identified account IDs.")
         frame[account_column] = frame[account_column].astype(str)
     frame[CANONICAL.transaction_id] = frame[CANONICAL.transaction_id].astype(str)
     frame[CANONICAL.amount] = pd.to_numeric(frame[CANONICAL.amount], errors="raise")
@@ -563,7 +563,7 @@ def write_investigation_views(output_dir: Path, views: InvestigationViews) -> di
         "funds_path_count": len(views.funds_paths),
         "investigation_case_count": len(views.case_views),
         "privacy_notice": (
-            "Account tokens, transaction tokens, and detailed views are private artifacts. "
+            "De-identified account IDs, transaction IDs, and detailed views are private artifacts. "
             "This summary contains aggregate counts only."
         ),
     }

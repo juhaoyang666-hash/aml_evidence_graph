@@ -16,7 +16,7 @@ def _write_partition(root: Path, event_date: str, rows: list[dict[str, object]])
 
 
 def test_build_feature_dataset_preserves_history_and_adds_approved_rule(tmp_path: Path) -> None:
-    input_root = tmp_path / "tokenized"
+    input_root = tmp_path / "prepared"
     _write_partition(
         input_root,
         "2023-01-01",

@@ -42,18 +42,17 @@ def _mock_raw_transactions() -> pd.DataFrame:
 def test_mock_csv_to_features_to_table_metrics(tmp_path: Path) -> None:
     raw_csv = tmp_path / "mock.csv"
     _mock_raw_transactions().to_csv(raw_csv, index=False)
-    tokenized_root = tmp_path / "tokenized"
+    prepared_root = tmp_path / "prepared"
     feature_root = tmp_path / "features"
     model_root = tmp_path / "models"
     graph_model_root = tmp_path / "graph-models"
 
     conversion_summary = convert_csv_to_parquet(
         raw_csv,
-        tokenized_root,
-        tokenization_secret="test-secret",
+        prepared_root,
         chunk_size=5,
     )
-    build_pit_feature_dataset(tokenized_root, feature_root)
+    build_pit_feature_dataset(prepared_root, feature_root)
     summary = train_and_evaluate_table_baselines(
         feature_root,
         model_root,
@@ -76,7 +75,7 @@ def test_mock_csv_to_features_to_table_metrics(tmp_path: Path) -> None:
 
     assert summary.training_rows_before_sampling == 6
     assert conversion_summary.row_count == 18
-    assert (tokenized_root / "_run_manifest.json").is_file()
+    assert (prepared_root / "_run_manifest.json").is_file()
     assert summary.training_rows_after_sampling == 5
     assert summary.validation_rows == 6
     assert summary.test_rows == 6

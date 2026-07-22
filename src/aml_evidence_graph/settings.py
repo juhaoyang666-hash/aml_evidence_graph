@@ -44,10 +44,6 @@ class Settings(BaseSettings):
         default=Path("./knowledge/typologies"),
         validation_alias="AML_TYPOLOGY_ROOT",
     )
-    tokenization_secret: SecretStr | None = Field(
-        default=None,
-        validation_alias="AML_TOKENIZATION_SECRET",
-    )
     llm_enabled: bool = Field(default=False, validation_alias="AML_LLM_ENABLED")
     llm_base_url: str = Field(
         default="https://chat.ecnu.edu.cn/open/api/v1",
@@ -78,7 +74,6 @@ class Settings(BaseSettings):
         "graphsage_model_path",
         "fusion_dir",
         "internal_api_token",
-        "tokenization_secret",
         "llm_api_key",
         "ecnu_api_key",
         "llm_input_cost_per_million_tokens_usd",
@@ -131,13 +126,6 @@ class Settings(BaseSettings):
                 "ECNU_API_KEY or AML_LLM_API_KEY must be configured before using the LLM."
             )
         return key.get_secret_value()
-
-    def require_tokenization_secret(self) -> str:
-        """Return the secret only for an internal tokenization operation."""
-        return self._require_strong_secret(
-            self.tokenization_secret,
-            setting_name="AML_TOKENIZATION_SECRET",
-        )
 
     def require_internal_api_token(self) -> str:
         """Return a strong token before exposing private evidence endpoints."""

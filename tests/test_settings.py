@@ -5,25 +5,17 @@ import pytest
 from aml_evidence_graph.settings import Settings
 
 
-def test_secret_requirements_reject_placeholder_and_short_values() -> None:
-    placeholder = Settings(AML_TOKENIZATION_SECRET="replace-with-a-long-random-secret")
+def test_internal_api_token_requirement_rejects_short_values() -> None:
     short = Settings(AML_INTERNAL_API_TOKEN="short-token")
 
-    with pytest.raises(RuntimeError, match="non-placeholder"):
-        placeholder.require_tokenization_secret()
     with pytest.raises(RuntimeError, match="non-placeholder"):
         short.require_internal_api_token()
 
 
-def test_secret_requirements_return_strong_values() -> None:
-    tokenization_secret = "t" * 32
+def test_internal_api_token_requirement_returns_strong_value() -> None:
     api_token = "a" * 32
-    settings = Settings(
-        AML_TOKENIZATION_SECRET=tokenization_secret,
-        AML_INTERNAL_API_TOKEN=api_token,
-    )
+    settings = Settings(AML_INTERNAL_API_TOKEN=api_token)
 
-    assert settings.require_tokenization_secret() == tokenization_secret
     assert settings.require_internal_api_token() == api_token
 
 

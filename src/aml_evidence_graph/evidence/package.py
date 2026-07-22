@@ -70,7 +70,7 @@ class RiskEvidencePackage(BaseModel):
     alert_id: str
     generated_at: datetime
     transaction_id: str = Field(
-        description="Internal transaction token/row ID; never a source-system identifier."
+        description="Internal de-identified transaction/row ID; never a source-system identifier."
     )
     event_timestamp: datetime
     model_probabilities: dict[str, float]

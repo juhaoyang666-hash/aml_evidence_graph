@@ -2,8 +2,8 @@
 
 ## 已实现并有自动化回归的能力
 
-- P0：私有 CSV Schema 契约、聚合质量清单、固定时间外切分、HMAC 账户 token 化、
-  数据转换和 PIT 构建的运行清单、私有产物隔离、强密钥校验。
+- P0：已脱敏私有 CSV Schema 契约、聚合质量清单、固定时间外切分、数据转换和 PIT 构建
+  的运行清单、私有产物隔离、强内部 API 令牌校验。
 - P1：严格 PIT 窗口、版本化审批规则与命中证据、规则/Logistic/CatBoost/图统计 +
   CatBoost 基线、稳定哈希或训练期 OOF hard-negative 采样、概率指标、稳定性与新账户
   切片、支付方式/地域组合/币种组合切片、漂移、局部 SHAP、资源与吞吐记录，以及逐列
@@ -20,7 +20,7 @@
 
 ## 已完成的本地验证
 
-- ruff 静态检查与完整 pytest 套件均在 aml-evidence 环境执行（59 passed）。
+- ruff 静态检查与完整 pytest 套件均在 aml-evidence 环境执行（67 passed）。
 - CUDA GraphSAGE 冒烟已在 NVIDIA GeForce RTX 2060 上执行过；图模型单元与合成端到端
   测试同时覆盖 CPU 路径。
 - ECNU ecnu-max 已只用一个虚构 Golden case 做过调查注释 smoke test：事实快照与
@@ -28,8 +28,8 @@
 
 ## 尚不能声称完成的外部/实证工作
 
-- 真实全量转换、训练、融合和测试尚未运行，因为当前会话没有 AML_TOKENIZATION_SECRET；
-  因而没有任何可对外引用的真实模型指标或 run_id。
+- 真实全量转换、训练、融合和测试尚未运行；因此没有任何可对外引用的真实模型指标或
+  run_id。
 - 100 个经人工双人标注的 Golden cases、调查容量预算和正式模型晋升标准需要业务/合规
   人员提供或确认；仓库仅提供 Mock smoke case 与评测框架，不能把合成案例替代人工标注。
 - Docker CLI 在当前主机不可用，因此 Dockerfile 和 compose 配置已静态隔离为 Mock-only，

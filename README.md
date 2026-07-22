@@ -10,7 +10,7 @@
 ## 安全与数据边界
 
 - 正式训练、验证和测试仅使用本机私有完整数据；仓库和 Demo 只含 Mock 数据、Schema 与聚合产物。
-- 账户写入 Parquet 前会 HMAC token 化。真实密钥、完整交易、模型和私有报告均在 Git 之外。
+- 输入数据中的账户标识已预先脱敏；完整交易、模型和私有报告均在 Git 之外。
 - 训练、验证、测试使用固定时间外切分；特征和图邻居只读取预测时点之前的数据。
 - 私有 API 只接受日期分区和告警引用，不接受调用方上传的交易记录。启用私有模式必须配置强内部令牌。
 
@@ -33,14 +33,10 @@ editable 安装：
 
     D:\Miniconda3\envs\aml-evidence\Scripts\aml-profile-data.exe --input ../data/SAML-D.csv --output artifacts/data_manifest.json
 
-仅在当前 PowerShell 会话从密钥管理工具注入至少 32 个字符的随机令牌化密钥：
-
-    $env:AML_TOKENIZATION_SECRET = "<由密钥管理工具提供>"
-
 随后按以下顺序运行。所有路径均应位于本机 artifacts 目录；不要提交其内容。
 
-    D:\Miniconda3\envs\aml-evidence\Scripts\aml-convert-private-data.exe --input ../data/SAML-D.csv --output artifacts/tokenized_transactions
-    D:\Miniconda3\envs\aml-evidence\Scripts\aml-build-pit-features.exe --input artifacts/tokenized_transactions --output artifacts/pit_features --rules configs/rules/default.yaml
+    D:\Miniconda3\envs\aml-evidence\Scripts\aml-convert-private-data.exe --input ../data/SAML-D.csv --output artifacts/prepared_transactions
+    D:\Miniconda3\envs\aml-evidence\Scripts\aml-build-pit-features.exe --input artifacts/prepared_transactions --output artifacts/pit_features --rules configs/rules/default.yaml
     D:\Miniconda3\envs\aml-evidence\Scripts\aml-train-table.exe --features artifacts/pit_features --output artifacts/table_baseline
     D:\Miniconda3\envs\aml-evidence\Scripts\aml-train-graphsage.exe --features artifacts/pit_features --output artifacts/graphsage
     D:\Miniconda3\envs\aml-evidence\Scripts\aml-generate-table-oof.exe --features artifacts/pit_features --output artifacts/table_oof --model table
