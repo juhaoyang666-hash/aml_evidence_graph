@@ -1,0 +1,19 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+coverage.xml
+
+# Private data and locally-derived artefacts must never enter Git.
+/data/
+/artifacts/
+/models/
+/reports/private/
+*.parquet
+*.cbm
+*.pt
+*.pkl

@@ -1,0 +1,22 @@
+[
+  {
+    "case_id": "mock-structuring-001",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "mock-alert-golden-001",
+      "generated_at": "2026-07-22T00:00:00Z",
+      "transaction_id": "mock-txn-golden-001",
+      "event_timestamp": "2023-07-01T09:30:00Z",
+      "model_probabilities": {"catboost": 0.55},
+      "fusion_probability": 0.53,
+      "rule_hits": [],
+      "key_features": [],
+      "typology_references": [],
+      "source_versions": {"demo": "1"},
+      "missing_evidence": ["Fictional demo case."],
+      "uncertainty_notes": ["No real customer or transaction data."]
+    },
+    "expected_typology_ids": ["TYPOLOGY-STRUCTURING"],
+    "expect_rejected_facts": false
+  }
+]

@@ -1,0 +1,6 @@
+version: "features-v1"
+owners:
+  current_transaction: aml-feature-engineering
+  point_in_time_history: aml-feature-engineering
+  causal_graph_statistics: aml-feature-engineering
+  approved_rules: aml-model-risk

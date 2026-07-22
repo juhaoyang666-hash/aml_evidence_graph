@@ -1,0 +1,28 @@
+name: aml-evidence-graph-ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install test dependencies
+        run: python -m pip install ".[dev,graph,llm]"
+      - name: Validate dependency graph
+        run: python -m pip check
+      - name: Lint
+        run: python -m ruff check src tests
+      - name: Test mock-only suite
+        run: python -m pytest
+      - name: Golden mock smoke test
+        run: >-
+          aml-evaluate-golden
+          --cases golden/mock_cases.json
+          --typologies knowledge/typologies
+          --output /tmp/golden-summary.json

@@ -1,0 +1,9 @@
+services:
+  aml-demo:
+    build: .
+    environment:
+      AML_ENV: demo
+      AML_LLM_ENABLED: "false"
+      AML_TYPOLOGY_ROOT: /app/knowledge/typologies
+    ports:
+      - "8000:8000"

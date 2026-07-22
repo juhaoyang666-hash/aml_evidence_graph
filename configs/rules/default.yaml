@@ -1,0 +1,17 @@
+version: "2026.1"
+rules:
+  - rule_id: R-CROSS-BORDER-FREQUENCY-001
+    status: draft
+    owner: aml-model-risk
+    effective_from: "2026-01-01"
+    effective_to: null
+    approval_reference: null
+    backtest_summary: null
+    required_features:
+      - sender_outgoing_cross_border_count_14d
+    kind: numeric_threshold
+    operator: gte
+    feature: sender_outgoing_cross_border_count_14d
+    parameters:
+      threshold: null
+    explanation_template: "Cross-border transaction frequency exceeded the approved threshold in the prior 14 days."

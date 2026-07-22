@@ -1,0 +1,8 @@
+typology_id: "TYPOLOGY-STRUCTURING"
+version: "2026.1"
+title: "Structuring / Smurfing"
+source: "Internal curated Typology starter library"
+body: >
+  Repeated transactions may be split across accounts or time intervals to avoid
+  reporting or monitoring thresholds. Investigators should verify transaction
+  context, counterparties, temporal concentration, and approved threshold logic.
