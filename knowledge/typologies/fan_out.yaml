@@ -1,0 +1,8 @@
+typology_id: "TYPOLOGY-FAN-OUT"
+version: "2026.1"
+title: "Fan-Out Dispersion"
+source: "Internal curated Typology starter library"
+body: >
+  Funds may be rapidly dispersed from one account to many counterparties.
+  Investigators should examine concentration, timing, and whether dispersion
+  aligns with expected commercial activity.

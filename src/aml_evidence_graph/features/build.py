@@ -83,17 +83,32 @@ def build_pit_feature_dataset(
     rules_path: Path | None = None,
     feature_registry_path: Path = DEFAULT_FEATURE_REGISTRY_PATH,
     overwrite: bool = False,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    max_dates: int | None = None,
 ) -> FeatureBuildSummary:
     """Create causal transaction features one complete event-date at a time.
 
-    Input must be the prepared de-identified dataset produced by ingestion. Each
-    event-date is fully scored before its next date is read, and the history
-    state persists across dates. The implementation never joins a transaction
-    to a future event and does not use labels during feature calculation.
+    Input must be the prepared dataset produced by ingestion. Each event-date is
+    fully scored before its next date is read, and the history state persists
+    across dates. Optional start/end/max_dates filters support smoke pipelines
+    without changing the formal full-protocol path.
     """
     if not input_root.is_dir():
         raise FileNotFoundError(f"Prepared input dataset does not exist: {input_root}")
     event_dates = _discover_event_dates(input_root)
+    if start_date is not None:
+        date.fromisoformat(start_date)
+        event_dates = [value for value in event_dates if value >= start_date]
+    if end_date is not None:
+        date.fromisoformat(end_date)
+        event_dates = [value for value in event_dates if value <= end_date]
+    if max_dates is not None:
+        if max_dates < 1:
+            raise ValueError("max_dates must be positive when provided.")
+        event_dates = event_dates[:max_dates]
+    if not event_dates:
+        raise ValueError("No event dates remain after applying smoke/date filters.")
     _prepare_output_root(output_root, overwrite=overwrite)
 
     rules = load_rules(rules_path) if rules_path is not None else []
@@ -168,6 +183,9 @@ def build_pit_feature_dataset(
             "partition_count": len(event_dates),
             "configured_rule_count": len(rules),
             "rule_hit_count": total_rule_hits,
+            "start_date": start_date,
+            "end_date": end_date,
+            "max_dates": max_dates,
         },
         filename="_run_manifest.json",
     )
@@ -207,13 +225,26 @@ def _write_rule_hits(output_root: Path, event_date: str, hits: list[RuleHit]) ->
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True, help="Prepared Parquet dataset.")
-    parser.add_argument("--output", type=Path, required=True, help="Private feature dataset.")
+    parser.add_argument("--output", type=Path, required=True, help="Feature dataset root.")
     parser.add_argument("--rules", type=Path, help="Versioned rule YAML; optional.")
     parser.add_argument(
         "--feature-registry",
         type=Path,
         default=DEFAULT_FEATURE_REGISTRY_PATH,
         help="Versioned metadata contract for generated features.",
+    )
+    parser.add_argument(
+        "--start-date",
+        help="Inclusive ISO date filter for smoke/subset builds.",
+    )
+    parser.add_argument(
+        "--end-date",
+        help="Inclusive ISO date filter for smoke/subset builds.",
+    )
+    parser.add_argument(
+        "--max-dates",
+        type=int,
+        help="Keep only the first N filtered event dates (chronological).",
     )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
@@ -227,6 +258,9 @@ def main() -> None:
         rules_path=args.rules,
         feature_registry_path=args.feature_registry,
         overwrite=args.overwrite,
+        start_date=args.start_date,
+        end_date=args.end_date,
+        max_dates=args.max_dates,
     )
     print(json.dumps(asdict(summary), ensure_ascii=False))
 

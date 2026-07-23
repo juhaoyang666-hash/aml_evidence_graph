@@ -11,12 +11,151 @@
       "fusion_probability": 0.53,
       "rule_hits": [],
       "key_features": [],
-      "typology_references": [],
+      "typology_references": [
+        {
+          "typology_id": "TYPOLOGY-STRUCTURING",
+          "version": "2026.1",
+          "title": "Structuring / Smurfing",
+          "source": "golden-seed"
+        }
+      ],
       "source_versions": {"demo": "1"},
-      "missing_evidence": ["Fictional demo case."],
-      "uncertainty_notes": ["No real customer or transaction data."]
+      "missing_evidence": ["Fictional Golden seed case; not a real or SAML-D-sampled investigation."],
+      "uncertainty_notes": ["structuring smurfing threshold avoidance pattern"]
     },
     "expected_typology_ids": ["TYPOLOGY-STRUCTURING"],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "mock-fan-out-001",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "mock-alert-golden-002",
+      "generated_at": "2026-07-22T00:00:00Z",
+      "transaction_id": "mock-txn-golden-002",
+      "event_timestamp": "2023-07-02T11:00:00Z",
+      "model_probabilities": {"catboost": 0.61},
+      "fusion_probability": 0.60,
+      "rule_hits": [],
+      "key_features": [],
+      "typology_references": [
+        {
+          "typology_id": "TYPOLOGY-FAN-OUT",
+          "version": "2026.1",
+          "title": "Fan-Out Dispersion",
+          "source": "golden-seed"
+        }
+      ],
+      "source_versions": {"demo": "1"},
+      "missing_evidence": ["Fictional Golden seed case; not a real or SAML-D-sampled investigation."],
+      "uncertainty_notes": ["fan-out dispersion to many counterparties"]
+    },
+    "expected_typology_ids": ["TYPOLOGY-FAN-OUT"],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "mock-cycle-001",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "mock-alert-golden-003",
+      "generated_at": "2026-07-22T00:00:00Z",
+      "transaction_id": "mock-txn-golden-003",
+      "event_timestamp": "2023-07-03T15:20:00Z",
+      "model_probabilities": {"catboost": 0.57},
+      "fusion_probability": null,
+      "rule_hits": [],
+      "key_features": [],
+      "typology_references": [
+        {
+          "typology_id": "TYPOLOGY-CYCLE",
+          "version": "2026.1",
+          "title": "Circular / Cycle Transfers",
+          "source": "golden-seed"
+        }
+      ],
+      "source_versions": {"demo": "1"},
+      "missing_evidence": ["Fictional Golden seed case; not a real or SAML-D-sampled investigation."],
+      "uncertainty_notes": ["circular cycle transfers among accounts"]
+    },
+    "expected_typology_ids": ["TYPOLOGY-CYCLE"],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "mock-cash-withdrawal-001",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "mock-alert-golden-004",
+      "generated_at": "2026-07-22T00:00:00Z",
+      "transaction_id": "mock-txn-golden-004",
+      "event_timestamp": "2023-07-04T08:10:00Z",
+      "model_probabilities": {"catboost": 0.52},
+      "fusion_probability": 0.51,
+      "rule_hits": [],
+      "key_features": [],
+      "typology_references": [
+        {
+          "typology_id": "TYPOLOGY-CASH-WITHDRAWAL",
+          "version": "2026.1",
+          "title": "Cash Withdrawal",
+          "source": "golden-seed"
+        }
+      ],
+      "source_versions": {"demo": "1"},
+      "missing_evidence": ["Fictional Golden seed case; not a real or SAML-D-sampled investigation."],
+      "uncertainty_notes": ["cash withdrawal after inbound transfer"]
+    },
+    "expected_typology_ids": ["TYPOLOGY-CASH-WITHDRAWAL"],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "mock-layered-fan-in-001",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "mock-alert-golden-005",
+      "generated_at": "2026-07-22T00:00:00Z",
+      "transaction_id": "mock-txn-golden-005",
+      "event_timestamp": "2023-07-05T13:45:00Z",
+      "model_probabilities": {"catboost": 0.66},
+      "fusion_probability": 0.64,
+      "rule_hits": [],
+      "key_features": [],
+      "typology_references": [
+        {
+          "typology_id": "TYPOLOGY-LAYERED-FAN-IN",
+          "version": "2026.1",
+          "title": "Layered Fan-In",
+          "source": "golden-seed"
+        }
+      ],
+      "source_versions": {"demo": "1"},
+      "missing_evidence": ["Fictional Golden seed case; not a real or SAML-D-sampled investigation."],
+      "uncertainty_notes": ["layered fan-in aggregation through intermediaries"]
+    },
+    "expected_typology_ids": ["TYPOLOGY-LAYERED-FAN-IN"],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "mock-low-evidence-001",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "mock-alert-golden-006",
+      "generated_at": "2026-07-22T00:00:00Z",
+      "transaction_id": "mock-txn-golden-006",
+      "event_timestamp": "2023-07-06T10:00:00Z",
+      "model_probabilities": {"catboost": 0.12},
+      "fusion_probability": 0.11,
+      "rule_hits": [],
+      "key_features": [],
+      "typology_references": [],
+      "source_versions": {"demo": "1"},
+      "missing_evidence": [
+        "Fictional Golden seed case; not a real or SAML-D-sampled investigation.",
+        "Insufficient historical window.",
+        "No rule hits."
+      ],
+      "uncertainty_notes": ["Low-evidence fictional case; should remain uncertain."]
+    },
+    "expected_typology_ids": [],
     "expect_rejected_facts": false
   }
 ]

@@ -1,10 +1,11 @@
-"""Convert an already de-identified AML CSV into date-partitioned Parquet."""
+"""Convert an AML CSV (typically public SAML-D) into date-partitioned Parquet."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import shutil
+import sys
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,7 +22,7 @@ from aml_evidence_graph.tracking.run import create_run_manifest
 
 @dataclass(frozen=True)
 class ConversionSummary:
-    """Aggregate-only trace of a private CSV-to-Parquet conversion."""
+    """Aggregate-only trace of a CSV-to-Parquet conversion."""
 
     created_at_utc: str
     run_id: str
@@ -43,11 +44,11 @@ def convert_csv_to_parquet(
     data_config_path: Path = DEFAULT_DATA_CONFIG_PATH,
     overwrite: bool = False,
 ) -> ConversionSummary:
-    """Convert an already de-identified source to a private Parquet dataset.
+    """Convert a source CSV to a date-partitioned Parquet dataset.
 
-    The supplied account identifiers are assumed to be de-identified before
-    ingestion. The output is partitioned by event_date and chronological split;
-    no label field is used to make the partition.
+    Designed primarily for the public SAML-D synthetic dataset. The output is
+    partitioned by event_date and chronological split; no label field is used to
+    make the partition.
     """
     if not input_path.is_file():
         raise FileNotFoundError(f"Input CSV does not exist: {input_path}")
@@ -56,7 +57,7 @@ def convert_csv_to_parquet(
         if not overwrite:
             raise FileExistsError(
                 f"Output already exists: {output_root}. "
-                "Use overwrite=True only for private artefacts."
+                "Use overwrite=True only for regenerable local artefacts."
             )
         shutil.rmtree(output_root)
     output_root.mkdir(parents=True, exist_ok=False)
@@ -89,7 +90,7 @@ def convert_csv_to_parquet(
         raise ValueError("Input CSV contains no transactions after schema validation.")
     manifest = create_run_manifest(
         output_dir=output_root,
-        command="aml-convert-private-data",
+        command=Path(sys.argv[0]).stem if sys.argv else "aml-convert-saml-d",
         random_seed=0,
         input_paths={"raw_csv": input_path},
         config_paths={"data_config": data_config_path},

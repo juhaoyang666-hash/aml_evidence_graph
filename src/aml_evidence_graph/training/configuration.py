@@ -51,6 +51,7 @@ def graphsage_parameters_from_configuration(document: dict[str, Any]) -> dict[st
     """Map the public YAML contract to GraphSAGETrainingConfig keyword names."""
     source = document["graphsage"]
     allowed = {
+        "architecture",
         "hidden_dim",
         "num_layers",
         "num_neighbors",

@@ -4,7 +4,7 @@ dataset:
   input_format: csv
   chunk_size: 250000
   event_timezone: "UTC"
-  source_name: private_aml_transactions
+  source_name: saml_d_transactions
 
 time_splits:
   train_start: "2022-10-07"

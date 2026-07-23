@@ -1,0 +1,7 @@
+typology_id: "TYPOLOGY-LAYERED-FAN-IN"
+version: "2026.1"
+title: "Layered Fan-In"
+source: "Internal curated Typology starter library"
+body: >
+  Multiple inbound transfers may be staged through intermediaries before aggregation.
+  Investigators should review layering hops without treating retrieval as a conviction.

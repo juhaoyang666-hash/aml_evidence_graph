@@ -1,37 +1,39 @@
-# AML 环境与私有数据运行约定
+# AML 环境与运行约定
 
 环境名为 aml-evidence。普通依赖已通过清华 PyPI 镜像安装；CUDA PyTorch 2.5.1
 使用官方 cu121 轮子，并已在 NVIDIA GeForce RTX 2060 上验证 CUDA 可用。
 
-输入 CSV 中的账户标识已预先脱敏，因此数据转换不需要令牌化密钥。不要在项目文件、
-命令历史、Notebook 或版本库中保存真实交易明细或其他敏感数据。私有 API 令牌仍必须是
-至少 32 个字符的随机值；示例配置文件中的空值不是可用占位符。
+主训练数据是公开合成数据集 **SAML-D**（`../data/SAML-D.csv`）。不要把它包装成
+私有/真实业务数据。本地 API 令牌仍必须是至少 32 个字符的随机值；示例配置文件中的
+空值不是可用占位符。不要在项目文件、命令历史、Notebook 或版本库中保存外部服务密钥。
 
 新项目的处理顺序如下：
 
-1. aml-profile-data 读取已脱敏 CSV，只生成聚合数据清单。
-2. aml-convert-private-data 保留已脱敏账户标识，并写出按 event_date 和固定时间
-   切分分区的私有 Parquet。
+1. aml-profile-data 读取 SAML-D CSV，只生成聚合数据清单。
+2. aml-convert-saml-d（别名：aml-convert-transactions；兼容旧名 aml-convert-private-data）
+   写出按 event_date 和固定时间切分分区的 Parquet。
 3. aml-build-pit-features 逐日构建因果特征。每笔交易只使用 [t-window, t) 的
    历史；同一时间戳的交易先全部评分，之后才共同进入历史。
-4. aml-train-table 仅使用训练/验证期拟合，之后一次性读取完整测试期作评估。
+4. aml-train-table 仅使用训练/验证期拟合，之后一次性读取完整测试期作评估，并报告
+   固定召回下相对规则基线的告警削减率。
 5. aml-train-graphsage 建立有向日度图快照。当前日的边只从过去日期的边采样邻居，
    训练期外的账户不进入已学习节点映射，而落入固定哈希桶；测试期标签绝不参与图消息。
+   `configs/models.yaml` 的 `graphsage.architecture` 可选 graphsage/gat/rgcn/pna。
 6. 融合时只能使用训练期 OOF 分数；概率校准与告警阈值只能在验证期选择。测试期只作
    一次完整评估，不允许重采样、调参或阈值搜索。
 7. aml-build-investigation-views 在冻结评分之后，按明确 `as_of_ts` 聚合账户风险、资金路径
    和关联子图调查视图。它不接受标签列，也不将这些聚合结果反馈到交易模型。
 
-如果配置了 AML_FEATURE_ROOT 与 AML_TABLE_MODEL_DIR，服务会切换到私有推理模式，
+如果配置了 AML_FEATURE_ROOT 与 AML_TABLE_MODEL_DIR，服务会切换到受控本地推理模式，
 并要求 AML_INTERNAL_API_TOKEN；二者只配置其一会直接拒绝启动。Mock Demo 不需要
-该令牌，且不读取私有产物。
+该令牌，且不读取本地完整产物。
 
-私有评分默认使用受控的表格 CatBoost 产物和 AML_ALERT_THRESHOLD。若同时配置
+受控评分默认使用表格 CatBoost 产物和 AML_ALERT_THRESHOLD。若同时配置
 AML_GRAPHSAGE_MODEL_PATH 与 AML_FUSION_DIR，服务会恢复冻结的 GraphSAGE、OOF 融合器、
 验证期校准器和验证期锁定阈值；融合器要求的任一组件缺失时会拒绝启动，而不会静默降级。
 
-运行产物只写到 artifacts/，其内容已被 Git 排除。公开演示将只使用后续生成的
-Mock 数据和聚合结果，绝不复制私有 Parquet、脱敏账户标识、交易记录、模型产物或密钥。
+运行产物只写到 artifacts/，其内容已被 Git 排除。公开演示将只使用 Mock 数据和聚合结果，
+绝不复制完整交易流水、模型产物或密钥。
 
 ## 可选 ECNU 调查注释
 

@@ -11,6 +11,7 @@ from aml_evidence_graph.evidence.package import (
     InvestigationAnnotation,
     InvestigationReport,
     RiskEvidencePackage,
+    SarDraft,
     TypologyReference,
 )
 from aml_evidence_graph.evidence.typology import LocalBM25TypologyRetriever
@@ -163,6 +164,40 @@ def _draft_report(state: InvestigationState) -> InvestigationState:
         if annotation is not None and validation.valid
         else []
     )
+    sar_draft = None
+    if validation.valid:
+        supporting_refs = [
+            *[f"model_probabilities.{name}" for name in sorted(evidence.model_probabilities)],
+            *[f"rule_hits[{index}]" for index in range(len(evidence.rule_hits))],
+            *[f"key_features[{index}]" for index in range(len(evidence.key_features))],
+            *(["graph_evidence"] if evidence.graph_evidence is not None else []),
+            *[
+                f"typology_references.{reference.typology_id}"
+                for reference in references
+            ],
+        ]
+        fund_path_notes = []
+        if evidence.graph_evidence is not None:
+            fund_path_notes.append(
+                "Historical graph evidence summarizes prior directed/reverse edges and "
+                "bounded two-hop intermediaries only; it is not a confirmed laundering path."
+            )
+        sar_draft = SarDraft(
+            background=[
+                f"Alert {evidence.alert_id} drafted from RiskEvidencePackage schema "
+                f"{evidence.schema_version}.",
+                "All numeric values below are copied from the evidence package.",
+            ],
+            observed_behaviors=factual_summary,
+            typology_leads=typology_considerations,
+            fund_path_notes=fund_path_notes,
+            supporting_evidence_refs=supporting_refs,
+            pending_verification=[
+                *evidence.missing_evidence,
+                *evidence.uncertainty_notes,
+                "Confirm whether activity warrants a formal SAR filing.",
+            ],
+        )
     report = InvestigationReport(
         alert_id=evidence.alert_id,
         status=(
@@ -179,6 +214,7 @@ def _draft_report(state: InvestigationState) -> InvestigationState:
             "A human investigator must verify the cited evidence and approve, "
             "amend, or reject this draft before any case action."
         ),
+        sar_draft=sar_draft,
         llm_annotation=annotation if validation.valid else None,
         fact_validation=validation,
         tool_call_count=state.get("tool_call_count", 0),

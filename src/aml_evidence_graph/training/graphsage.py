@@ -14,13 +14,14 @@ from torch_geometric.loader import LinkNeighborLoader
 
 from aml_evidence_graph.evaluation.metrics import evaluate_binary_risk_scores
 from aml_evidence_graph.graph.snapshots import TemporalGraphSnapshot
-from aml_evidence_graph.models.graphsage import GraphSAGEEdgeClassifier
+from aml_evidence_graph.models.edge_classifiers import build_edge_classifier
 
 
 @dataclass(frozen=True)
 class GraphSAGETrainingConfig:
     """Conservative defaults for a 6GB GPU; batches only sample past neighbors."""
 
+    architecture: str = "graphsage"
     hidden_dim: int = 64
     num_layers: int = 2
     num_neighbors: tuple[int, ...] = (15, 10)
@@ -38,7 +39,7 @@ class GraphSAGETrainingConfig:
 class TrainedGraphSAGE:
     """The selected graph model and validation-only training history."""
 
-    model: GraphSAGEEdgeClassifier
+    model: nn.Module
     config: GraphSAGETrainingConfig
     device: torch.device
     epoch_history: list[dict[str, float]] = field(default_factory=list)
@@ -91,7 +92,7 @@ def _positive_class_weight(snapshots: list[TemporalGraphSnapshot]) -> torch.Tens
 
 
 def _batch_logits(
-    model: GraphSAGEEdgeClassifier,
+    model: nn.Module,
     batch: Data,
     edge_features: torch.Tensor,
     *,
@@ -163,7 +164,8 @@ def fit_graphsage(
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
     edge_feature_dim = training_snapshots[0].edge_features.shape[1]
-    model = GraphSAGEEdgeClassifier(
+    model = build_edge_classifier(
+        configuration.architecture,
         num_nodes=num_nodes,
         edge_feature_dim=edge_feature_dim,
         hidden_dim=configuration.hidden_dim,

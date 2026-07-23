@@ -1,0 +1,7 @@
+typology_id: "TYPOLOGY-CYCLE"
+version: "2026.1"
+title: "Circular / Cycle Transfers"
+source: "Internal curated Typology starter library"
+body: >
+  Circular fund flows among a closed set of accounts can obscure beneficial
+  ownership. Investigators should verify whether cycles are economically justified.

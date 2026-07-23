@@ -100,6 +100,25 @@ class RiskEvidencePackage(BaseModel):
         return value
 
 
+class SarDraft(BaseModel):
+    """Evidence-bound SAR / suspicious-activity report draft for human review only."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["1.0"] = "1.0"
+    title: str = "Suspicious Activity Report draft"
+    background: list[str] = Field(default_factory=list)
+    observed_behaviors: list[str] = Field(default_factory=list)
+    typology_leads: list[str] = Field(default_factory=list)
+    fund_path_notes: list[str] = Field(default_factory=list)
+    supporting_evidence_refs: list[str] = Field(default_factory=list)
+    pending_verification: list[str] = Field(default_factory=list)
+    disclaimer: str = (
+        "This SAR draft is generated only from the supplied RiskEvidencePackage. "
+        "It is not a regulatory filing and must be reviewed by a human investigator."
+    )
+
+
 class InvestigationReport(BaseModel):
     """A draft for human review; all facts are copied from the evidence package."""
 
@@ -116,6 +135,7 @@ class InvestigationReport(BaseModel):
     uncertainty_notes: list[str]
     fact_snapshot: dict[str, object]
     review_instruction: str
+    sar_draft: SarDraft | None = None
     llm_annotation: InvestigationAnnotation | None = None
     fact_validation: FactValidationResult | None = None
     tool_call_count: int = Field(default=0, ge=0, le=4)

@@ -14,6 +14,7 @@ def test_mock_container_configuration_excludes_private_data_and_secrets() -> Non
 
     assert "COPY configs ./configs" in dockerfile
     assert "COPY knowledge ./knowledge" in dockerfile
+    assert "FROM python:3.11-slim" in dockerfile
     assert "COPY data" not in dockerfile
     assert "COPY artifacts" not in dockerfile
     assert "data/" in ignored

@@ -33,22 +33,84 @@ from aml_evidence_graph.settings import Settings
 
 DEMO_HTML = """
 <!doctype html>
-<html lang="en">
-  <head><meta charset="utf-8"><title>AML Evidence Graph — Mock Demo</title></head>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AML Evidence Graph — Mock Demo</title>
+    <style>
+      :root { color-scheme: light; font-family: "Segoe UI", "PingFang SC", sans-serif; }
+      body { margin: 0; background: #f6f7f9; color: #1b1f24; }
+      main { max-width: 920px; margin: 0 auto; padding: 2rem 1.25rem 3rem; }
+      h1 { font-size: 1.6rem; margin: 0 0 0.75rem; }
+      .banner {
+        border-left: 4px solid #b45309; background: #fff7ed; padding: 0.85rem 1rem;
+        margin: 0 0 1.25rem; line-height: 1.45;
+      }
+      button {
+        border: 0; background: #0f766e; color: #fff; padding: 0.65rem 1rem;
+        border-radius: 6px; cursor: pointer; font-size: 0.95rem;
+      }
+      button:disabled { opacity: 0.6; cursor: wait; }
+      section { margin-top: 1.25rem; }
+      h2 { font-size: 1.05rem; margin: 0 0 0.5rem; }
+      ul { margin: 0; padding-left: 1.2rem; }
+      pre {
+        background: #111827; color: #e5e7eb; padding: 1rem; overflow: auto;
+        border-radius: 8px; font-size: 0.8rem; line-height: 1.4;
+      }
+    </style>
+  </head>
   <body>
     <main>
-      <h1>AML Evidence Graph — fictional demonstration</h1>
-      <p>This page uses only synthetic evidence.</p>
-      <p>It does not load private transactions or scores.</p>
-      <button id="load">Load mock review draft</button>
-      <pre id="output">No mock data loaded.</pre>
+      <h1>AML Evidence Graph — 虚构 Demo</h1>
+      <div class="banner">
+        <strong>边界说明：</strong>本页仅加载内存中的虚构 Evidence Package，不读取
+        <code>artifacts/</code>、完整交易或冻结模型分数。演示分数不可当作 SAML-D
+        评估指标或业务结论。LLM 不参与评分。
+      </div>
+      <p>点击下方按钮生成<strong>证据约束</strong>的调查草稿与 SAR 草稿（确定性模板，无需外部 LLM）。</p>
+      <button id="load">加载 Mock 调查草稿</button>
+      <section>
+        <h2>摘要</h2>
+        <div id="summary">尚未加载。</div>
+      </section>
+      <section>
+        <h2>完整 JSON</h2>
+        <pre id="output">No mock data loaded.</pre>
+      </section>
     </main>
     <script>
-      document.getElementById("load").onclick = async () => {
-        const report = await fetch("/demo/cases/mock-alert-0001/draft", {
-          method: "POST",
-        }).then((response) => response.json());
-        document.getElementById("output").textContent = JSON.stringify(report, null, 2);
+      const summary = document.getElementById("summary");
+      const output = document.getElementById("output");
+      const button = document.getElementById("load");
+      button.onclick = async () => {
+        button.disabled = true;
+        try {
+          const report = await fetch("/demo/cases/mock-alert-0001/draft", {
+            method: "POST",
+          }).then((response) => {
+            if (!response.ok) throw new Error("HTTP " + response.status);
+            return response.json();
+          });
+          const sar = report.sar_draft || {};
+          const facts = (report.factual_summary || []).slice(0, 4)
+            .map((item) => "<li>" + item + "</li>").join("");
+          const pending = (sar.pending_verification || []).slice(0, 3)
+            .map((item) => "<li>" + item + "</li>").join("");
+          summary.innerHTML =
+            "<p><strong>状态：</strong>" + report.status + "</p>" +
+            "<p><strong>SAR 标题：</strong>" + (sar.title || "(none)") + "</p>" +
+            "<p><strong>事实摘要：</strong></p><ul>" + (facts || "<li>(empty)</li>") + "</ul>" +
+            "<p><strong>待核实：</strong></p><ul>" + (pending || "<li>(empty)</li>") + "</ul>" +
+            "<p>" + (sar.disclaimer || "") + "</p>";
+          output.textContent = JSON.stringify(report, null, 2);
+        } catch (error) {
+          summary.textContent = "加载失败：" + error;
+          output.textContent = String(error);
+        } finally {
+          button.disabled = false;
+        }
       };
     </script>
   </body>

@@ -101,3 +101,42 @@ rules:
     registry = (tmp_path / "features" / "_feature_registry.json").read_text(encoding="utf-8")
     assert "sender_outgoing_count_7d" in registry
     assert "rule_R-HISTORY_hit" in registry
+
+
+def test_build_feature_dataset_respects_max_dates(tmp_path: Path) -> None:
+    input_root = tmp_path / "prepared"
+    for event_date, transaction_id in (
+        ("2023-01-01", "one"),
+        ("2023-01-02", "two"),
+        ("2023-01-03", "three"),
+    ):
+        _write_partition(
+            input_root,
+            event_date,
+            [
+                {
+                    CANONICAL.transaction_id: transaction_id,
+                    CANONICAL.event_ts: f"{event_date}T12:00:00Z",
+                    CANONICAL.sender_account_id: "account_a",
+                    CANONICAL.receiver_account_id: "account_b",
+                    CANONICAL.amount: 10.0,
+                    CANONICAL.payment_currency: "USD",
+                    CANONICAL.sender_location: "US",
+                    CANONICAL.receiver_location: "CA",
+                    CANONICAL.source_row_number: 1,
+                    CANONICAL.is_laundering: 0,
+                    CANONICAL.laundering_type: "None",
+                }
+            ],
+        )
+
+    summary = build_pit_feature_dataset(
+        input_root,
+        tmp_path / "features",
+        max_dates=2,
+    )
+
+    assert summary.partition_count == 2
+    assert summary.event_date_min == "2023-01-01"
+    assert summary.event_date_max == "2023-01-02"
+    assert not (tmp_path / "features" / "event_date=2023-01-03").exists()

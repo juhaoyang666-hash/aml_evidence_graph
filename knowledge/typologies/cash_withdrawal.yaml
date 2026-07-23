@@ -1,0 +1,7 @@
+typology_id: "TYPOLOGY-CASH-WITHDRAWAL"
+version: "2026.1"
+title: "Cash Withdrawal"
+source: "Internal curated Typology starter library"
+body: >
+  Rapid conversion of received funds into cash withdrawals may indicate an attempt
+  to break the audit trail. Investigators should confirm source of funds and purpose.
