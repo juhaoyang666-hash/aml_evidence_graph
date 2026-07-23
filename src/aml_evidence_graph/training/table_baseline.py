@@ -18,7 +18,10 @@ import pyarrow.dataset as ds
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.data.splits import TimeSplit
 from aml_evidence_graph.evaluation.drift import feature_drift_report
-from aml_evidence_graph.evaluation.metrics import evaluate_binary_risk_scores
+from aml_evidence_graph.evaluation.metrics import (
+    compare_alert_volume_at_fixed_recall,
+    evaluate_binary_risk_scores,
+)
 from aml_evidence_graph.evaluation.monitoring import (
     bootstrap_ranking_intervals,
     categorical_slice_report,
@@ -57,6 +60,7 @@ class TableBaselineSummary:
     graph_feature_columns: list[str]
     validation_metrics: dict[str, dict[str, Any]]
     test_metrics: dict[str, dict[str, Any]]
+    alert_reduction_vs_rules: dict[str, dict[str, Any]]
     test_monthly_stability: dict[str, dict[str, Any]]
     test_typology_slices: dict[str, dict[str, Any]]
     test_new_account_slices: dict[str, dict[str, Any]]
@@ -385,6 +389,26 @@ def train_and_evaluate_table_baselines(
         test_metrics["rules"] = evaluate_binary_risk_scores(test_labels, test_rule_scores)
         test_scores["rules"] = test_rule_scores.to_numpy()
 
+    alert_reduction_vs_rules: dict[str, dict[str, Any]] = {}
+    if test_rule_scores is not None:
+        alert_reduction_vs_rules["catboost"] = compare_alert_volume_at_fixed_recall(
+            test_labels,
+            test_scores["catboost"],
+            test_rule_scores,
+        )
+        if "graph_stats_catboost" in test_scores:
+            alert_reduction_vs_rules["graph_stats_catboost"] = compare_alert_volume_at_fixed_recall(
+                test_labels,
+                test_scores["graph_stats_catboost"],
+                test_rule_scores,
+            )
+        if "logistic" in test_scores:
+            alert_reduction_vs_rules["logistic"] = compare_alert_volume_at_fixed_recall(
+                test_labels,
+                test_scores["logistic"],
+                test_rule_scores,
+            )
+
     selected_test_scores = test_scores["catboost"]
     training_accounts = set(
         pd.concat(
@@ -518,6 +542,7 @@ def train_and_evaluate_table_baselines(
         graph_feature_columns=graph_feature_columns,
         validation_metrics=validation_metrics,
         test_metrics=test_metrics,
+        alert_reduction_vs_rules=alert_reduction_vs_rules,
         test_monthly_stability=test_monthly_stability,
         test_typology_slices=test_typology_slices,
         test_new_account_slices=test_new_account_slices,

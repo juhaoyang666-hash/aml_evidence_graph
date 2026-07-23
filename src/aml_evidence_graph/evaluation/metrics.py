@@ -139,3 +139,77 @@ def evaluate_binary_risk_scores(
         },
     }
     return result
+
+
+def _alerts_needed_for_recall(
+    labels: np.ndarray,
+    scores: np.ndarray,
+    *,
+    target_recall: float,
+) -> dict[str, Any]:
+    """Return the smallest top-K alert budget that reaches the target recall."""
+    if not 0 < target_recall <= 1:
+        raise ValueError("target_recall must be in (0, 1].")
+    positive_total = int(labels.sum())
+    if positive_total == 0:
+        raise ValueError("At least one positive label is required.")
+    needed_positives = int(np.ceil(positive_total * target_recall))
+    order = np.argsort(-scores, kind="stable")
+    cumulative = np.cumsum(labels[order])
+    hit_indices = np.flatnonzero(cumulative >= needed_positives)
+    if len(hit_indices) == 0:
+        return {
+            "achieved": False,
+            "alert_count": int(len(labels)),
+            "true_positives_found": int(cumulative[-1]),
+            "achieved_recall": float(cumulative[-1] / positive_total),
+        }
+    alert_count = int(hit_indices[0]) + 1
+    found = int(cumulative[alert_count - 1])
+    return {
+        "achieved": True,
+        "alert_count": alert_count,
+        "true_positives_found": found,
+        "achieved_recall": float(found / positive_total),
+    }
+
+
+def compare_alert_volume_at_fixed_recall(
+    y_true: Iterable[int],
+    model_probabilities: Iterable[float],
+    baseline_scores: Iterable[float],
+    *,
+    recall_targets: tuple[float, ...] = (0.50, 0.70, 0.85),
+) -> dict[str, Any]:
+    """Compare model vs baseline alert volume at fixed recall targets.
+
+    This is the primary AML operations KPI: at the same recall, how many fewer
+    alerts does the model raise relative to a rule (or other) baseline.
+    """
+    labels, model_scores = _validate_labels_and_scores(y_true, model_probabilities)
+    _, baseline = _validate_labels_and_scores(y_true, baseline_scores)
+    comparisons: dict[str, Any] = {}
+    for target in recall_targets:
+        model_need = _alerts_needed_for_recall(labels, model_scores, target_recall=target)
+        baseline_need = _alerts_needed_for_recall(labels, baseline, target_recall=target)
+        baseline_alerts = baseline_need["alert_count"]
+        model_alerts = model_need["alert_count"]
+        reduction = None
+        if baseline_need["achieved"] and baseline_alerts > 0 and model_need["achieved"]:
+            reduction = float(1.0 - (model_alerts / baseline_alerts))
+        comparisons[f"recall_{target:.0%}"] = {
+            "target_recall": target,
+            "model": model_need,
+            "baseline": baseline_need,
+            "alert_reduction_rate": reduction,
+            "alerts_saved": (
+                int(baseline_alerts - model_alerts)
+                if baseline_need["achieved"] and model_need["achieved"]
+                else None
+            ),
+        }
+    return {
+        "sample_count": int(len(labels)),
+        "positive_count": int(labels.sum()),
+        "comparisons": comparisons,
+    }

@@ -11,9 +11,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
-      - name: Install test dependencies
-        run: python -m pip install ".[dev,graph,llm]"
+          # Match the local aml-evidence env; PyG sampling wheels are more reliable here.
+          python-version: "3.11"
+      - name: Install CPU PyTorch and PyG sampling backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install torch-geometric==2.6.1
+          python -m pip install pyg-lib torch-sparse \
+            -f https://data.pyg.org/whl/torch-2.5.0+cpu.html
+      - name: Install project test dependencies
+        run: |
+          python -m pip install ".[dev,llm]"
+          python -m pip install --no-deps .
       - name: Validate dependency graph
         run: python -m pip check
       - name: Lint
