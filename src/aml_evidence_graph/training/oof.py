@@ -260,6 +260,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-config", type=Path, default=DEFAULT_MODEL_CONFIG_PATH)
     parser.add_argument("--model", choices=("table", "graphsage"), default="table")
     parser.add_argument("--device", default="auto")
+    parser.add_argument(
+        "--max-gpus",
+        type=int,
+        default=4,
+        help="Maximum CUDA devices for GraphSAGE OOF when --device is cuda/auto.",
+    )
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
@@ -288,6 +294,7 @@ def main() -> None:
             minimum_training_months=args.minimum_training_months,
             config=GraphSAGETrainingConfig(
                 device=args.device,
+                max_gpus=args.max_gpus,
                 random_seed=args.random_seed,
                 **graphsage_parameters,
             ),

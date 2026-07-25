@@ -36,6 +36,7 @@ from aml_evidence_graph.training.configuration import (
 )
 from aml_evidence_graph.training.graphsage import (
     GraphSAGETrainingConfig,
+    MAX_GRAPHSAGE_GPUS,
     fit_graphsage,
     predict_graphsage,
 )
@@ -230,6 +231,8 @@ def train_and_evaluate_graphsage(
             "edge_feature_columns": list(edge_feature_columns),
             "num_nodes": node_indexer.num_nodes,
             "device": str(trained.device),
+            "device_ids": list(trained.device_ids),
+            "num_gpus": max(len(trained.device_ids), 1 if trained.device.type == "cuda" else 0),
             "random_seed": trained.config.random_seed,
         },
     )
@@ -298,6 +301,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model-config", type=Path, default=DEFAULT_MODEL_CONFIG_PATH)
     parser.add_argument("--device", default="auto")
+    parser.add_argument(
+        "--max-gpus",
+        type=int,
+        default=MAX_GRAPHSAGE_GPUS,
+        help=f"Maximum CUDA devices for GraphSAGE when --device is cuda/auto (default {MAX_GRAPHSAGE_GPUS}).",
+    )
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--random-seed", type=int, default=20260722)
@@ -318,6 +327,7 @@ def main() -> None:
         args.output,
         config=GraphSAGETrainingConfig(
             device=args.device,
+            max_gpus=args.max_gpus,
             random_seed=args.random_seed,
             **graphsage_parameters,
         ),

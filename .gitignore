@@ -17,3 +17,9 @@ coverage.xml
 *.cbm
 *.pt
 *.pkl
+
+# Local install/cache and run logs (not source)
+.pip_target/
+.pip_wheels/
+/logs/
+scripts_local_env.sh
