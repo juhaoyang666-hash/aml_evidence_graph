@@ -9,6 +9,53 @@ from aml_evidence_graph.evidence.typology import LocalBM25TypologyRetriever, Typ
 from aml_evidence_graph.investigation.golden import GoldenCase, evaluate_golden_set
 
 
+def test_golden_set_tracks_hallucination_intercept_and_latency() -> None:
+    evidence = RiskEvidencePackage(
+        alert_id="golden-adv-1",
+        generated_at=datetime(2026, 7, 22, tzinfo=UTC),
+        transaction_id="mock-txn-adv-1",
+        event_timestamp=datetime(2023, 7, 1, tzinfo=UTC),
+        model_probabilities={"catboost": 0.5},
+        missing_evidence=["narrative unavailable"],
+    )
+    retriever = LocalBM25TypologyRetriever(
+        [
+            TypologyDocument(
+                typology_id="TYPOLOGY-TEST",
+                version="1",
+                title="Test",
+                body="transaction risk",
+                source="test",
+            )
+        ]
+    )
+    summary = evaluate_golden_set(
+        [
+            GoldenCase(
+                case_id="golden-adv-1",
+                evidence=evidence,
+                case_category="adversarial",
+                expect_rejected_facts=True,
+                injected_annotation=InvestigationAnnotation(
+                    prompt_version="probe",
+                    model_name="injected",
+                    analytical_considerations=["Amount was 99."],
+                ),
+            ),
+            GoldenCase(
+                case_id="golden-low-1",
+                evidence=evidence,
+                case_category="low_evidence",
+            ),
+        ],
+        retriever=retriever,
+    )
+    assert summary.hallucination_intercept_rate == 1.0
+    assert summary.no_evidence_refusal_rate == 1.0
+    assert summary.latency_p50_ms >= 0
+    assert summary.latency_p95_ms >= summary.latency_p50_ms
+
+
 def test_golden_set_tracks_fact_and_tool_limits() -> None:
     evidence = RiskEvidencePackage(
         alert_id="golden-1",
