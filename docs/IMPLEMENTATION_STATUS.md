@@ -1,10 +1,9 @@
-# 实施状态（2026-07-25 全量链路完成）
+# 实施状态（2026-07-26：主线升级为 catboost + GAT）
 
-> **2026-07-25**：全量 PIT → table_baseline(_rules) → GraphSAGE → table_oof →
-> graph_oof → fusion → fusion_test → investigation_views 已完成
-> （`logs/remaining_chain_done.flag`）。主线指标见 [RESULTS.md](RESULTS.md)；
-> 模型卡已回填 [MODEL_CARD.md](MODEL_CARD.md)。规划修订见
-> [PLAN_REVISION.md](PLAN_REVISION.md)。规则基线见 [RULE_BASELINE.md](RULE_BASELINE.md)。
+> **2026-07-25**：全量 PIT → 表格基线 → GraphSAGE → OOF → 融合 → 调查视图跑通。  
+> **2026-07-26**：同协议架构对比后 **GAT 升为主线图**；完成 `graph_oof_gat` →
+> `fusion_cb_gat` → `fusion_test_cb_gat` → `test_investigation_views_gat`。  
+> 主线指标见 [RESULTS.md](RESULTS.md)；模型卡见 [MODEL_CARD.md](MODEL_CARD.md)。
 
 ## 已实现并有自动化回归的能力
 
@@ -22,8 +21,8 @@
   人工复核审计记录和只含虚构数据的 Demo；冻结交易分数的账户风险、资金路径和关联子图
   调查视图由独立无标签聚合器生成。
 
-受控批量评分可选择恢复表格基线、GraphSAGE 和冻结融合产物。图推理使用无标签快照；
-调用方无法传入路径或交易 payload，告警 ID 为随机不透明引用。
+受控批量评分可选择恢复表格基线、图边分类模型（主线 GAT）和冻结融合产物。
+图推理使用无标签快照；调用方无法传入路径或交易 payload，告警 ID 为随机不透明引用。
 
 ## 全量本地产物（摘要）
 
@@ -54,16 +53,11 @@
 - 全量复现命令：`docs/FULL_RUN_AFTER_PIT.md`；剩余 GPU 链：`scripts/run_remaining_gpu.sh`。
 - ECNU ecnu-max 可用于调查注释；默认 `AML_LLM_ENABLED` 受控，不影响评分链路。
 
-## 尚待 / 进行中
+## 已关闭的工程项 / 仍开放的组织项
 
-- **GAT / RGCN / PNA 全量对比**：~~进行中~~ **已完成**；数字见 [RESULTS.md](RESULTS.md)
-  「Edge GNN architecture comparison」。对比后 **GAT 升为主线图模型**，主线双路融合改为
-  `catboost + GAT`（0.9175）；原 `catboost + graphsage`（0.8973）保留可比。引用融合数字时
-  须同时披露单独 GAT 的 0.9483。
-- **Golden 裁定**：`adjudication_v1.json` 已完成（adjudicator=`agent-authorized-by-user`）。
-  这是项目裁定的回归真相集，**不是**独立第三方人工评审团。
-- **PIT 重写 / 大规模架构变更**：无必要则不做。
-- 晋升阈值的组织侧审批与真实业务外推：合成基准不能替代。
+- ~~GAT/RGCN/PNA 对比~~、~~Golden 30 裁定~~、~~主线升级为 catboost+GAT~~：均已完成，见 RESULTS。
+- **PIT 重写 / 继续堆架构**：无必要则不做。
+- **组织侧**：晋升阈值审批与真实业务外推——合成基准不能替代；Golden v1 不是第三方面板。
 
 ## 验收命令
 

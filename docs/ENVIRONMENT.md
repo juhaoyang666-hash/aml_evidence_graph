@@ -9,11 +9,14 @@
     export PYTHONPATH=src
 
 - PyTorch **2.5.1+cu121**（官方 `download.pytorch.org/whl/cu121`），CUDA 可用
-- GPU：8× NVIDIA RTX 3090；GraphSAGE 默认最多用 **4 张**
+- GPU：8× NVIDIA RTX 3090；图训练默认最多用 **4 张**
   （`--max-gpus`，或 `CUDA_VISIBLE_DEVICES` 限制）
 - torch-geometric 2.8 + `pyg_lib` / `torch_scatter` / `torch_sparse`（pt25cu121）
 - 长任务须在 **tmux** 会话中运行，便于断连后继续
-- 链路脚本：`scripts/run_full_train_chain.sh`、`scripts/run_remaining_gpu.sh`
+- 链路脚本：`scripts/run_full_train_chain.sh`、`scripts/run_remaining_gpu.sh`、
+  `scripts/run_arch_comparison.sh`
+- **主线复现**：边分类用 `configs/models.gat.yaml`；融合产物
+  `artifacts/fusion_cb_gat` / `fusion_test_cb_gat`（见 [FULL_RUN_AFTER_PIT.md](FULL_RUN_AFTER_PIT.md)）
 
 ## 历史环境（Windows，早期开发）
 
@@ -36,19 +39,22 @@
    固定召回下相对规则基线的告警削减率。
 5. aml-train-graphsage 建立有向日度图快照。当前日的边只从过去日期的边采样邻居，
    训练期外的账户不进入已学习节点映射，而落入固定哈希桶；测试期标签绝不参与图消息。
-   `configs/models.yaml` 的 `graphsage.architecture` 可选 graphsage/gat/rgcn/pna。
+   架构由配置选择：`models.gat.yaml`（**主线**）或 `models.yaml` /
+   `models.{rgcn,pna}.yaml`（对照）。
 6. 融合时只能使用训练期 OOF 分数；概率校准与告警阈值只能在验证期选择。测试期只作
-   一次完整评估，不允许重采样、调参或阈值搜索。
+   一次完整评估。主线组件为 `catboost,graphsage`（此处 `graphsage` 列在 GAT 运行中
+   承载 GAT 分数），**不含** `graph_stats_catboost`。
 7. aml-build-investigation-views 在冻结评分之后，按明确 `as_of_ts` 聚合账户风险、资金路径
-   和关联子图调查视图。它不接受标签列，也不将这些聚合结果反馈到交易模型。
+   和关联子图调查视图。主线输出目录为 `artifacts/test_investigation_views_gat`。
 
 如果配置了 AML_FEATURE_ROOT 与 AML_TABLE_MODEL_DIR，服务会切换到受控本地推理模式，
 并要求 AML_INTERNAL_API_TOKEN；二者只配置其一会直接拒绝启动。Mock Demo 不需要
 该令牌，且不读取本地完整产物。
 
 受控评分默认使用表格 CatBoost 产物和 AML_ALERT_THRESHOLD。若同时配置
-AML_GRAPHSAGE_MODEL_PATH 与 AML_FUSION_DIR，服务会恢复冻结的 GraphSAGE、OOF 融合器、
-验证期校准器和验证期锁定阈值；融合器要求的任一组件缺失时会拒绝启动，而不会静默降级。
+AML_GRAPHSAGE_MODEL_PATH 与 AML_FUSION_DIR，服务会恢复冻结的图边分类模型（主线为 GAT
+产物目录）、OOF 融合器、验证期校准器和锁定阈值；任一组件缺失时拒绝启动，不会静默降级。
+主线融合目录应对齐 `artifacts/fusion_cb_gat`。
 
 运行产物只写到 artifacts/，其内容已被 Git 排除。公开演示将只使用 Mock 数据和聚合结果，
 绝不复制完整交易流水、模型产物或密钥。

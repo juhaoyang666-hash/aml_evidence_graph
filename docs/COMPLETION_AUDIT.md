@@ -1,37 +1,32 @@
 # AML Evidence Graph 完成度审计
 
-审计日期：2026-07-23。范围是本目录中新建的 `aml_evidence_graph`；原有项目材料未被修改。
-“已实现”表示源码、自动化测试和本机环境验证已具备，不代表已在 SAML-D 全量数据上得到业务指标。
+审计日期：2026-07-23（初版）；**2026-07-26 按 `main` 全量结果回填**。  
+范围是本仓库 `aml_evidence_graph`。全量指标以 [RESULTS.md](RESULTS.md) /
+[MODEL_CARD.md](MODEL_CARD.md) 为准。
 
 | 计划要求 | 状态 | 可追溯实现/证据 |
 |---|---|---|
 | 交易标签作为边分类目标，账户/案件不直接使用标签 | 已实现 | `data/contract.py`、`models/graphsage.py`；`aggregation/views.py` 显式拒绝标签列。 |
-| 固定时间外切分与 PIT 防泄漏 | 已实现 | `data/splits.py`、`features/pit.py`、`graph/snapshots.py`，含同秒批次隔离测试。 |
-| 公开 SAML-D CSV 到分区 Parquet、质量清单与运行清单 | 已实现；全量转换已跑通，PIT/训练待完成 | `data/configuration.py`；`ingestion/profile.py`、`ingestion/prepare.py`、`tracking/run.py`。 |
-| 版本化规则、B0/B1/B2/B3、训练期 OOF hard negative、告警削减 KPI | 已实现，待全量执行 | `rules/engine.py`、`training/table_baseline.py`、`training/oof.py`、`evaluation/metrics.py`。 |
-| 历史图 GraphSAGE + 多架构脚手架、无标签推理、融合/校准 | GraphSAGE 已完成全量（支持最多 4 卡）；GAT/RGCN/PNA 脚手架已落地，全量对比降为 P2 可选 | `graph/snapshots.py`、`models/edge_classifiers.py`、`training/graphsage.py`、`training/fusion.py`。 |
-| 图统计 + CatBoost 基线 | 已实现，作为图统计对照候选；主线报告优先 CatBoost / GraphSAGE | `features/graph_stats.py`、`training/table_baseline.py`。 |
-| 规则基线与告警削减 KPI | 初版阈值为 `null` 致 KPI 空转；v2026.2 已按训练期分位数定阈 | `configs/rules/default.yaml`、`docs/RULE_BASELINE.md`。 |
-| 排序、校准、告警预算、切片、资源和漂移评估 | 已实现，待全量执行 | `evaluation/metrics.py`、`evaluation/monitoring.py`、`evaluation/drift.py`。 |
-| 特征的版本、负责人、来源、窗口与单测登记 | 已实现 | `configs/features.yaml`、`features/registry.py`。 |
-| 账户风险、资金路径、关联子图案件视图 | 已实现，待冻结分数执行 | `aggregation/views.py`。 |
-| Evidence Package、Typology BM25、单 Agent、SAR 草稿、事实校验 | 已实现 | `evidence/`、`investigation/`、`configs/prompts/`。 |
-| Golden 评测、Prompt/用量/成本记录 | 框架与扩展 Mock cases 已实现 | `investigation/golden.py`、`golden/mock_cases.json`；正式 100 案人工标注仍待补。 |
-| 内部 API、人工复核、Mock Demo、Docker、CI | 已实现并通过 | `api/`、`Dockerfile`、`docker-compose.demo.yml`、`.github/workflows/ci.yml`（`e50ce5f` 全绿）。 |
+| 固定时间外切分与 PIT 防泄漏 | 已实现；全量已跑通 | `data/splits.py`、`features/pit.py`、`graph/snapshots.py`。 |
+| 公开 SAML-D CSV → 分区 Parquet、质量清单与运行清单 | 已实现；全量完成 | `ingestion/`；`artifacts/prepared_transactions`。 |
+| 版本化规则、告警削减 KPI | 已实现；全量 KPI 已产出 | `configs/rules/default.yaml` v2026.2、`docs/RULE_BASELINE.md`、`artifacts/table_baseline_rules`。 |
+| 历史图边分类 + 多架构、无标签推理、融合/校准 | **已完成**；主线图为 **GAT**，主线融合为 **catboost+GAT** | `artifacts/{gat,graph_oof_gat,fusion_cb_gat,fusion_test_cb_gat}`；对照见 GraphSAGE / RGCN / PNA。 |
+| 图统计 + CatBoost | 已实现；**对照**，不进主线融合 | `features/graph_stats.py`；见 RESULTS。 |
+| 排序、校准、告警预算、切片、漂移 | 已实现；全量已执行 | `evaluation/`；各 `metrics.json`。 |
+| 特征登记 | 已实现 | `configs/features.yaml`、`features/registry.py`。 |
+| 账户风险 / 资金路径 / 案件视图 | 已实现；GAT 冻结分已跑 | `artifacts/test_investigation_views_gat`。 |
+| Evidence Package、Typology、单 Agent、SAR、事实校验 | 已实现 | `evidence/`、`investigation/`。 |
+| Golden 评测 | **30 案 v1 已裁定**（用户授权 agent，非第三方面板） | `golden/cases_v1.json`、`golden/adjudication_v1.json`。 |
+| 内部 API、Demo、Docker、CI | 已实现并通过 | `api/`、CI 工作流。 |
 
 ## 本机可复核结果
 
-- `python -m ruff check src tests` / `python -m pytest`：以当前仓库测试为准。
-- Docker Demo：`/healthz` 与 `/demo` 已烟雾通过。
-- CI：[run 29982602058](https://github.com/juhaoyang666-hash/aml_evidence_graph/actions/runs/29982602058) success。
-- SAML-D 全量转换：`run_id=20260723T040559Z-02a632c9c2`；PIT 全量构建进行中。
-- 烟雾全链路：`pit_features_smoke`（`20260723T063912Z-27a5e63206`）→
-  `models_smoke/` 下 table / GraphSAGE / OOF / fusion / fusion_test / investigation_views。
-  指标不可对外引用；全量须换路径与默认 OOF 参数重跑。
-- 正式复现清单：`docs/FULL_RUN_AFTER_PIT.md`。
+- `ruff` / `pytest` / Golden（`cases_v1.json`）：以当前仓库为准。
+- Docker Demo：`/healthz`、`/demo` 烟雾通过。
+- 全量转换 / PIT / 训练 / 融合 / 调查视图：见 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)。
+- 正式数字与 run_id：见 [RESULTS.md](RESULTS.md)。
 
-## 仍需等待或外部输入的验收项
+## 组织侧仍开放（非工程缺口）
 
-1. 全量 PIT 完成后的表格/图训练、融合与冻结测试评估；完成后才可填写真实指标与告警削减率。
-2. 扩展至约 100 个经复核的 Golden cases、调查容量预算、模型晋升阈值。
-3. 成熟版：在同一协议下完成 GAT/RGCN/PNA 全量对比实验。
+1. 合成基准不能替代真实业务外推与晋升阈值审批。
+2. 若需独立第三方人工评审团，可在现有 30 案之上另做外审（当前 v1 为项目内裁定）。

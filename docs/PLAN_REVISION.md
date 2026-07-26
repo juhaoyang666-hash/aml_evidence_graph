@@ -10,7 +10,7 @@
 |---|---|---|
 | PIT / 时间外切分 / 无标签图推理 | 严格 | **保留**，这是本项目最强的差异点 |
 | 指标口径（PR-AUC 为主 + 告警预算） | 合理 | **保留**；对外数字须带数据集、run_id、切分协议 |
-| `graph_stats_catboost` | 平行候选 | **保留为候选基线**；主线报告以 `catboost` 与 `graphsage` 为主 |
+| `graph_stats_catboost` | 平行候选 | **保留为对照基线**；主线报告以 `catboost` 与 **GAT**（及 `catboost+GAT` 融合）为主 |
 | 规则基线与告警削减 KPI | 核心 KPI | 初版空转，已用训练期分位数修好，见 §2 |
 | GAT/RGCN/PNA 全量对比 | 成熟版目标 | **已完成**；GAT 升为主线图模型，主线融合改为 `catboost + GAT`，见 §4 / RESULTS |
 | 100 例人工 Golden | 验收项 | **缩减到 30 例**，见 §4 |
@@ -137,7 +137,9 @@
 | `graphsage`（GPU） | 完成，test PR-AUC 0.8777 |
 | `table_oof` / `graph_oof` | 完成 |
 | `fusion` / `fusion_test`（含 graph_stats 三路对照） | 完成 |
-| 双路融合 `catboost+graphsage` | 完成 → `artifacts/fusion_cb_gs` / `fusion_test_cb_gs`；PR-AUC 0.8973 |
-| 调查视图 | 完成 → `artifacts/test_investigation_views` |
-| RESULTS.md / MODEL_CARD / Golden 30 | 完成；Golden v1 已用户授权 agent 裁定（`golden/adjudication_v1.json`） |
-| GAT/RGCN/PNA 全量对比 | **完成**；GAT 0.9483 / RGCN 0.9031 / GraphSAGE 0.8777 / PNA 0.7049（见 RESULTS） |
+| 双路融合 `catboost+graphsage` | 完成（原主线，保留可比）；PR-AUC 0.8973 |
+| 双路融合 `catboost+GAT` | **主线**；PR-AUC **0.9175** → `fusion_cb_gat` / `fusion_test_cb_gat` |
+| GAT OOF / 调查视图（GAT） | 完成 → `graph_oof_gat` / `test_investigation_views_gat` |
+| 调查视图（原 GraphSAGE 融合） | 完成 → `artifacts/test_investigation_views` |
+| RESULTS.md / MODEL_CARD / Golden 30 | 完成；Golden v1 已用户授权 agent 裁定 |
+| GAT/RGCN/PNA 全量对比 | **完成**；GAT 0.9483 > RGCN 0.9031 > GraphSAGE 0.8777 > PNA 0.7049 |

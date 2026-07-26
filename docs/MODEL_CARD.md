@@ -82,7 +82,8 @@ Precision/Recall、固定 FPR Recall、每发现一例所需告警数、**固定
   分位数上定阈（验证/测试期未参与），测试期告警率约 8.79%、召回约 0.215。
   告警削减率必须相对该基线、在同召回点上报告。见 [RULE_BASELINE.md](RULE_BASELINE.md)。
 - 合成标签与真实洗钱分布存在差异；不得把合成指标当作真实业务识别率。
-- 主线报告优先引用表格 CatBoost 与 GraphSAGE；`graph_stats_catboost` 作为图统计对照基线。
+- 主线报告优先引用表格 CatBoost、**GAT** 与 **`catboost + GAT` 融合**；GraphSAGE 融合与
+  `graph_stats_catboost` 仅作对照。引用融合数字时须同时披露单独 GAT（更高）。
 - 标签覆盖与案件关闭延迟可能造成概念漂移或选择偏差；按月和模式切片监控。
 - 未知账户哈希桶存在碰撞风险；必须在冷启动切片中报告。
 - 图路径和 SHAP 说明模型/历史证据，不构成因果或犯罪认定。
