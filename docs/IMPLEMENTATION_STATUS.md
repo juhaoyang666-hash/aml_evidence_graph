@@ -34,7 +34,10 @@
 | GraphSAGE | `artifacts/graphsage` | 完成；测试 PR-AUC **0.8777** |
 | table_oof / graph_oof | `artifacts/table_oof`, `artifacts/graph_oof` | 完成（默认 3 splits / min 2 months） |
 | 三路融合（含 graph_stats） | `artifacts/fusion`, `artifacts/fusion_test` | 完成；作对照 |
-| 双路融合 catboost+graphsage | `artifacts/fusion_cb_gs`, `artifacts/fusion_test_cb_gs` | 完成；测试 PR-AUC **0.8973** |
+| 双路融合 catboost+graphsage | `artifacts/fusion_cb_gs`, `artifacts/fusion_test_cb_gs` | 完成；测试 PR-AUC **0.8973**（原主线） |
+| 双路融合 catboost+GAT | `artifacts/fusion_cb_gat`, `artifacts/fusion_test_cb_gat` | 完成；测试 PR-AUC **0.9175**（主线） |
+| GAT OOF | `artifacts/graph_oof_gat` | 完成；4,524,912 行 / 3 折 |
+| 调查视图（GAT 冻结分） | `artifacts/test_investigation_views_gat` | 完成；账户 307,103 / 路径 135 / 案件 212 |
 | 调查视图 | `artifacts/test_investigation_views` | 完成 |
 | Golden 30 | `golden/cases_v1.json` + `golden/adjudication_v1.json` | 用户授权 agent 裁定完成（非第三方面板） |
 | GAT/RGCN/PNA | `artifacts/{gat,rgcn,pna}` | **完成**；测试 PR-AUC GAT **0.9483** / RGCN **0.9031** / PNA **0.7049**（vs GraphSAGE 0.8777） |
@@ -54,7 +57,9 @@
 ## 尚待 / 进行中
 
 - **GAT / RGCN / PNA 全量对比**：~~进行中~~ **已完成**；数字见 [RESULTS.md](RESULTS.md)
-  「Edge GNN architecture comparison」。主线仍报 CatBoost / GraphSAGE / 双路融合。
+  「Edge GNN architecture comparison」。对比后 **GAT 升为主线图模型**，主线双路融合改为
+  `catboost + GAT`（0.9175）；原 `catboost + graphsage`（0.8973）保留可比。引用融合数字时
+  须同时披露单独 GAT 的 0.9483。
 - **Golden 裁定**：`adjudication_v1.json` 已完成（adjudicator=`agent-authorized-by-user`）。
   这是项目裁定的回归真相集，**不是**独立第三方人工评审团。
 - **PIT 重写 / 大规模架构变更**：无必要则不做。

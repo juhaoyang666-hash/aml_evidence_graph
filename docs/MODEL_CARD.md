@@ -28,9 +28,10 @@
 1. 审批规则基线（`configs/rules/default.yaml` v2026.2）。
 2. Logistic Regression 与 CatBoost 表格基线。
 3. 因果图统计 + CatBoost（对照 / ablation）。
-4. 历史边邻居采样的图边分类（默认 GraphSAGE；GAT / RGCN / PNA 同协议全量对比已完成，
-   见 RESULTS「Edge GNN architecture comparison」）。
-5. 训练期时间滚动 OOF 融合器，以及只在验证集选择的概率校准器和告警阈值。
+4. 历史边邻居采样的图边分类（架构可选 GraphSAGE / GAT / RGCN / PNA）。同协议全量对比后
+   **GAT 为主线图模型**，主线双组件融合为 `catboost + GAT`；见 RESULTS
+   「Edge GNN architecture comparison」与「Main-line model choice」。
+5. 训练期时间滚动 OOF 的逻辑回归融合器，以及只在验证集选择的概率校准器和告警阈值。
 
 图模型报告账户重叠率、冷启动账户/交易比例、边数量、吞吐和 CPU/GPU 内存；未知账户
 只映射到稳定哈希桶，不从未来节点拟合映射。
@@ -45,18 +46,23 @@
 | rules (v2026.2) | 基线 | 0.0015 | 0.0019 / 0.0017 | `20260725T103959Z-27c7d65545` |
 | logistic | 表格 | 0.1966 | 0.2809 / 0.2416 | 同上 |
 | **CatBoost** | **主线表格** | **0.8092** | **0.8576 / 0.7375** | 同上（`artifacts/table_baseline_rules`） |
-| **GraphSAGE** | **主线图** | **0.8777** | **0.8736 / 0.7512** | `20260725T090511Z-70e9a15e7b` |
-| fusion (catboost + graphsage) | 双组件融合 | 0.8973 | 0.9076 / 0.7805 | `20260725T145745Z-a7d61d7c8d` |
+| GraphSAGE | 图（原主线，保留可比） | 0.8777 | 0.8736 / 0.7512 | `20260725T090511Z-70e9a15e7b` |
+| **GAT** | **主线图** | **0.9483** | **0.9743 / 0.8378** | `20260726T023031Z-5ccb81baec` |
+| fusion (catboost + graphsage) | 双组件融合（原主线） | 0.8973 | 0.9076 / 0.7805 | `20260725T145745Z-a7d61d7c8d` |
+| **fusion (catboost + GAT)** | **主线双组件融合** | **0.9175** | **0.9359 / 0.8047** | `20260726T090744Z-4a97fdf32f` |
 
-同协议边 GNN 架构对比（附加，非主线替换）：GAT 0.9483 / RGCN 0.9031 /
-GraphSAGE 0.8777 / PNA 0.7049（测试 PR-AUC；0.1% 预算详见 RESULTS）。主线报告仍优先
-CatBoost、GraphSAGE 与双组件融合。
+同协议边 GNN 架构对比：GAT 0.9483 / RGCN 0.9031 / GraphSAGE 0.8777 / PNA 0.7049
+（测试 PR-AUC；0.1% 预算详见 RESULTS）。
+
+**必须同时披露的口径**：`catboost + GAT` 融合（0.9175）优于原 `catboost + graphsage`
+（0.8973）与单独 CatBoost（0.8092），但**不**优于单独 GAT（0.9483）。对外引用融合数字时
+须同时给出单模型数字，不得只选有利的一个。
 
 告警削减（相对规则、同召回）：CatBoost 在 50% 召回点削减约 **99.86%**
 （模型告警 908 vs 规则 649,036）。见 RESULTS 中 `alert_reduction_vs_rules`。
 
 `graph_stats_catboost` 与含该组件的三路融合另作对照，见 RESULTS；主线报告优先引用
-CatBoost、GraphSAGE 与双组件融合。
+CatBoost、GAT 与 `catboost + GAT` 双组件融合。两路融合均不含 `graph_stats`。
 
 ## 评价与晋升
 
