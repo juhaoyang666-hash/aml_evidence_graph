@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from aml_evidence_graph.evidence.package import RiskEvidencePackage
+from aml_evidence_graph.evidence.package import InvestigationAnnotation, RiskEvidencePackage
 from aml_evidence_graph.evidence.typology import LocalBM25TypologyRetriever, load_typology_documents
+from aml_evidence_graph.investigation.evaluation import evaluate_investigation_report
 from aml_evidence_graph.investigation.llm import EvidenceAnnotationClient
 from aml_evidence_graph.investigation.workflow import run_investigation
 from aml_evidence_graph.settings import Settings
@@ -27,6 +30,24 @@ class GoldenCase(BaseModel):
     evidence: RiskEvidencePackage
     expected_typology_ids: list[str] = Field(default_factory=list)
     expect_rejected_facts: bool = False
+    case_category: Literal["typology", "low_evidence", "adversarial"] | None = None
+    # When set, forces this annotation through validation (hallucination-intercept probes).
+    injected_annotation: InvestigationAnnotation | None = None
+
+
+class _FixedAnnotationClient:
+    """Deterministic annotator used for hallucination-intercept Golden probes."""
+
+    def __init__(self, annotation: InvestigationAnnotation) -> None:
+        self._annotation = annotation
+
+    def annotate(
+        self,
+        evidence: RiskEvidencePackage,
+        references: list[object],
+    ) -> InvestigationAnnotation:
+        del evidence, references
+        return self._annotation
 
 
 @dataclass(frozen=True)
@@ -34,14 +55,18 @@ class GoldenCaseResult:
     """Per-case test evidence suitable for prompt-regression comparison."""
 
     case_id: str
+    case_category: str | None
     schema_valid: bool
     fact_snapshot_matches: bool
     evidence_coverage: float
     typology_match: bool | None
     correct_rejection: bool
+    no_evidence_refusal: bool
+    hallucination_intercepted: bool | None
     tool_call_limit_respected: bool
     latency_ms: float
     annotation_used: bool
+    report_status: str
     prompt_version: str | None
     model_name: str | None
     prompt_tokens: int | None
@@ -59,8 +84,12 @@ class GoldenSetSummary:
     mean_evidence_coverage: float
     typology_match_rate: float | None
     correct_rejection_rate: float
+    no_evidence_refusal_rate: float | None
+    hallucination_intercept_rate: float | None
     tool_limit_pass_rate: float
     mean_latency_ms: float
+    latency_p50_ms: float
+    latency_p95_ms: float
     llm_annotation_rate: float
     token_usage_coverage_rate: float
     reported_prompt_tokens: int
@@ -68,6 +97,7 @@ class GoldenSetSummary:
     estimated_cost_usd: float | None
     prompt_versions: list[str]
     model_names: list[str]
+    category_counts: dict[str, int]
     cases: list[GoldenCaseResult]
 
 
@@ -81,6 +111,20 @@ def load_golden_cases(path: Path) -> list[GoldenCase]:
     raise ValueError("Golden case file must contain a JSON object or array.")
 
 
+def _percentile(sorted_values: list[float], percentile: float) -> float:
+    if not sorted_values:
+        return 0.0
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    rank = (len(sorted_values) - 1) * percentile
+    lower = math.floor(rank)
+    upper = math.ceil(rank)
+    if lower == upper:
+        return sorted_values[lower]
+    weight = rank - lower
+    return sorted_values[lower] * (1.0 - weight) + sorted_values[upper] * weight
+
+
 def evaluate_golden_set(
     cases: list[GoldenCase],
     *,
@@ -92,11 +136,16 @@ def evaluate_golden_set(
         raise ValueError("At least one Golden Case is required.")
     results: list[GoldenCaseResult] = []
     for case in cases:
+        case_annotator: EvidenceAnnotationClient | _FixedAnnotationClient | None
+        if case.injected_annotation is not None:
+            case_annotator = _FixedAnnotationClient(case.injected_annotation)
+        else:
+            case_annotator = annotator
         started_at = time.perf_counter()
         report = run_investigation(
             case.evidence,
             retriever=retriever,
-            annotator=annotator,
+            annotator=case_annotator,
         )
         latency_ms = (time.perf_counter() - started_at) * 1_000
         expected_snapshot = case.evidence.model_dump(mode="json")
@@ -124,9 +173,14 @@ def evaluate_golden_set(
             if case.expected_typology_ids
             else None
         )
+        gate = evaluate_investigation_report(case.evidence, report)
+        hallucination_intercepted: bool | None = None
+        if case.injected_annotation is not None and case.expect_rejected_facts:
+            hallucination_intercepted = report.status == "rejected_facts"
         results.append(
             GoldenCaseResult(
                 case_id=case.case_id,
+                case_category=case.case_category,
                 schema_valid=report.report_schema_version == "1.0",
                 fact_snapshot_matches=report.fact_snapshot == expected_snapshot,
                 evidence_coverage=coverage,
@@ -136,9 +190,12 @@ def evaluate_golden_set(
                     if case.expect_rejected_facts
                     else report.status == "draft_requires_human_review"
                 ),
+                no_evidence_refusal=gate.no_evidence_refusal,
+                hallucination_intercepted=hallucination_intercepted,
                 tool_call_limit_respected=report.tool_call_count <= 4,
                 latency_ms=latency_ms,
                 annotation_used=report.llm_annotation is not None,
+                report_status=report.status,
                 prompt_version=(
                     report.llm_annotation.prompt_version
                     if report.llm_annotation is not None
@@ -183,6 +240,21 @@ def evaluate_golden_set(
     model_names = sorted(
         {result.model_name for result in annotations if result.model_name is not None}
     )
+    latencies = sorted(result.latency_ms for result in results)
+    low_evidence_cases = [
+        result
+        for result, case in zip(results, cases, strict=True)
+        if case.case_category == "low_evidence" or bool(case.evidence.missing_evidence)
+    ]
+    hallucination_probes = [
+        result.hallucination_intercepted
+        for result in results
+        if result.hallucination_intercepted is not None
+    ]
+    category_counts: dict[str, int] = {}
+    for result in results:
+        key = result.case_category or "unspecified"
+        category_counts[key] = category_counts.get(key, 0) + 1
     return GoldenSetSummary(
         case_count=len(results),
         schema_compliance_rate=sum(result.schema_valid for result in results) / len(results),
@@ -195,11 +267,24 @@ def evaluate_golden_set(
         typology_match_rate=(sum(comparable) / len(comparable) if comparable else None),
         correct_rejection_rate=sum(result.correct_rejection for result in results)
         / len(results),
+        no_evidence_refusal_rate=(
+            sum(result.no_evidence_refusal for result in low_evidence_cases)
+            / len(low_evidence_cases)
+            if low_evidence_cases
+            else None
+        ),
+        hallucination_intercept_rate=(
+            sum(hallucination_probes) / len(hallucination_probes)
+            if hallucination_probes
+            else None
+        ),
         tool_limit_pass_rate=sum(
             result.tool_call_limit_respected for result in results
         )
         / len(results),
         mean_latency_ms=sum(result.latency_ms for result in results) / len(results),
+        latency_p50_ms=_percentile(latencies, 0.50),
+        latency_p95_ms=_percentile(latencies, 0.95),
         llm_annotation_rate=len(annotations) / len(results),
         token_usage_coverage_rate=(
             len(token_usage) / len(annotations) if annotations else 0.0
@@ -215,6 +300,7 @@ def evaluate_golden_set(
         ),
         prompt_versions=prompt_versions,
         model_names=model_names,
+        category_counts=category_counts,
         cases=results,
     )
 
@@ -266,6 +352,10 @@ def main() -> None:
             "case_count": summary.case_count,
             "prompt_versions": summary.prompt_versions,
             "model_names": summary.model_names,
+            "hallucination_intercept_rate": summary.hallucination_intercept_rate,
+            "no_evidence_refusal_rate": summary.no_evidence_refusal_rate,
+            "latency_p50_ms": summary.latency_p50_ms,
+            "latency_p95_ms": summary.latency_p95_ms,
         },
         filename=f"{args.output.stem}_run_manifest.json",
     )
@@ -274,6 +364,10 @@ def main() -> None:
             {
                 "case_count": summary.case_count,
                 "fact_snapshot_match_rate": summary.fact_snapshot_match_rate,
+                "hallucination_intercept_rate": summary.hallucination_intercept_rate,
+                "no_evidence_refusal_rate": summary.no_evidence_refusal_rate,
+                "latency_p50_ms": summary.latency_p50_ms,
+                "latency_p95_ms": summary.latency_p95_ms,
                 "run_id": manifest.run_id,
                 "output": str(args.output),
             },
