@@ -1,7 +1,25 @@
 # AML 环境与运行约定
 
-环境名为 aml-evidence。普通依赖已通过清华 PyPI 镜像安装；CUDA PyTorch 2.5.1
-使用官方 cu121 轮子，并已在 NVIDIA GeForce RTX 2060 上验证 CUDA 可用。
+## 当前运行环境（Linux，全量实验所用）
+
+全量 PIT、训练与评估在 Linux 服务器上执行，环境为 conda `risk`：
+
+    PY=/data1/yangjuhao/envs/risk/bin/python   # Python 3.12
+    cd /data1/yangjuhao/反洗钱/aml_evidence_graph
+    export PYTHONPATH=src
+
+- PyTorch **2.5.1+cu121**（官方 `download.pytorch.org/whl/cu121`），CUDA 可用
+- GPU：8× NVIDIA RTX 3090；GraphSAGE 默认最多用 **4 张**
+  （`--max-gpus`，或 `CUDA_VISIBLE_DEVICES` 限制）
+- torch-geometric 2.8 + `pyg_lib` / `torch_scatter` / `torch_sparse`（pt25cu121）
+- 长任务须在 **tmux** 会话中运行，便于断连后继续
+- 链路脚本：`scripts/run_full_train_chain.sh`、`scripts/run_remaining_gpu.sh`
+
+## 历史环境（Windows，早期开发）
+
+早期在 Windows 下使用 conda `aml-evidence`（cu121 PyTorch 2.5.1，RTX 2060）。
+本文档与 `FULL_RUN_AFTER_PIT.md` 中的 PowerShell 命令属于该环境，
+在 Linux 上请改用上面的 `$PY -m ...` 形式。
 
 主训练数据是公开合成数据集 **SAML-D**（`../data/SAML-D.csv`）。不要把它包装成
 私有/真实业务数据。本地 API 令牌仍必须是至少 32 个字符的随机值；示例配置文件中的

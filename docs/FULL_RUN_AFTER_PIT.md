@@ -3,6 +3,13 @@
 > 用途：`artifacts/pit_features` 写出 `_run_manifest.json` 且分区完整后执行。  
 > **不要**沿用烟雾路径的 `--splits 1 --minimum-training-months 1` 或 `models.smoke.yaml`。  
 > 下列指标可写入模型卡；烟雾指标不可引用。
+>
+> **环境说明**：本文命令为早期 Windows PowerShell 形式。当前全量实验在 Linux 上执行，
+> 请改用 `PY=/data1/yangjuhao/envs/risk/bin/python` + `export PYTHONPATH=src`，
+> 并在 tmux 中运行；成套脚本见 `scripts/run_full_train_chain.sh`。
+> 参见 [ENVIRONMENT.md](ENVIRONMENT.md) 与 [PLAN_REVISION.md](PLAN_REVISION.md)。
+>
+> 主线报告优先 `catboost` 与 `graphsage`；`graph_stats_catboost` 可作为对照基线一并产出。
 
 ## 0. 开工前检查
 
