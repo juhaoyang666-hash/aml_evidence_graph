@@ -1,0 +1,34 @@
+version: "models-v1"
+
+random_seed: 20260722
+
+evaluation:
+  alert_budget_fractions: [0.001, 0.005, 0.01]
+  fixed_fpr_targets: [0.0001, 0.0005, 0.001]
+  bootstrap_iterations: 0
+  recommended_bootstrap_iterations: 200
+
+catboost:
+  iterations: 800
+  depth: 8
+  learning_rate: 0.05
+  loss_function: Logloss
+  eval_metric: PRAUC
+  random_seed: 20260722
+
+graphsage:
+  architecture: pna
+  hidden_dim: 64
+  num_layers: 2
+  num_neighbors: [15, 10]
+  batch_size: 2048
+  epochs: 12
+  learning_rate: 0.001
+  dropout: 0.15
+  early_stopping_patience: 3
+  history_window_days: 30
+
+fusion:
+  training_input: train_oof_predictions_only
+  calibration_split: validation_only
+  alert_budget_fraction: 0.005

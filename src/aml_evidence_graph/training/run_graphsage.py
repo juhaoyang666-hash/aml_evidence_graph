@@ -35,8 +35,8 @@ from aml_evidence_graph.training.configuration import (
     load_model_configuration,
 )
 from aml_evidence_graph.training.graphsage import (
-    GraphSAGETrainingConfig,
     MAX_GRAPHSAGE_GPUS,
+    GraphSAGETrainingConfig,
     fit_graphsage,
     predict_graphsage,
 )
@@ -305,7 +305,10 @@ def parse_args() -> argparse.Namespace:
         "--max-gpus",
         type=int,
         default=MAX_GRAPHSAGE_GPUS,
-        help=f"Maximum CUDA devices for GraphSAGE when --device is cuda/auto (default {MAX_GRAPHSAGE_GPUS}).",
+        help=(
+            "Maximum CUDA devices for GraphSAGE when --device is cuda/auto "
+            f"(default {MAX_GRAPHSAGE_GPUS})."
+        ),
     )
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--batch-size", type=int)
