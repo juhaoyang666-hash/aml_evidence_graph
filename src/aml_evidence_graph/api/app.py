@@ -69,7 +69,8 @@ DEMO_HTML = """
         <code>artifacts/</code>、完整交易或冻结模型分数。演示分数不可当作 SAML-D
         评估指标或业务结论。LLM 不参与评分。
       </div>
-      <p>点击下方按钮生成<strong>证据约束</strong>的调查草稿与 SAR 草稿（确定性模板，无需外部 LLM）。</p>
+      <p>点击下方按钮生成<strong>证据约束</strong>的调查草稿与 SAR 草稿
+        （确定性模板，无需外部 LLM）。</p>
       <button id="load">加载 Mock 调查草稿</button>
       <section>
         <h2>摘要</h2>

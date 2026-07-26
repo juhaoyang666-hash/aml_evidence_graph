@@ -46,7 +46,7 @@ body: "Transaction risk investigation."
         "llm_scoring": "disabled",
         "llm_annotation": "disabled",
     }
-    assert "fictional demonstration" in demo.text
+    assert "虚构 Evidence Package" in demo.text
     assert score_response.status_code == 200
     assert evidence_response.status_code == 200
     assert response.status_code == 200

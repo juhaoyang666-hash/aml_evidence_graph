@@ -9,7 +9,9 @@
 | 固定时间外切分与 PIT 防泄漏 | 已实现 | `data/splits.py`、`features/pit.py`、`graph/snapshots.py`，含同秒批次隔离测试。 |
 | 公开 SAML-D CSV 到分区 Parquet、质量清单与运行清单 | 已实现；全量转换已跑通，PIT/训练待完成 | `data/configuration.py`；`ingestion/profile.py`、`ingestion/prepare.py`、`tracking/run.py`。 |
 | 版本化规则、B0/B1/B2/B3、训练期 OOF hard negative、告警削减 KPI | 已实现，待全量执行 | `rules/engine.py`、`training/table_baseline.py`、`training/oof.py`、`evaluation/metrics.py`。 |
-| 历史图 GraphSAGE + 多架构脚手架、无标签推理、融合/校准 | GraphSAGE 已实现；GAT/RGCN/PNA 脚手架已落地，待全量对比 | `graph/snapshots.py`、`models/edge_classifiers.py`、`training/graphsage.py`、`training/fusion.py`。 |
+| 历史图 GraphSAGE + 多架构脚手架、无标签推理、融合/校准 | GraphSAGE 已完成全量（支持最多 4 卡）；GAT/RGCN/PNA 脚手架已落地，全量对比降为 P2 可选 | `graph/snapshots.py`、`models/edge_classifiers.py`、`training/graphsage.py`、`training/fusion.py`。 |
+| 图统计 + CatBoost 基线 | 已实现，作为图统计对照候选；主线报告优先 CatBoost / GraphSAGE | `features/graph_stats.py`、`training/table_baseline.py`。 |
+| 规则基线与告警削减 KPI | 初版阈值为 `null` 致 KPI 空转；v2026.2 已按训练期分位数定阈 | `configs/rules/default.yaml`、`docs/RULE_BASELINE.md`。 |
 | 排序、校准、告警预算、切片、资源和漂移评估 | 已实现，待全量执行 | `evaluation/metrics.py`、`evaluation/monitoring.py`、`evaluation/drift.py`。 |
 | 特征的版本、负责人、来源、窗口与单测登记 | 已实现 | `configs/features.yaml`、`features/registry.py`。 |
 | 账户风险、资金路径、关联子图案件视图 | 已实现，待冻结分数执行 | `aggregation/views.py`。 |
