@@ -43,7 +43,7 @@ def pure_torch_neighbor_sample(
         hop_cols: list[int] = []
         hop_edges: list[int] = []
 
-        for local_src, global_src in enumerate(frontier.tolist()):
+        for global_src in frontier.tolist():
             start = int(colptr[global_src].item())
             end = int(colptr[global_src + 1].item())
             degree = end - start
@@ -59,7 +59,7 @@ def pure_torch_neighbor_sample(
                 chosen = start + offsets
 
             neighbors = row[chosen].to(torch.long)
-            for edge_pos, neighbor in zip(chosen.tolist(), neighbors.tolist()):
+            for edge_pos, neighbor in zip(chosen.tolist(), neighbors.tolist(), strict=True):
                 if neighbor not in global_to_local:
                     global_to_local[neighbor] = len(nodes_ordered)
                     nodes_ordered.append(neighbor)
