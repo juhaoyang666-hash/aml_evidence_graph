@@ -25,19 +25,28 @@
 **须同时披露**：融合（0.918）优于表格与原 GraphSAGE 融合，但**不**优于单独 GAT（0.948）。
 `graph_stats` / 三路融合仅作对照，不进主线。
 
-同协议边 GNN：GAT 0.948 > RGCN 0.903 > GraphSAGE 0.878 > PNA 0.705。
+同协议边 GNN：GAT 0.948 > RGCN 0.903 > GraphSAGE 0.878 > PNA 0.705；
+多关系 RGCN（R=4）消融 **0.887**（未超过单关系 RGCN / GAT）。
 
 ## 文档入口
 
 | 文档 | 内容 |
 |---|---|
-| [RESULTS.md](docs/RESULTS.md) | 全量指标表、融合对比、架构对比、Bootstrap CI、Golden、调查视图 |
+| [RESULTS.md](docs/RESULTS.md) | 全量指标表、融合对比、架构对比、Bootstrap CI、Golden、调查视图、算力附录 |
 | [MODEL_CARD.md](docs/MODEL_CARD.md) | 模型边界、评价协议、限制 |
 | [RESUME_BLURB.md](docs/RESUME_BLURB.md) | **简历项目描述（可粘贴）** |
 | [INTERVIEW_TALKING_POINTS.md](docs/INTERVIEW_TALKING_POINTS.md) | **面试自答要点** |
 | [CATBOOST_GAP_DIAGNOSIS.md](docs/CATBOOST_GAP_DIAGNOSIS.md) | CatBoost vs GAT 差距诊断 |
 | [ASSOCIATION_CASE_WORKFLOW.md](docs/ASSOCIATION_CASE_WORKFLOW.md) | 关联风险 / 案件视图工作流 |
 | [BATCH_FEATURE_NOTE.md](docs/BATCH_FEATURE_NOTE.md) | 批式特征与大数据话术 |
+| [BATCH_FEATURE_REPLAY.md](docs/BATCH_FEATURE_REPLAY.md) | DuckDB/Polars PIT 特征重放验算 |
+| [DRIFT_MONITORING.md](docs/DRIFT_MONITORING.md) | 时间切片漂移 / 阈值重校准 |
+| [COMMUNITY_BASELINE.md](docs/COMMUNITY_BASELINE.md) | 高分账户子图社区 baseline |
+| [RELATION_ABLATION.md](docs/RELATION_ABLATION.md) | 多关系 RGCN / 关系 embedding 消融 |
+| [UNSUPERVISED_BASELINE.md](docs/UNSUPERVISED_BASELINE.md) | 无监督异常检测对照 |
+| [SEQUENCE_BASELINE.md](docs/SEQUENCE_BASELINE.md) | 账户序列 GRU baseline |
+| [GAT_DISTILL.md](docs/GAT_DISTILL.md) | GAT→CatBoost 特征蒸馏 |
+| [NONLINEAR_FUSION.md](docs/NONLINEAR_FUSION.md) | 非线性 OOF 融合消融 |
 | [FULL_RUN_AFTER_PIT.md](docs/FULL_RUN_AFTER_PIT.md) | **Linux 全量复现命令**（主线 GAT） |
 | [ENVIRONMENT.md](docs/ENVIRONMENT.md) | conda `risk`、GPU、ECNU LLM |
 | [RULE_BASELINE.md](docs/RULE_BASELINE.md) | 规则 v2026.2 定阈说明 |
@@ -79,7 +88,8 @@ $PY -m aml_evidence_graph.features.build \
 **主线全量复现（GAT + catboost+GAT）**：[docs/FULL_RUN_AFTER_PIT.md](docs/FULL_RUN_AFTER_PIT.md)。
 
 辅助脚本：`scripts/run_full_train_chain.sh`、`scripts/run_remaining_gpu.sh`、
-`scripts/run_arch_comparison.sh`、`scripts/backfill_rule_hits.py`。
+`scripts/run_arch_comparison.sh`、`scripts/backfill_rule_hits.py`、
+`scripts/tmux_launch_tier_ab.sh`（漂移/社区/无监督/序列/蒸馏等算力附录）。
 
 ## 调查视图 / API / Golden
 
@@ -90,13 +100,15 @@ $PY -m aml_evidence_graph.features.build \
 # Mock Demo（无完整交易）
 $PY -m aml_evidence_graph.api.app   # 或安装后的 aml-api；浏览器 http://127.0.0.1:8000/demo
 
-# Golden（30 案裁定集；默认不调外部 LLM）
+# Golden（30 案裁定集 + B5 扩容对抗探针；默认不调外部 LLM）
 $PY -m aml_evidence_graph.investigation.golden \
   --cases golden/cases_v1.json --typologies knowledge/typologies \
   --output artifacts/golden_summary.json
 # 可选：--use-llm（需 AML_LLM_ENABLED 与 ECNU_API_KEY，见 ENVIRONMENT.md）
 ```
 
+当前模板路径回归为 **34** 案（原 30 + 4 对抗扩容）；幻觉拦截 / 无证据拒答仍为 1.0，见
+[LLM_GUARDRAILS_SUMMARY.md](docs/LLM_GUARDRAILS_SUMMARY.md)。
 ## 本地验收
 
 ```bash

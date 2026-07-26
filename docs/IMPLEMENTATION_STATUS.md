@@ -1,8 +1,10 @@
-# 实施状态（2026-07-26：主线升级为 catboost + GAT）
+# 实施状态（2026-07-26：主线 catboost + GAT；算力附录 Tier A/B 已完成）
 
 > **2026-07-25**：全量 PIT → 表格基线 → GraphSAGE → OOF → 融合 → 调查视图跑通。  
 > **2026-07-26**：同协议架构对比后 **GAT 升为主线图**；完成 `graph_oof_gat` →
 > `fusion_cb_gat` → `fusion_test_cb_gat` → `test_investigation_views_gat`。  
+> 同日完成算力附录：漂移 / 社区 / 无监督 / 多关系 RGCN / 序列 / 蒸馏 / 非线性融合 /
+> 批式重放 / Golden 对抗扩容（**不改变**主线数字）。  
 > 主线指标见 [RESULTS.md](RESULTS.md)；模型卡见 [MODEL_CARD.md](MODEL_CARD.md)。
 
 ## 已实现并有自动化回归的能力
@@ -15,7 +17,8 @@
   特征登记表，以及固定召回下相对规则基线的告警削减率。
 - P2：训练期节点索引、未知账户哈希桶、仅历史边的 GraphSAGE、CPU/GPU 训练、图路径
   证据、时间滚动 OOF、验证期校准和阈值、冻结融合器的独立测试期评估；
-  GAT/RGCN/PNA 边分类架构（配置可选；同协议全量对比已完成，见 RESULTS）。
+  GAT/RGCN/PNA 边分类架构（配置可选；同协议全量对比已完成，见 RESULTS）；
+  多关系 RGCN（`num_relations=4`，`configs/models.rgcn_rel.yaml`）消融已完成。
 - P3：RiskEvidencePackage、YAML Typology + 本地 BM25、LangGraph 单 Agent、SAR 草稿、
   外部注释最小化与事实校验、版本化 Prompt、Golden Set 运行清单、FastAPI、内部鉴权、
   人工复核审计记录和只含虚构数据的 Demo；冻结交易分数的账户风险、资金路径和关联子图
@@ -38,8 +41,10 @@
 | GAT OOF | `artifacts/graph_oof_gat` | 完成；4,524,912 行 / 3 折 |
 | 调查视图（GAT 冻结分） | `artifacts/test_investigation_views_gat` | 完成；账户 307,103 / 路径 135 / 案件 212 |
 | 调查视图 | `artifacts/test_investigation_views` | 完成 |
-| Golden 30 | `golden/cases_v1.json` + `golden/adjudication_v1.json` | 用户授权 agent 裁定完成（非第三方面板） |
-| GAT/RGCN/PNA | `artifacts/{gat,rgcn,pna}` | **完成**；测试 PR-AUC GAT **0.9483** / RGCN **0.9031** / PNA **0.7049**（vs GraphSAGE 0.8777） |
+| Golden | `golden/cases_v1.json` + `golden/adjudication_v1.json` | **34** 案（原 30 + B5 对抗扩容）；模板幻觉拦截 1.0 |
+| GAT/RGCN/PNA | `artifacts/{gat,rgcn,pna}` | **完成**；GAT **0.9483** / RGCN **0.9031** / PNA **0.7049** |
+| 多关系 RGCN R=4 | `artifacts/rgcn_rel` | **完成**；测试 PR-AUC **0.8873**（负向消融） |
+| 算力附录 | `artifacts/{drift_monitoring,community_baseline,unsupervised_baseline,sequence_baseline,table_baseline_gat_distill,nonlinear_fusion,batch_feature_replay,relation_ablation}` | 完成；见 RESULTS 附录 |
 
 ## 已完成的本地验证
 
@@ -55,9 +60,11 @@
 
 ## 已关闭的工程项 / 仍开放的组织项
 
-- ~~GAT/RGCN/PNA 对比~~、~~Golden 30 裁定~~、~~主线升级为 catboost+GAT~~：均已完成，见 RESULTS。
-- **PIT 重写 / 继续堆架构**：无必要则不做。
-- **组织侧**：晋升阈值审批与真实业务外推——合成基准不能替代；Golden v1 不是第三方面板。
+- ~~GAT/RGCN/PNA 对比~~、~~Golden 裁定~~、~~主线升级为 catboost+GAT~~、
+  ~~算力附录 Tier A/B（漂移/社区/无监督/多关系/序列/蒸馏/非线性融合/批式重放/对抗扩容）~~：
+  均已完成，见 RESULTS。
+- **PIT 重写 / 继续堆架构刷小分**：无必要则不做。
+- **组织侧**：晋升阈值审批与真实业务外推——合成基准不能替代；Golden 不是第三方面板。
 
 ## 验收命令
 

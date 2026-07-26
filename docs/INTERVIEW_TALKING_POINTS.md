@@ -21,7 +21,8 @@ Point-in-time：每笔交易特征只聚合 **[t−window, t)** 的历史；同�
 
 ### 为什么主线图是 GAT 不是 GraphSAGE / RGCN？
 
-同协议（同 PIT、同切分、同 hidden/层数/fanout/epoch）对比：GAT 0.948 > RGCN 0.903 > GraphSAGE 0.878 > PNA 0.705。选 GAT 是 bake-off 结果，不是调参作弊。
+同协议（同 PIT、同切分、同 hidden/层数/fanout/epoch）对比：GAT 0.948 > RGCN 0.903 > GraphSAGE 0.878 > PNA 0.705。选 GAT 是 bake-off 结果，不是调参作弊。  
+另做 **R=4 多关系 RGCN**（跨境×换汇关系 id）：测试 PR-AUC **0.887**，**低于**单关系 RGCN——异构消融是负向的，面试可以说「试过了、没抬升、所以不堆」。见 [RELATION_ABLATION.md](RELATION_ABLATION.md)。
 
 ### 为什么还报融合？融合不是不如单 GAT 吗？
 
@@ -38,7 +39,7 @@ Point-in-time：每笔交易特征只聚合 **[t−window, t)** 的历史；同�
 
 ### LLM 在项目里干什么？会不会乱写数字？
 
-只生成分析性措辞和待查问题；出站字段最小化；返回做引用白名单 + 数值/实体正则拦截，失败则 `rejected_facts`。Golden 30：幻觉拦截率 1.0、无证据拒答率 1.0。评分链路完全不依赖 LLM。
+只生成分析性措辞和待查问题；出站字段最小化；返回做引用白名单 + 数值/实体正则拦截，失败则 `rejected_facts`。Golden **34** 案（模板路径）：幻觉拦截率 1.0（7/7 注入探针）、无证据拒答率 1.0。评分链路完全不依赖 LLM。
 
 ### 合成数据有什么局限？
 
@@ -68,12 +69,20 @@ Point-in-time：每笔交易特征只聚合 **[t−window, t)** 的历史；同�
 
 冻结融合分 → 账户风险表 → 时间递增资金路径 → 关联子图案件候选（`investigation_candidate`）。  
 主线产物：`artifacts/test_investigation_views_gat`（307k 账户 / 135 路径 / 212 案件）。  
-这是**后评分聚合**，不是异构 GNN 全量重训；扩展点可以是社区检测或多关系边类型，但当前未做大规模异构训练。详见 [ASSOCIATION_CASE_WORKFLOW.md](ASSOCIATION_CASE_WORKFLOW.md)。
+这是**后评分聚合**，不是异构 GNN 全量重训。已补：同构图社区 baseline（[COMMUNITY_BASELINE.md](COMMUNITY_BASELINE.md)）与多关系 RGCN 消融（负向，[RELATION_ABLATION.md](RELATION_ABLATION.md)）。详见 [ASSOCIATION_CASE_WORKFLOW.md](ASSOCIATION_CASE_WORKFLOW.md)。
 
-## 4. 不该说的话
+## 4. 算力附录一句话（可选加分）
+
+- **漂移**：阈值过期主要伤告警量/精度，不一定伤 PR-AUC → 先重校准。  
+- **无监督 / 短序列**：IF/AE、GRU 近随机 → 监督 PIT+GAT 仍是主武器。  
+- **蒸馏**：CatBoost 吃 GAT 分数可到 ~0.966，但这是两阶段打分，不是「表格突然变强」。  
+- **批式特征**：DuckDB/Polars 重放 `sender_outgoing_count_7d` 与官方 PIT match=1.0。
+
+## 5. 不该说的话
 
 - 「ROC 0.99 所以效果很好」（不配预算/PR）  
 - 「融合是最强模型」（不配单 GAT）  
 - 「我们在真实银行数据上验证了」  
 - 「LLM 提高了识别率」  
 - 「0.999 的 graph_stats 是主结果」
+- 「蒸馏 0.966 说明 CatBoost 超过了 GAT」（不说明两阶段特征）

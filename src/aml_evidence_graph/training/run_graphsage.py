@@ -166,6 +166,7 @@ def train_and_evaluate_graphsage(
         node_indexer,
         edge_feature_columns=edge_feature_columns,
         history_window=pd.Timedelta(days=configuration.history_window_days),
+        store_relation_types=configuration.num_relations > 1,
     )
     raw_training = builder.build(training)
     raw_validation = builder.build(validation)

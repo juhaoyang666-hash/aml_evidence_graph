@@ -48,3 +48,7 @@ PY
 - **没有**：公司级 Hive 仓、Spark 资源队列、实时特征存储。  
 - **迁移**：协议（PIT、分区、只读历史）可映射到 Spark window / 增量状态；规模上去时把
   Python 滚动状态换成分布式引擎，**语义不变**。
+
+## 已跑通的本地验算
+
+见 [BATCH_FEATURE_REPLAY.md](BATCH_FEATURE_REPLAY.md)：DuckDB / Polars 重放 `sender_outgoing_count_7d`，对抽样子集与官方 PIT **match rate = 1.0**。

@@ -141,29 +141,34 @@ Always attach: **dataset + run_id + time-split protocol**. If you quote the fusi
 number, also quote GAT alone (0.948) — the fusion is not the top scorer here.
 
 
-## Golden 30 (project-adjudicated investigation regression)
+## Golden (project-adjudicated investigation regression)
 
 Source: `golden/cases_v1.json` + adjudication record `golden/adjudication_v1.json`
-(18 typology + 6 low-evidence + 6 adversarial).  
-**Adjudicator**: `agent-authorized-by-user` (user-authorized agent pass on 2026-07-26).  
-This **is** the project’s adjudicated Golden v1 for regression — **not** an independent
+(18 typology + 6 low-evidence + **10** adversarial after B5 expansion; was 6 adversarial).  
+**Adjudicator**: `agent-authorized-by-user` (user-authorized agent pass on 2026-07-26;
+adversarial expansion also agent-authorized).  
+This **is** the project’s adjudicated Golden set for regression — **not** an independent
 third-party human panel, and not production compliance labels.
 
-### Template path (no LLM)
+### Template path (no LLM) — expanded set
 
-`artifacts/golden_summary.json` · `run_id=20260726T020456Z-e698864ca4`
+`artifacts/golden_summary.json` · `run_id=20260726T124225Z-d0dc4bc053` · **34** cases
 
 | Metric | Value |
 |---|---:|
-| Cases | 30 |
+| Cases | **34** |
 | Schema / fact-snapshot match | 1.0 / 1.0 |
-| Typology match rate | 1.0 |
 | Correct rejection rate | 1.0 |
-| Hallucination intercept rate (injected probes) | **1.0** (4/4) |
+| Hallucination intercept rate (injected probes) | **1.0** (7/7) |
 | No-evidence refusal rate | **1.0** |
-| Latency p50 / p95 (ms) | ~7.3 / ~7.8 |
+| Latency p50 / p95 (ms) | ~8.4 / ~10.4 |
 
-### LLM path (ECNU)
+### Template path (no LLM) — original Golden 30 (retained)
+
+`run_id=20260726T020456Z-e698864ca4` · 30 cases · hallucination intercept 1.0 (4/4) ·
+latency p50/p95 ~7.3 / ~7.8. Kept for comparability with the LLM path below.
+
+### LLM path (ECNU) — original 30
 
 `artifacts/golden_summary_llm.json` · `run_id=20260726T020614Z-61765ffec9` · model `ecnu-max` ·
 prompt `ecnu-risk-evidence-v1`
@@ -184,6 +189,7 @@ received LLM annotations that failed fact validation (`rejected_facts`) — the 
 gate worked; this lowers `correct_rejection_rate` because those cases expect
 `draft_requires_human_review`. Injected adversarial probes still intercept at 100%.
 Prompt-injection cases (`agent-adv-05/06`) completed as human-review drafts.
+Re-run `--use-llm` on the 34-case file when API budget allows.
 
 ## Edge GNN architecture comparison (complete)
 
@@ -195,11 +201,87 @@ Ran via `scripts/run_arch_comparison.sh` (sequential GAT → RGCN → PNA; outpu
 | Model | Test PR-AUC | ROC-AUC | 0.1% Precision | 0.1% Recall | run_id | artifact |
 |---|---:|---:|---:|---:|---|---|
 | **GAT** | **0.9483** | 0.9996 | **0.9743** | **0.8378** | `20260726T023031Z-5ccb81baec` | `artifacts/gat` |
-| RGCN | 0.9031 | 0.9997 | 0.9051 | 0.7783 | `20260726T062636Z-ef6be55956` | `artifacts/rgcn` |
+| RGCN (single-rel) | 0.9031 | 0.9997 | 0.9051 | 0.7783 | `20260726T062636Z-ef6be55956` | `artifacts/rgcn` |
+| RGCN R=4 (relation ablation) | 0.8873 | 0.9997 | 0.8807 | 0.7573 | `20260726T135457Z-045b0b06ab` | `artifacts/rgcn_rel` |
 | GraphSAGE | 0.8777 | 0.9996 | 0.8736 | 0.7512 | `20260725T090511Z-70e9a15e7b` | `artifacts/graphsage` |
 | PNA | 0.7049 | 0.9992 | 0.6972 | 0.5996 | `20260726T064804Z-28028363ce` | `artifacts/pna` |
 
-Ranking by test PR-AUC: **GAT > RGCN > GraphSAGE > PNA**.
+Ranking by test PR-AUC: **GAT > RGCN(single) > RGCN(R=4) > GraphSAGE > PNA**.  
+R=4 uses `configs/models.rgcn_rel.yaml` (cross-border × currency-conversion relation ids);
+see [RELATION_ABLATION.md](RELATION_ABLATION.md). **Does not replace** single-rel RGCN in
+the original bake-off narrative; it is a negative hetero ablation.
 
 GAT was subsequently promoted through the full frozen-score chain (OOF → fusion →
 test → investigation views); see “Main-line model choice” above.
+
+## Appendix — compute-budget experiments (do not change main-line)
+
+Offline drills aligned to remaining JD themes (drift, community, unsupervised,
+nonlinear fusion). **Main-line numbers above are unchanged.** Full write-ups:
+
+| Experiment | Doc | Artifact |
+|---|---|---|
+| Monthly ops + threshold recalibration | [DRIFT_MONITORING.md](DRIFT_MONITORING.md) | `artifacts/drift_monitoring` |
+| High-score subgraph Louvain / CC | [COMMUNITY_BASELINE.md](COMMUNITY_BASELINE.md) | `artifacts/community_baseline` |
+| Isolation Forest / AE | [UNSUPERVISED_BASELINE.md](UNSUPERVISED_BASELINE.md) | `artifacts/unsupervised_baseline` |
+| Multi-rel RGCN (R=4) | [RELATION_ABLATION.md](RELATION_ABLATION.md) | `artifacts/rgcn_rel` |
+| Sequence GRU | [SEQUENCE_BASELINE.md](SEQUENCE_BASELINE.md) | `artifacts/sequence_baseline` |
+| GAT→CatBoost distill | [GAT_DISTILL.md](GAT_DISTILL.md) | `artifacts/table_baseline_gat_distill` |
+| Nonlinear OOF fusion heads | [NONLINEAR_FUSION.md](NONLINEAR_FUSION.md) | `artifacts/nonlinear_fusion` |
+| DuckDB/Polars feature replay | [BATCH_FEATURE_REPLAY.md](BATCH_FEATURE_REPLAY.md) | `artifacts/batch_feature_replay` |
+
+### Drift (frozen scores, test months Jul–Aug 2023)
+
+| Model | Jul PR-AUC | Aug PR-AUC | Stale-cal alert rate | Fresh-cal alert rate |
+|---|---:|---:|---:|---:|
+| CatBoost | 0.803 | 0.817 | 0.96% | 0.54% |
+| GAT | 0.944 | 0.953 | 0.55% | 0.51% |
+| fusion CB+GAT | 0.915 | 0.921 | — (policy thr) | — |
+
+Stale validation-month calibration mainly hurts **alert volume / precision**, not ranking.
+
+### Community baseline (seed top-2k + 1-hop, investigation window)
+
+Louvain ≈ CC: ~724 communities, **case-account coverage 1.0**, top-10% communities hold
+~53% of positive accounts in-subgraph. Homogeneous projection only — not a hetero GNN
+(multi-rel RGCN R=4 = **0.8873**, below single-rel RGCN 0.903; see
+[RELATION_ABLATION.md](RELATION_ABLATION.md)).
+
+### Unsupervised (400k train negatives / 400k test sample)
+
+| Model | Sampled test PR-AUC |
+|---|---:|
+| Isolation Forest | 0.0009 |
+| Autoencoder | 0.0053 |
+| Chance ≈ pos. rate | ~0.0012 |
+
+Parallel baseline only; far below supervised CatBoost/GAT.
+
+### Nonlinear fusion (OOF CatBoost + GAT)
+
+| Head | Test PR-AUC |
+|---|---:|
+| Logistic (repro) | 0.9177 |
+| MLP | 0.9073 |
+| HistGBDT | 0.0410 |
+
+Keep logistic main-line fusion; still below GAT alone (0.9483).
+
+### Multi-rel RGCN / sequence / distill / batch (summary)
+
+| Experiment | Key metric |
+|---|---|
+| RGCN R=4 | test PR-AUC **0.8873** (below single-rel 0.903 / GAT 0.948) |
+| Sequence GRU (sampled) | test PR-AUC 0.0103 |
+| CatBoost + GAT score feature | test PR-AUC 0.9656 (two-stage; not pure tabular) |
+| DuckDB/Polars `sender_outgoing_count_7d` | match rate **1.0** |
+
+## Appendix — Tier A3 / Tier B (compute budget)
+
+- **A3 relation MLP**: with_rel PR-AUC 0.0363 vs no_rel 0.0379 (helps=False). See [RELATION_ABLATION.md](RELATION_ABLATION.md).
+- **A3 multi-rel RGCN (R=4)**: test PR-AUC **0.8873** (val 0.8412) · run `20260726T135457Z-045b0b06ab` · below single-rel RGCN 0.903 / GAT 0.948. [RELATION_ABLATION.md](RELATION_ABLATION.md).
+- **B1 sequence GRU**: sampled test PR-AUC 0.0103. [SEQUENCE_BASELINE.md](SEQUENCE_BASELINE.md).
+- **B2 GAT distill CatBoost**: test PR-AUC 0.9656 (beats_catboost=True). [GAT_DISTILL.md](GAT_DISTILL.md).
+- **B3 nonlinear fusion**: logistic 0.9177 > best nonlinear 0.9073. [NONLINEAR_FUSION.md](NONLINEAR_FUSION.md).
+- **B4 batch replay**: DuckDB/Polars match rates 1.000/1.000. [BATCH_FEATURE_REPLAY.md](BATCH_FEATURE_REPLAY.md).
+- **B5 LLM probes**: Golden expanded to 34 cases; template hallucination intercept 1.0. [LLM_GUARDRAILS_SUMMARY.md](LLM_GUARDRAILS_SUMMARY.md).

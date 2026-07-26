@@ -75,6 +75,24 @@ class TemporalGraphSnapshot:
     edge_features: np.ndarray
     labels: np.ndarray
     transaction_ids: tuple[str, ...]
+    history_edge_type: np.ndarray | None = None
+
+
+def relation_id_from_frame(frame: pd.DataFrame) -> np.ndarray:
+    """Map cross-border × currency-conversion into {0,1,2,3} (train-period vocabulary)."""
+    cross = (
+        frame["is_cross_border_current_transaction"].to_numpy(dtype=np.float32)
+        if "is_cross_border_current_transaction" in frame.columns
+        else np.zeros(len(frame), dtype=np.float32)
+    )
+    convert = (
+        frame["is_currency_conversion"].to_numpy(dtype=np.float32)
+        if "is_currency_conversion" in frame.columns
+        else np.zeros(len(frame), dtype=np.float32)
+    )
+    return (2 * (cross > 0.5).astype(np.int64) + (convert > 0.5).astype(np.int64)).astype(
+        np.int64
+    )
 
 
 class TemporalNodeIndexer:
@@ -138,6 +156,7 @@ class DailyGraphSnapshotBuilder:
         *,
         edge_feature_columns: tuple[str, ...],
         history_window: pd.Timedelta | None = None,
+        store_relation_types: bool = False,
     ) -> None:
         history_window = history_window or pd.Timedelta(days=30)
         if history_window <= pd.Timedelta(0):
@@ -145,7 +164,9 @@ class DailyGraphSnapshotBuilder:
         self.node_indexer = node_indexer
         self.edge_feature_columns = edge_feature_columns
         self.history_window = history_window
-        self._history_edges: deque[tuple[pd.Timestamp, int, int]] = deque()
+        self.store_relation_types = store_relation_types
+        # (event_ts, sender, receiver[, relation_id])
+        self._history_edges: deque[tuple] = deque()
         self._last_processed_date: pd.Timestamp | None = None
 
     def build(
@@ -197,14 +218,32 @@ class DailyGraphSnapshotBuilder:
             sender_nodes = self.node_indexer.transform(current[CANONICAL.sender_account_id])
             receiver_nodes = self.node_indexer.transform(current[CANONICAL.receiver_account_id])
             scoring_edges = np.vstack([sender_nodes, receiver_nodes])
-            history_edges = (
-                np.asarray(
-                    [(sender, receiver) for _, sender, receiver in self._history_edges],
-                    dtype=np.int64,
-                ).T
-                if self._history_edges
-                else np.empty((2, 0), dtype=np.int64)
+            relation_ids = (
+                relation_id_from_frame(current)
+                if self.store_relation_types
+                else np.zeros(len(current), dtype=np.int64)
             )
+            if self._history_edges:
+                if self.store_relation_types:
+                    history_edges = np.asarray(
+                        [(sender, receiver) for _, sender, receiver, _ in self._history_edges],
+                        dtype=np.int64,
+                    ).T
+                    history_types = np.asarray(
+                        [relation for _, _, _, relation in self._history_edges],
+                        dtype=np.int64,
+                    )
+                else:
+                    history_edges = np.asarray(
+                        [(sender, receiver) for _, sender, receiver in self._history_edges],
+                        dtype=np.int64,
+                    ).T
+                    history_types = None
+            else:
+                history_edges = np.empty((2, 0), dtype=np.int64)
+                history_types = (
+                    np.empty(0, dtype=np.int64) if self.store_relation_types else None
+                )
             edge_features = (
                 current.loc[:, self.edge_feature_columns]
                 .apply(pd.to_numeric, errors="raise")
@@ -224,15 +263,28 @@ class DailyGraphSnapshotBuilder:
                     transaction_ids=tuple(
                         current[CANONICAL.transaction_id].astype(str).tolist()
                     ),
+                    history_edge_type=history_types,
                 )
             )
-            for event_ts, sender, receiver in zip(
-                current[CANONICAL.event_ts],
-                sender_nodes,
-                receiver_nodes,
-                strict=True,
-            ):
-                self._history_edges.append((event_ts, int(sender), int(receiver)))
+            if self.store_relation_types:
+                for event_ts, sender, receiver, relation in zip(
+                    current[CANONICAL.event_ts],
+                    sender_nodes,
+                    receiver_nodes,
+                    relation_ids,
+                    strict=True,
+                ):
+                    self._history_edges.append(
+                        (event_ts, int(sender), int(receiver), int(relation))
+                    )
+            else:
+                for event_ts, sender, receiver in zip(
+                    current[CANONICAL.event_ts],
+                    sender_nodes,
+                    receiver_nodes,
+                    strict=True,
+                ):
+                    self._history_edges.append((event_ts, int(sender), int(receiver)))
             self._last_processed_date = event_day
         return snapshots
 
@@ -267,6 +319,7 @@ def transform_edge_features(
                 ),
                 labels=snapshot.labels,
                 transaction_ids=snapshot.transaction_ids,
+                history_edge_type=snapshot.history_edge_type,
             )
         )
     return transformed

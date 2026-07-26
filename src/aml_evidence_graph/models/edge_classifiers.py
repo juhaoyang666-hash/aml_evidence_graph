@@ -57,8 +57,10 @@ class _BaseEdgeClassifier(nn.Module):
         history_edge_index: torch.Tensor,
         scoring_edge_index: torch.Tensor,
         scoring_edge_features: torch.Tensor,
+        history_edge_type: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Return logits for scoring edges; history_edge_index must contain only past edges."""
+        del history_edge_type  # used by RGCN subclass override
         node_state = self.node_embedding(node_ids)
         node_state = self._propagate(node_state, history_edge_index)
         source_state = node_state[scoring_edge_index[0]]
@@ -123,16 +125,19 @@ class GATEdgeClassifier(_BaseEdgeClassifier):
 
 
 class RGCNEdgeClassifier(_BaseEdgeClassifier):
-    """Single-relation RGCN edge classifier (relation type is constantly zero)."""
+    """RGCN edge classifier with discrete relation types on historical edges."""
 
-    def __init__(self, **kwargs: int | float) -> None:
+    def __init__(self, *, num_relations: int = 1, **kwargs: int | float) -> None:
         super().__init__(**kwargs)  # type: ignore[arg-type]
+        if num_relations < 1:
+            raise ValueError("num_relations must be positive.")
         self.architecture = "rgcn"
+        self.num_relations = int(num_relations)
         hidden_dim = int(kwargs.get("hidden_dim", 64))
         num_layers = int(kwargs.get("num_layers", 2))
         self.convolutions = nn.ModuleList(
             [
-                RGCNConv(hidden_dim, hidden_dim, num_relations=1)
+                RGCNConv(hidden_dim, hidden_dim, num_relations=self.num_relations)
                 for _ in range(num_layers)
             ]
         )
@@ -141,16 +146,48 @@ class RGCNEdgeClassifier(_BaseEdgeClassifier):
         self,
         node_state: torch.Tensor,
         history_edge_index: torch.Tensor,
+        history_edge_type: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        edge_type = torch.zeros(
-            history_edge_index.size(1),
-            dtype=torch.long,
-            device=history_edge_index.device,
-        )
+        if history_edge_type is None:
+            edge_type = torch.zeros(
+                history_edge_index.size(1),
+                dtype=torch.long,
+                device=history_edge_index.device,
+            )
+        else:
+            edge_type = history_edge_type.long().view(-1)
+            if edge_type.numel() != history_edge_index.size(1):
+                raise ValueError("history_edge_type length must match history edges.")
+            if (edge_type < 0).any() or (edge_type >= self.num_relations).any():
+                raise ValueError("history_edge_type contains out-of-range relation ids.")
         for convolution in self.convolutions:
             node_state = convolution(node_state, history_edge_index, edge_type)
             node_state = self.dropout(torch.relu(node_state))
         return node_state
+
+    def forward(
+        self,
+        node_ids: torch.Tensor,
+        history_edge_index: torch.Tensor,
+        scoring_edge_index: torch.Tensor,
+        scoring_edge_features: torch.Tensor,
+        history_edge_type: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        node_state = self.node_embedding(node_ids)
+        node_state = self._propagate(node_state, history_edge_index, history_edge_type)
+        source_state = node_state[scoring_edge_index[0]]
+        receiver_state = node_state[scoring_edge_index[1]]
+        edge_state = self.edge_encoder(scoring_edge_features)
+        combined = torch.cat(
+            [
+                source_state,
+                receiver_state,
+                torch.abs(source_state - receiver_state),
+                edge_state,
+            ],
+            dim=-1,
+        )
+        return self.classifier(combined).squeeze(-1)
 
 
 class PNAEdgeClassifier(_BaseEdgeClassifier):
@@ -197,6 +234,7 @@ def build_edge_classifier(
     hidden_dim: int = 64,
     num_layers: int = 2,
     dropout: float = 0.15,
+    num_relations: int = 1,
 ) -> _BaseEdgeClassifier:
     """Build a supported edge classifier while keeping a shared forward signature."""
     normalized = architecture.strip().lower()
@@ -217,5 +255,5 @@ def build_edge_classifier(
     if normalized == "gat":
         return GATEdgeClassifier(**kwargs)
     if normalized == "rgcn":
-        return RGCNEdgeClassifier(**kwargs)
+        return RGCNEdgeClassifier(num_relations=num_relations, **kwargs)
     return PNAEdgeClassifier(**kwargs)

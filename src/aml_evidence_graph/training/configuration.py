@@ -60,6 +60,7 @@ def graphsage_parameters_from_configuration(document: dict[str, Any]) -> dict[st
         "learning_rate",
         "dropout",
         "history_window_days",
+        "num_relations",
     }
     documented_fields = {"early_stopping_patience"}
     unknown = sorted(set(source).difference(allowed | documented_fields))

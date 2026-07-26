@@ -10,7 +10,7 @@
 - 完成规则基线 / Logistic / CatBoost / 历史图边分类（同协议对比 GraphSAGE、GAT、RGCN、PNA）；**主线图模型为 GAT**（测试 PR-AUC **0.948**），主线表格为 CatBoost（**0.809**）。  
 - 以训练期 expanding-time OOF 堆叠 **CatBoost + GAT**，验证期 isotonic 校准与锁定阈值后冻结测试：融合 PR-AUC **0.918**（优于原 CatBoost+GraphSAGE 的 0.897）；**须同时披露：融合不优于单独 GAT（0.948）**。  
 - 相对训练期分位数规则，CatBoost 在同召回 50% 点告警量削减约 **99.9%**；冻结分数聚合账户风险 / 资金路径 / 案件视图。  
-- 调查侧：Evidence Package + Typology 检索 + 受约束 LLM 注释（不参与打分）；Golden 30 案评测幻觉拦截 / 无证据拒答。  
+- 调查侧：Evidence Package + Typology 检索 + 受约束 LLM 注释（不参与打分）；Golden **34** 案评测幻觉拦截 / 无证据拒答。  
 - 工程：多卡 PyTorch 训练、可复现脚本与模型卡；仓库 [aml_evidence_graph](https://github.com/juhaoyang666-hash/aml_evidence_graph)。
 
 ## English（optional）

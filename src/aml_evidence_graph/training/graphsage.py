@@ -38,6 +38,7 @@ class GraphSAGETrainingConfig:
     device: str = "auto"
     max_gpus: int = MAX_GRAPHSAGE_GPUS
     random_seed: int = 20260722
+    num_relations: int = 1
 
 
 @dataclass
@@ -112,6 +113,7 @@ class _EdgeSplitDataParallel(nn.Module):
         history_edge_index: torch.Tensor,
         scoring_edge_index: torch.Tensor,
         scoring_edge_features: torch.Tensor,
+        history_edge_type: torch.Tensor | None = None,
     ) -> torch.Tensor:
         num_edges = int(scoring_edge_features.size(0))
         if num_edges <= 1:
@@ -120,13 +122,24 @@ class _EdgeSplitDataParallel(nn.Module):
                 history_edge_index.to(self.output_device),
                 scoring_edge_index.to(self.output_device),
                 scoring_edge_features.to(self.output_device),
+                None
+                if history_edge_type is None
+                else history_edge_type.to(self.output_device),
             )
         used_ids = self.device_ids[: min(len(self.device_ids), num_edges)]
         replicas = replicate(self.module, used_ids)
         chunk_sizes = [num_edges // len(used_ids)] * len(used_ids)
         for index in range(num_edges % len(used_ids)):
             chunk_sizes[index] += 1
-        inputs: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]] = []
+        inputs: list[
+            tuple[
+                torch.Tensor,
+                torch.Tensor,
+                torch.Tensor,
+                torch.Tensor,
+                torch.Tensor | None,
+            ]
+        ] = []
         offset = 0
         for device_id, chunk_size in zip(used_ids, chunk_sizes, strict=True):
             device = torch.device(f"cuda:{device_id}")
@@ -137,6 +150,9 @@ class _EdgeSplitDataParallel(nn.Module):
                     history_edge_index.to(device, non_blocking=True),
                     scoring_edge_index[:, offset:end].to(device, non_blocking=True),
                     scoring_edge_features[offset:end].to(device, non_blocking=True),
+                    None
+                    if history_edge_type is None
+                    else history_edge_type.to(device, non_blocking=True),
                 )
             )
             offset = end
@@ -158,12 +174,17 @@ def _make_loader(
     shuffle: bool,
     batch_size: int | None = None,
 ) -> LinkNeighborLoader:
-    data = Data(
-        x=torch.arange(num_nodes, dtype=torch.long),
-        edge_index=torch.from_numpy(
-            np.ascontiguousarray(snapshot.history_edge_index)
-        ).long(),
-    )
+    edge_index = torch.from_numpy(np.ascontiguousarray(snapshot.history_edge_index)).long()
+    data_kwargs: dict[str, Any] = {
+        "x": torch.arange(num_nodes, dtype=torch.long),
+        "edge_index": edge_index,
+    }
+    if snapshot.history_edge_type is not None and snapshot.history_edge_type.size:
+        # Store relation ids in edge_attr so LinkNeighborLoader keeps them on sampled edges.
+        data_kwargs["edge_attr"] = torch.from_numpy(
+            np.ascontiguousarray(snapshot.history_edge_type)
+        ).long().view(-1, 1)
+    data = Data(**data_kwargs)
     return LinkNeighborLoader(
         data,
         num_neighbors=list(config.num_neighbors),
@@ -202,6 +223,9 @@ def _batch_logits(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     input_ids = batch.input_id.to("cpu")
     batch_edge_features = edge_features[input_ids]
+    history_edge_type = None
+    if getattr(batch, "edge_attr", None) is not None:
+        history_edge_type = batch.edge_attr.view(-1)
     if isinstance(model, _EdgeSplitDataParallel):
         # Keep the neighbor-sampled tensors on CPU; the wrapper places replicas.
         logits = model(
@@ -209,16 +233,20 @@ def _batch_logits(
             batch.edge_index,
             batch.edge_label_index,
             batch_edge_features,
+            history_edge_type,
         )
         labels = batch.edge_label.float().to(device)
         return logits, labels
     batch = batch.to(device)
     batch_edge_features = batch_edge_features.to(device)
+    if history_edge_type is not None:
+        history_edge_type = history_edge_type.to(device)
     logits = model(
         batch.x,
         batch.edge_index,
         batch.edge_label_index,
         batch_edge_features,
+        history_edge_type,
     )
     return logits, batch.edge_label.float()
 
@@ -290,6 +318,7 @@ def fit_graphsage(
         hidden_dim=configuration.hidden_dim,
         num_layers=configuration.num_layers,
         dropout=configuration.dropout,
+        num_relations=configuration.num_relations,
     ).to(device)
     train_model = _wrap_for_devices(model, device_ids)
     optimizer = torch.optim.AdamW(train_model.parameters(), lr=configuration.learning_rate)

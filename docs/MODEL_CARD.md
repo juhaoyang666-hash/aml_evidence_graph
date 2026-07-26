@@ -51,8 +51,9 @@
 | fusion (catboost + graphsage) | 双组件融合（原主线） | 0.8973 | 0.9076 / 0.7805 | `20260725T145745Z-a7d61d7c8d` |
 | **fusion (catboost + GAT)** | **主线双组件融合** | **0.9175** | **0.9359 / 0.8047** | `20260726T090744Z-4a97fdf32f` |
 
-同协议边 GNN 架构对比：GAT 0.9483 / RGCN 0.9031 / GraphSAGE 0.8777 / PNA 0.7049
-（测试 PR-AUC；0.1% 预算详见 RESULTS）。
+同协议边 GNN 架构对比：GAT 0.9483 / RGCN 0.9031 / GraphSAGE 0.8777 / PNA 0.7049；
+另做多关系 RGCN（R=4，`artifacts/rgcn_rel`）消融测试 PR-AUC **0.8873**（未超过单关系
+RGCN / GAT）。详见 RESULTS「Edge GNN」与 [RELATION_ABLATION.md](RELATION_ABLATION.md)。
 
 **必须同时披露的口径**：`catboost + GAT` 融合（0.9175）优于原 `catboost + graphsage`
 （0.8973）与单独 CatBoost（0.8092），但**不**优于单独 GAT（0.9483）。对外引用融合数字时
@@ -90,4 +91,7 @@ Precision/Recall、固定 FPR Recall、每发现一例所需告警数、**固定
 - 无证据、矛盾证据和工具失败的调查草稿必须标记不确定性并交由人工复核。
 - 人工复核记录只用于审计；不会在线更新模型。
 - Golden（`golden/cases_v1.json`）为用户授权 agent 裁定的项目回归集
-  （`golden/adjudication_v1.json`）；不是独立第三方人工评审团，也不是生产合规标签。
+  （`golden/adjudication_v1.json`）；当前模板路径评测为 **34** 案（原 30 + B5 对抗扩容）。
+  不是独立第三方人工评审团，也不是生产合规标签。
+- 算力附录（漂移 / 社区 / 无监督 / 序列 / 蒸馏 / 非线性融合 / 批式重放 / 多关系 RGCN）
+  为 JD 对齐消融，**不改变**上表主线数字；见 RESULTS 附录。
