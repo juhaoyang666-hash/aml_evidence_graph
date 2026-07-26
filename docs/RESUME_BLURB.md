@@ -1,0 +1,35 @@
+# 简历项目描述（AML Evidence Graph）
+
+> 可直接粘贴到简历；数字须与 [RESULTS.md](RESULTS.md) 一致。  
+> 数据集为**公开合成 SAML-D**，不得写成私有/真实业务数据。
+
+## 中文（推荐 5–8 行）
+
+**AML 交易级风险识别与调查辅助（开源）** | 个人项目 | 2026  
+- 在公开合成 SAML-D（约 950 万笔、正例率约 0.1%）上构建**时间外切分 + PIT 特征**的交易边二分类流水线，特征与图邻居严格只读预测时点之前的历史。  
+- 完成规则基线 / Logistic / CatBoost / 历史图边分类（同协议对比 GraphSAGE、GAT、RGCN、PNA）；**主线图模型为 GAT**（测试 PR-AUC **0.948**），主线表格为 CatBoost（**0.809**）。  
+- 以训练期 expanding-time OOF 堆叠 **CatBoost + GAT**，验证期 isotonic 校准与锁定阈值后冻结测试：融合 PR-AUC **0.918**（优于原 CatBoost+GraphSAGE 的 0.897）；**须同时披露：融合不优于单独 GAT（0.948）**。  
+- 相对训练期分位数规则，CatBoost 在同召回 50% 点告警量削减约 **99.9%**；冻结分数聚合账户风险 / 资金路径 / 案件视图。  
+- 调查侧：Evidence Package + Typology 检索 + 受约束 LLM 注释（不参与打分）；Golden 30 案评测幻觉拦截 / 无证据拒答。  
+- 工程：多卡 PyTorch 训练、可复现脚本与模型卡；仓库 [aml_evidence_graph](https://github.com/juhaoyang666-hash/aml_evidence_graph)。
+
+## English（optional）
+
+**Transaction-level AML risk scoring & investigation assist (open source)**  
+- Built a leakage-aware pipeline on public synthetic SAML-D (~9.5M txs, ~0.1% positives): fixed time-out split, point-in-time features, history-only graph neighbors.  
+- Compared tabular CatBoost (test PR-AUC **0.809**) and edge GNNs under one protocol; **GAT** is the main graph model (**0.948**).  
+- Leakage-safe OOF fusion **CatBoost+GAT** reaches **0.918** (vs CatBoost+GraphSAGE **0.897**); **disclose that GAT alone (0.948) still ranks higher**.  
+- Vs train-period quantile rules, ~**99.9%** alert-volume cut at matched 50% recall; frozen scores drive account / funds-path / case views.  
+- LLM drafts investigation text only under Evidence Package + fact checks (no scoring).
+
+## 口述三句话（面试开场）
+
+1. 我做的是合成 AML 数据上的交易级打分：先把时间泄漏防住（PIT + 历史图）。  
+2. 同协议下 GAT 最强；系统主线是 CatBoost+GAT 的 OOF 融合，但我会主动说单 GAT 分更高。  
+3. 业务侧我报告警预算和相对规则的告警削减，并有调查草稿的事实边界，而不是只报 ROC。
+
+## 个人贡献边界（按需改）
+
+- 独立完成：问题定义、防泄漏协议、全量训练与对比、文档与开源仓库。  
+- 数据：公开 SAML-D，无真实客户数据。  
+- 未声称：真实业务提升率、独立第三方人工 Golden、在线 Serving / A/B。

@@ -31,12 +31,18 @@
 
 | 文档 | 内容 |
 |---|---|
-| [RESULTS.md](docs/RESULTS.md) | 全量指标表、融合对比、架构对比、Golden、调查视图 |
+| [RESULTS.md](docs/RESULTS.md) | 全量指标表、融合对比、架构对比、Bootstrap CI、Golden、调查视图 |
 | [MODEL_CARD.md](docs/MODEL_CARD.md) | 模型边界、评价协议、限制 |
+| [RESUME_BLURB.md](docs/RESUME_BLURB.md) | **简历项目描述（可粘贴）** |
+| [INTERVIEW_TALKING_POINTS.md](docs/INTERVIEW_TALKING_POINTS.md) | **面试自答要点** |
+| [CATBOOST_GAP_DIAGNOSIS.md](docs/CATBOOST_GAP_DIAGNOSIS.md) | CatBoost vs GAT 差距诊断 |
+| [ASSOCIATION_CASE_WORKFLOW.md](docs/ASSOCIATION_CASE_WORKFLOW.md) | 关联风险 / 案件视图工作流 |
+| [BATCH_FEATURE_NOTE.md](docs/BATCH_FEATURE_NOTE.md) | 批式特征与大数据话术 |
 | [FULL_RUN_AFTER_PIT.md](docs/FULL_RUN_AFTER_PIT.md) | **Linux 全量复现命令**（主线 GAT） |
 | [ENVIRONMENT.md](docs/ENVIRONMENT.md) | conda `risk`、GPU、ECNU LLM |
 | [RULE_BASELINE.md](docs/RULE_BASELINE.md) | 规则 v2026.2 定阈说明 |
 | [LLM_PLAN.md](docs/LLM_PLAN.md) | LLM 职责边界与评测 |
+| [LLM_GUARDRAILS_SUMMARY.md](docs/LLM_GUARDRAILS_SUMMARY.md) | LLM 护栏与 Golden 摘要（投大模型风控向） |
 | [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | 工程完成度 |
 
 ## 环境（Linux，全量实验）

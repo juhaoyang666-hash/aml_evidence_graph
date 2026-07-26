@@ -65,12 +65,41 @@ both visible rather than picking the flattering one:
   leakage-safe OOF stacking, calibrated threshold policy): report
   **`catboost + GAT`** (0.9175) and disclose that GAT alone ranks higher.
 
-No single-model/fusion comparison here uses confidence intervals
-(`bootstrap_iterations=0`), so treat gaps under roughly 0.01 PR-AUC as unresolved.
+No single-model/fusion comparison in the original training manifests used confidence
+intervals (`bootstrap_iterations=0`). A post-hoc stratified bootstrap (200 iterations)
+is reported below so gaps can be discussed with intervals.
 
+## Bootstrap CI (test set, 200 stratified iterations)
 
+Source: `artifacts/diagnostics/bootstrap_ci.json` · seed `20260722` · 95% intervals.  
+Scores: CatBoost from `table_baseline_rules`, GAT from `artifacts/gat`, fusion from
+`fusion_test_cb_gat` (`fusion_calibrated_probability`), aligned on `transaction_id`.
 
-## Alert reduction vs rules (same recall)
+| Model | PR-AUC point | 95% CI | ROC-AUC point | 95% CI |
+|---|---:|---|---:|---|
+| CatBoost | 0.8092 | **[0.7914, 0.8260]** | 0.9963 | [0.9958, 0.9969] |
+| **GAT** | 0.9483 | **[0.9396, 0.9549]** | 0.9996 | [0.9994, 0.9998] |
+| **catboost + GAT** | 0.9175 | **[0.9073, 0.9276]** | 0.9994 | [0.9987, 0.9998] |
+
+**Reading the gaps**
+
+- Fusion vs CatBoost: fusion CI sits entirely above CatBoost CI → improvement is stable.
+- Fusion vs GAT alone: fusion CI sits entirely **below** GAT CI → “fusion &lt; GAT alone”
+  is also stable on this split — keep disclosing both numbers.
+- Point CatBoost+GraphSAGE fusion (0.8973) lies below the CatBoost+GAT fusion lower bound
+  (0.9073) → replacing GraphSAGE with GAT in the 2-way stack is a clear gain, even without
+  re-bootstrapping the older fusion file.
+
+## CatBoost vs GAT gap diagnosis
+
+See [CATBOOST_GAP_DIAGNOSIS.md](CATBOOST_GAP_DIAGNOSIS.md). At 0.1% budget, GAT recovers
+**355** true positives that CatBoost misses (overlap 1,164); CatBoost-only TP = 173.
+CatBoost already uses `relationship_*` window features in its top importances — the residual
+gap is consistent with neighborhood message-passing beyond pairwise aggregates.
+
+Hard-negative retrain (`artifacts/table_baseline_hardneg`) **regressed** CatBoost test
+PR-AUC from 0.8092 → **0.4548**; keep hash-sampled CatBoost. Details:
+[CATBOOST_GAP_DIAGNOSIS.md](CATBOOST_GAP_DIAGNOSIS.md).
 
 Source: `artifacts/table_baseline_rules` → `alert_reduction_vs_rules`.
 
