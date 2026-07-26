@@ -1,17 +1,59 @@
-version: "2026.1"
+version: "2026.2"
+# Thresholds were selected on the TRAINING period only (2022-10-07..2023-04-30) of the
+# public synthetic SAML-D dataset. Validation and test partitions were never inspected.
+# Calibration evidence: docs/RULE_BASELINE.md
 rules:
-  - rule_id: R-CROSS-BORDER-FREQUENCY-001
-    status: draft
+  - rule_id: R-HIGH-AMOUNT-001
+    status: approved
     owner: aml-model-risk
-    effective_from: "2026-01-01"
+    effective_from: "2022-01-01"
     effective_to: null
-    approval_reference: null
-    backtest_summary: null
+    approval_reference: "MRM-2026-02-SAMLD-BASELINE"
+    backtest_summary: >-
+      Training-period 99.0th percentile of amount (45225.28). Fires on 1.00% of
+      training transactions, captures 4.78% of laundering edges, lift 4.78x.
     required_features:
-      - sender_outgoing_cross_border_count_14d
+      - amount
     kind: numeric_threshold
     operator: gte
-    feature: sender_outgoing_cross_border_count_14d
+    feature: amount
     parameters:
-      threshold: null
-    explanation_template: "Cross-border transaction frequency exceeded the approved threshold in the prior 14 days."
+      threshold: 45225.28
+    explanation_template: "Transaction amount is in the top 1% of the approved training-period distribution."
+
+  - rule_id: R-NEW-SENDER-002
+    status: approved
+    owner: aml-model-risk
+    effective_from: "2022-01-01"
+    effective_to: null
+    approval_reference: "MRM-2026-02-SAMLD-BASELINE"
+    backtest_summary: >-
+      First observed outgoing activity for the sending account. Fires on 4.99% of
+      training transactions, captures 20.00% of laundering edges, lift 4.01x.
+    required_features:
+      - is_new_sender_account
+    kind: numeric_threshold
+    operator: gte
+    feature: is_new_sender_account
+    parameters:
+      threshold: 1.0
+    explanation_template: "Sending account has no approved prior outgoing history at the transaction timestamp."
+
+  - rule_id: R-FAN-IN-VELOCITY-003
+    status: approved
+    owner: aml-model-risk
+    effective_from: "2022-01-01"
+    effective_to: null
+    approval_reference: "MRM-2026-02-SAMLD-BASELINE"
+    backtest_summary: >-
+      Training-period 99.0th percentile of distinct 7-day incoming counterparties
+      (20). Retained as a typology-motivated fan-in control; low standalone recall
+      on this synthetic benchmark is documented in docs/RULE_BASELINE.md.
+    required_features:
+      - receiver_incoming_unique_counterparties_7d
+    kind: numeric_threshold
+    operator: gte
+    feature: receiver_incoming_unique_counterparties_7d
+    parameters:
+      threshold: 20.0
+    explanation_template: "Receiving account accumulated an unusually high number of distinct counterparties over the prior 7 days."
