@@ -6,11 +6,12 @@ import argparse
 import json
 import shutil
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pandas as pd
+import polars as pl
 
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.data.splits import TimeSplit
@@ -46,21 +47,27 @@ class ExpandingTimeFold:
     validation_months: tuple[str, ...]
 
 
+def _event_months(frame: pl.DataFrame) -> pl.Series:
+    return (
+        frame[CANONICAL.event_ts]
+        .cast(pl.Datetime(time_zone="UTC"), strict=True)
+        .dt.strftime("%Y-%m")
+    )
+
+
 def make_expanding_time_folds(
-    frame: pd.DataFrame,
+    frame: pl.DataFrame,
     *,
     n_splits: int = 3,
     minimum_training_months: int = 2,
 ) -> list[ExpandingTimeFold]:
     """Split a training-only frame into expanding monthly OOF folds."""
-    if CANONICAL.event_ts not in frame:
+    if CANONICAL.event_ts not in frame.columns:
         raise ValueError("OOF folds require canonical event_ts.")
     if n_splits < 1 or minimum_training_months < 1:
         raise ValueError("n_splits and minimum_training_months must be positive.")
-    months = pd.to_datetime(frame[CANONICAL.event_ts], utc=True, errors="raise").dt.strftime(
-        "%Y-%m"
-    )
-    unique_months = tuple(sorted(months.unique()))
+    months = _event_months(frame)
+    unique_months = tuple(sorted(months.unique().to_list()))
     remaining_months = unique_months[minimum_training_months:]
     if len(remaining_months) < n_splits:
         raise ValueError(
@@ -84,13 +91,13 @@ def make_expanding_time_folds(
 
 
 def generate_table_oof_predictions(
-    training_frame: pd.DataFrame,
+    training_frame: pl.DataFrame,
     *,
     n_splits: int = 3,
     minimum_training_months: int = 2,
     random_seed: int = 20260722,
     catboost_params: dict[str, Any] | None = None,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Generate CatBoost-family OOF scores from strictly earlier training months."""
     required = {
         CANONICAL.transaction_id,
@@ -100,8 +107,7 @@ def generate_table_oof_predictions(
     missing = sorted(required.difference(training_frame.columns))
     if missing:
         raise ValueError(f"OOF input requires: {', '.join(missing)}")
-    timestamps = pd.to_datetime(training_frame[CANONICAL.event_ts], utc=True, errors="raise")
-    month_values = timestamps.dt.strftime("%Y-%m")
+    month_values = _event_months(training_frame)
     folds = make_expanding_time_folds(
         training_frame,
         n_splits=n_splits,
@@ -110,15 +116,15 @@ def generate_table_oof_predictions(
     graph_columns = tuple(
         column for column in training_frame.columns if column.startswith("graph_")
     )
-    results: list[pd.DataFrame] = []
+    results: list[pl.DataFrame] = []
     for fold in folds:
-        fit_frame = training_frame.loc[month_values.isin(fold.training_months)].copy()
-        validation_frame = training_frame.loc[
-            month_values.isin(fold.validation_months)
-        ].copy()
-        if fit_frame[CANONICAL.is_laundering].nunique() < 2:
+        fit_frame = training_frame.filter(month_values.is_in(list(fold.training_months)))
+        validation_frame = training_frame.filter(
+            month_values.is_in(list(fold.validation_months))
+        )
+        if fit_frame[CANONICAL.is_laundering].n_unique() < 2:
             raise ValueError(f"OOF fold {fold.fold_id} training period has one label class.")
-        if validation_frame[CANONICAL.is_laundering].nunique() < 2:
+        if validation_frame[CANONICAL.is_laundering].n_unique() < 2:
             raise ValueError(f"OOF fold {fold.fold_id} validation period has one label class.")
         table_models = fit_table_models_for_partitions(
             fit_frame,
@@ -140,31 +146,29 @@ def generate_table_oof_predictions(
             scores["graph_stats_catboost"] = graph_models.predict_proba(validation_frame)[
                 "catboost"
             ]
-        fold_result = validation_frame.loc[
-            :,
+        fold_result = validation_frame.select(
             [
                 CANONICAL.transaction_id,
                 CANONICAL.event_ts,
                 CANONICAL.is_laundering,
-            ],
-        ].copy()
-        fold_result["oof_fold_id"] = fold.fold_id
+            ]
+        ).with_columns(pl.lit(fold.fold_id).alias("oof_fold_id"))
         for model_name, model_scores in scores.items():
-            fold_result[model_name] = model_scores
+            fold_result = fold_result.with_columns(pl.Series(model_name, model_scores))
         results.append(fold_result)
-    output = pd.concat(results, ignore_index=True)
-    if output[CANONICAL.transaction_id].duplicated().any():
+    output = pl.concat(results, how="vertical")
+    if output[CANONICAL.transaction_id].is_duplicated().any():
         raise AssertionError("OOF transaction IDs must not appear in multiple folds.")
-    return output.sort_values(CANONICAL.event_ts, kind="stable").reset_index(drop=True)
+    return output.sort(CANONICAL.event_ts, maintain_order=True)
 
 
 def generate_graphsage_oof_predictions(
-    training_frame: pd.DataFrame,
+    training_frame: pl.DataFrame,
     *,
     n_splits: int = 3,
     minimum_training_months: int = 2,
     config: GraphSAGETrainingConfig | None = None,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Generate GraphSAGE OOF probabilities using only earlier-month graph history."""
     required = {
         CANONICAL.transaction_id,
@@ -177,8 +181,7 @@ def generate_graphsage_oof_predictions(
     missing = sorted(required.difference(training_frame.columns))
     if missing:
         raise ValueError(f"Graph OOF input requires: {', '.join(missing)}")
-    timestamps = pd.to_datetime(training_frame[CANONICAL.event_ts], utc=True, errors="raise")
-    month_values = timestamps.dt.strftime("%Y-%m")
+    month_values = _event_months(training_frame)
     folds = make_expanding_time_folds(
         training_frame,
         n_splits=n_splits,
@@ -186,21 +189,20 @@ def generate_graphsage_oof_predictions(
     )
     edge_features = select_graph_edge_features(training_frame)
     configuration = config or GraphSAGETrainingConfig()
-    results: list[pd.DataFrame] = []
+    results: list[pl.DataFrame] = []
     for fold in folds:
-        fit_frame = training_frame.loc[month_values.isin(fold.training_months)].copy()
-        validation_frame = training_frame.loc[
-            month_values.isin(fold.validation_months)
-        ].copy()
-        validation_frame = validation_frame.sort_values(
+        fit_frame = training_frame.filter(month_values.is_in(list(fold.training_months)))
+        validation_frame = training_frame.filter(
+            month_values.is_in(list(fold.validation_months))
+        ).sort(
             [CANONICAL.event_ts, CANONICAL.source_row_number],
-            kind="stable",
+            maintain_order=True,
         )
         node_indexer = TemporalNodeIndexer().fit(fit_frame)
         builder = DailyGraphSnapshotBuilder(
             node_indexer,
             edge_feature_columns=edge_features,
-            history_window=pd.Timedelta(days=configuration.history_window_days),
+            history_window=timedelta(days=configuration.history_window_days),
         )
         raw_training = builder.build(fit_frame)
         raw_validation = builder.build(validation_frame)
@@ -218,21 +220,21 @@ def generate_graphsage_oof_predictions(
             validation_snapshots,
             num_nodes=node_indexer.num_nodes,
         )
-        fold_result = validation_frame.loc[
-            :,
+        fold_result = validation_frame.select(
             [
                 CANONICAL.transaction_id,
                 CANONICAL.event_ts,
                 CANONICAL.is_laundering,
-            ],
-        ].copy()
-        fold_result["oof_fold_id"] = fold.fold_id
-        fold_result["graphsage"] = scores
+            ]
+        ).with_columns(
+            pl.lit(fold.fold_id).alias("oof_fold_id"),
+            pl.Series("graphsage", scores),
+        )
         results.append(fold_result)
-    output = pd.concat(results, ignore_index=True)
-    if output[CANONICAL.transaction_id].duplicated().any():
+    output = pl.concat(results, how="vertical")
+    if output[CANONICAL.transaction_id].is_duplicated().any():
         raise AssertionError("Graph OOF transaction IDs must not appear in multiple folds.")
-    return output.sort_values(CANONICAL.event_ts, kind="stable").reset_index(drop=True)
+    return output.sort(CANONICAL.event_ts, maintain_order=True)
 
 
 def _prepare_output_dir(output_dir: Path, *, overwrite: bool) -> None:
@@ -300,7 +302,7 @@ def main() -> None:
             ),
         )
     output_path = args.output / f"{args.model}_oof_scores.parquet"
-    predictions.to_parquet(output_path, index=False)
+    predictions.write_parquet(output_path)
     manifest = create_run_manifest(
         output_dir=args.output,
         command=f"aml-generate-{args.model}-oof",
@@ -311,14 +313,14 @@ def main() -> None:
             "fold_count": args.splits,
             "minimum_training_months": args.minimum_training_months,
             "model": args.model,
-            "oof_rows": len(predictions),
+            "oof_rows": predictions.height,
         },
     )
     print(
         json.dumps(
             {
                 "run_id": manifest.run_id,
-                "oof_rows": len(predictions),
+                "oof_rows": predictions.height,
                 "output": str(output_path),
             },
             ensure_ascii=False,

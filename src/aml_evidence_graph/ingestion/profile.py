@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
+import polars as pl
 
 from aml_evidence_graph.data.configuration import (
     DEFAULT_DATA_CONFIG_PATH,
@@ -40,9 +40,15 @@ def file_sha256(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
-def _merge_counts(target: Counter[str], values: pd.Series) -> None:
-    value_counts = values.value_counts(dropna=False)
-    target.update({str(name): int(count) for name, count in value_counts.items()})
+def _merge_counts(target: Counter[str], values: pl.Series) -> None:
+    value_counts = values.value_counts(sort=False)
+    name = values.name or "values"
+    for label, count in zip(
+        value_counts[name].to_list(),
+        value_counts["count"].to_list(),
+        strict=True,
+    ):
+        target[str(label)] += int(count)
 
 
 def _validate_null_rates(
@@ -80,13 +86,13 @@ def build_manifest(
         raise ValueError("chunk_size must be positive")
     configuration = load_data_configuration(data_config_path)
 
-    header = pd.read_csv(input_path, nrows=0)
+    header = pl.read_csv(input_path, n_rows=0)
     validate_raw_columns(header.columns)
 
     row_count = 0
     positive_count = 0
-    min_timestamp: pd.Timestamp | None = None
-    max_timestamp: pd.Timestamp | None = None
+    min_timestamp: datetime | None = None
+    max_timestamp: datetime | None = None
     null_counts: Counter[str] = Counter()
     monthly_rows: Counter[str] = Counter()
     monthly_positives: Counter[str] = Counter()
@@ -94,38 +100,42 @@ def build_manifest(
     split_rows: Counter[str] = Counter()
     split_positives: Counter[str] = Counter()
 
-    for chunk in pd.read_csv(input_path, usecols=list(PROFILE_COLUMNS), chunksize=chunk_size):
-        row_count += len(chunk)
-        null_counts.update({name: int(value) for name, value in chunk.isna().sum().items()})
-        event_ts = pd.to_datetime(
-            chunk["Date"].astype("string").str.strip()
+    reader_batches = pl.scan_csv(str(input_path)).collect_batches(chunk_size=chunk_size)
+    for batch in reader_batches:
+        chunk = batch.select(list(PROFILE_COLUMNS))
+        row_count += chunk.height
+        null_row = chunk.null_count().row(0, named=True)
+        null_counts.update({name: int(value) for name, value in null_row.items()})
+        event_ts = (
+            chunk["Date"].cast(pl.Utf8).str.strip_chars()
             + " "
-            + chunk["Time"].astype("string").str.strip(),
-            errors="coerce",
-            utc=True,
-        )
-        if event_ts.isna().any():
+            + chunk["Time"].cast(pl.Utf8).str.strip_chars()
+        ).str.to_datetime(time_zone="UTC", strict=False)
+        if event_ts.null_count() > 0:
             raise ValueError("Found invalid event timestamps while building manifest.")
         current_min = event_ts.min()
         current_max = event_ts.max()
         min_timestamp = current_min if min_timestamp is None else min(min_timestamp, current_min)
         max_timestamp = current_max if max_timestamp is None else max(max_timestamp, current_max)
 
-        labels = pd.to_numeric(chunk["Is_laundering"], errors="raise")
+        labels = chunk["Is_laundering"].cast(pl.Float64, strict=False)
         if configuration.quality.require_binary_label:
-            invalid_labels = set(labels.unique()).difference({0, 1})
+            invalid_labels = set(labels.unique().to_list()).difference({0.0, 1.0})
             if invalid_labels:
                 raise ValueError(f"Found non-binary labels: {sorted(invalid_labels)}")
         positive_mask = labels.eq(1)
         positive_count += int(positive_mask.sum())
         months = event_ts.dt.strftime("%Y-%m")
         _merge_counts(monthly_rows, months)
-        _merge_counts(monthly_positives, months.loc[positive_mask])
-        _merge_counts(type_counts, chunk.loc[positive_mask, "Laundering_type"].astype("string"))
+        _merge_counts(monthly_positives, months.filter(positive_mask))
+        _merge_counts(
+            type_counts,
+            chunk.filter(positive_mask)["Laundering_type"].cast(pl.Utf8),
+        )
 
         splits = assign_time_split(event_ts)
         _merge_counts(split_rows, splits)
-        _merge_counts(split_positives, splits.loc[positive_mask])
+        _merge_counts(split_positives, splits.filter(positive_mask))
 
     assert min_timestamp is not None
     assert max_timestamp is not None

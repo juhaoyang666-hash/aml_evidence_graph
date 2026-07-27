@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import math
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 
-import pandas as pd
+import polars as pl
 
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.evidence.package import (
@@ -18,9 +19,38 @@ from aml_evidence_graph.graph.explain import GraphEdgeEvidence
 from aml_evidence_graph.rules.engine import RuleHit
 
 
+def _is_missing(value: object) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, float) and math.isnan(value):
+        return True
+    return False
+
+
+def _as_row_mapping(scored_transaction: Mapping[str, object] | pl.Series | object) -> Mapping[str, object]:
+    if isinstance(scored_transaction, Mapping):
+        return scored_transaction
+    if isinstance(scored_transaction, pl.Series):
+        frame = scored_transaction.to_frame()
+        return dict(zip(frame.columns, scored_transaction.to_list(), strict=True))
+    if hasattr(scored_transaction, "to_dict"):
+        return scored_transaction.to_dict()
+    raise TypeError(f"Unsupported scored transaction type: {type(scored_transaction)!r}")
+
+
 def _as_utc_datetime(value: object) -> datetime:
-    timestamp = pd.to_datetime(value, utc=True, errors="raise")
-    return timestamp.to_pydatetime().astimezone(UTC)
+    if isinstance(value, datetime):
+        timestamp = value
+    elif isinstance(value, str):
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    else:
+        parsed = pl.Series([value]).cast(pl.Datetime(time_zone="UTC"), strict=True).item()
+        if not isinstance(parsed, datetime):
+            raise ValueError("event_ts could not be parsed as a UTC datetime.")
+        timestamp = parsed
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=UTC)
+    return timestamp.astimezone(UTC)
 
 
 def _rule_evidence(hits: Iterable[RuleHit]) -> list[RuleEvidence]:
@@ -62,7 +92,7 @@ def _graph_evidence(
 
 
 def build_risk_evidence_package(
-    scored_transaction: pd.Series,
+    scored_transaction: Mapping[str, object] | pl.Series | dict[str, object],
     *,
     alert_id: str,
     model_probabilities: dict[str, float],
@@ -76,17 +106,18 @@ def build_risk_evidence_package(
     uncertainty_notes: Iterable[str] = (),
 ) -> RiskEvidencePackage:
     """Construct facts solely from one scored transaction and approved artifacts."""
+    row = _as_row_mapping(scored_transaction)
     required = {CANONICAL.transaction_id, CANONICAL.event_ts}
-    missing = sorted(required.difference(scored_transaction.index))
+    missing = sorted(required.difference(row.keys()))
     if missing:
         raise ValueError(f"Scored transaction is missing: {', '.join(missing)}")
     features: list[FeatureEvidence] = []
     for name in selected_feature_names:
-        if name not in scored_transaction:
+        if name not in row:
             raise ValueError(f"Selected evidence feature is absent: {name}")
-        value = scored_transaction[name]
+        value = row[name]
         normalized: float | str | bool | None
-        if pd.isna(value):
+        if _is_missing(value):
             normalized = None
         elif isinstance(value, bool):
             normalized = value
@@ -104,8 +135,8 @@ def build_risk_evidence_package(
     return RiskEvidencePackage(
         alert_id=alert_id,
         generated_at=datetime.now(UTC),
-        transaction_id=str(scored_transaction[CANONICAL.transaction_id]),
-        event_timestamp=_as_utc_datetime(scored_transaction[CANONICAL.event_ts]),
+        transaction_id=str(row[CANONICAL.transaction_id]),
+        event_timestamp=_as_utc_datetime(row[CANONICAL.event_ts]),
         model_probabilities=model_probabilities,
         fusion_probability=fusion_probability,
         rule_hits=_rule_evidence(rule_hits),

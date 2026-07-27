@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 from aml_evidence_graph.features.build import build_pit_feature_dataset
 from aml_evidence_graph.ingestion.prepare import convert_csv_to_parquet
@@ -9,7 +9,7 @@ from aml_evidence_graph.training.run_graphsage import train_and_evaluate_graphsa
 from aml_evidence_graph.training.table_baseline import train_and_evaluate_table_baselines
 
 
-def _mock_raw_transactions() -> pd.DataFrame:
+def _mock_raw_transactions() -> pl.DataFrame:
     rows: list[dict[str, object]] = []
     split_dates = (
         ("2022-10-07", 6),
@@ -36,12 +36,12 @@ def _mock_raw_transactions() -> pd.DataFrame:
                     "Laundering_type": "Mock type" if offset in {1, 4} else "None",
                 }
             )
-    return pd.DataFrame(rows)
+    return pl.DataFrame(rows)
 
 
 def test_mock_csv_to_features_to_table_metrics(tmp_path: Path) -> None:
     raw_csv = tmp_path / "mock.csv"
-    _mock_raw_transactions().to_csv(raw_csv, index=False)
+    _mock_raw_transactions().write_csv(raw_csv)
     prepared_root = tmp_path / "prepared"
     feature_root = tmp_path / "features"
     model_root = tmp_path / "models"

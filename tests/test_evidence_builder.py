@@ -1,21 +1,17 @@
 from datetime import UTC, datetime
 
-import pandas as pd
-
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.evidence.builder import build_risk_evidence_package
 from aml_evidence_graph.graph.explain import GraphEdgeEvidence
 
 
 def test_evidence_builder_uses_only_selected_transaction_facts() -> None:
-    transaction = pd.Series(
-        {
-            CANONICAL.transaction_id: "txn-row-0001",
-            CANONICAL.event_ts: "2023-07-01T12:00:00Z",
-            "sender_outgoing_count_7d": 4.0,
-            "non_evidence_value": "must-not-appear",
-        }
-    )
+    transaction = {
+        CANONICAL.transaction_id: "txn-row-0001",
+        CANONICAL.event_ts: "2023-07-01T12:00:00Z",
+        "sender_outgoing_count_7d": 4.0,
+        "non_evidence_value": "must-not-appear",
+    }
 
     package = build_risk_evidence_package(
         transaction,
@@ -34,12 +30,10 @@ def test_evidence_builder_uses_only_selected_transaction_facts() -> None:
 
 
 def test_evidence_builder_keeps_bounded_graph_node_and_path_evidence() -> None:
-    transaction = pd.Series(
-        {
-            CANONICAL.transaction_id: "txn-row-0002",
-            CANONICAL.event_ts: "2023-07-01T12:00:00Z",
-        }
-    )
+    transaction = {
+        CANONICAL.transaction_id: "txn-row-0002",
+        CANONICAL.event_ts: "2023-07-01T12:00:00Z",
+    }
     graph_evidence = GraphEdgeEvidence(
         event_date="2023-07-01",
         source_node=3,

@@ -52,6 +52,7 @@ def _load_registry_configuration(path: Path) -> dict[str, Any]:
         "current_transaction",
         "point_in_time_history",
         "causal_graph_statistics",
+        "typology_proxies",
         "approved_rules",
     }
     missing = sorted(required_owners.difference(owners))
@@ -128,6 +129,160 @@ def load_static_feature_metadata(path: Path) -> list[FeatureMetadata]:
         available_at="event_time",
         unit_test="tests/test_pit_features.py",
     )
+
+    typology_current = (
+        (
+            "is_high_risk_sender_location",
+            (CANONICAL.sender_location,),
+            "current_transaction",
+            "event_time",
+        ),
+        (
+            "is_high_risk_receiver_location",
+            (CANONICAL.receiver_location,),
+            "current_transaction",
+            "event_time",
+        ),
+        (
+            "is_high_risk_corridor",
+            (CANONICAL.sender_location, CANONICAL.receiver_location),
+            "current_transaction",
+            "event_time",
+        ),
+        (
+            "is_cash_like_payment",
+            (CANONICAL.payment_type,),
+            "current_transaction",
+            "event_time",
+        ),
+        (
+            "is_cross_border_payment_type",
+            (CANONICAL.payment_type,),
+            "current_transaction",
+            "event_time",
+        ),
+        (
+            "is_round_amount",
+            (CANONICAL.amount,),
+            "current_transaction",
+            "event_time",
+        ),
+        (
+            "is_just_below_reporting_threshold",
+            (CANONICAL.amount,),
+            "current_transaction",
+            "event_time",
+        ),
+        (
+            "hour_of_day",
+            (CANONICAL.event_ts,),
+            "current_transaction",
+            "event_time",
+        ),
+        (
+            "day_of_week",
+            (CANONICAL.event_ts,),
+            "current_transaction",
+            "event_time",
+        ),
+        (
+            "is_weekend",
+            (CANONICAL.event_ts,),
+            "current_transaction",
+            "event_time",
+        ),
+    )
+    for feature_name, source_columns, window, available_at in typology_current:
+        add(
+            feature_name,
+            owner_group="typology_proxies",
+            source_columns=source_columns,
+            window=window,
+            available_at=available_at,
+            unit_test="tests/test_pit_features.py",
+        )
+
+    typology_history = (
+        (
+            "sender_small_amount_unique_receivers_7d",
+            (CANONICAL.sender_account_id, CANONICAL.receiver_account_id, CANONICAL.amount),
+            "[7d, event_time)",
+        ),
+        (
+            "receiver_small_amount_unique_senders_7d",
+            (CANONICAL.receiver_account_id, CANONICAL.sender_account_id, CANONICAL.amount),
+            "[7d, event_time)",
+        ),
+        (
+            "amount_to_sender_outgoing_mean_ratio_30d",
+            (CANONICAL.sender_account_id, CANONICAL.amount, CANONICAL.event_ts),
+            "[30d, event_time)",
+        ),
+        (
+            "amount_zscore_vs_sender_outgoing_30d",
+            (CANONICAL.sender_account_id, CANONICAL.amount, CANONICAL.event_ts),
+            "[30d, event_time)",
+        ),
+        (
+            "seconds_since_last_outgoing",
+            (CANONICAL.sender_account_id, CANONICAL.event_ts),
+            "prior_sender_outgoing",
+        ),
+        (
+            "seconds_since_last_incoming",
+            (CANONICAL.sender_account_id, CANONICAL.event_ts),
+            "prior_sender_incoming",
+        ),
+        (
+            "cash_in_then_out_within_window",
+            (CANONICAL.sender_account_id, CANONICAL.payment_type, CANONICAL.event_ts),
+            "configured_cash_in_then_out_window",
+        ),
+        (
+            "sender_outgoing_count_1d_over_30d",
+            (CANONICAL.sender_account_id, CANONICAL.event_ts),
+            "[1d,30d] ratio",
+        ),
+        (
+            "receiver_incoming_count_1d_over_30d",
+            (CANONICAL.receiver_account_id, CANONICAL.event_ts),
+            "[1d,30d] ratio",
+        ),
+        (
+            "sender_outgoing_unique_counterparties_1d_over_30d",
+            (CANONICAL.sender_account_id, CANONICAL.event_ts),
+            "[1d,30d] ratio",
+        ),
+        (
+            "receiver_incoming_unique_counterparties_1d_over_30d",
+            (CANONICAL.receiver_account_id, CANONICAL.event_ts),
+            "[1d,30d] ratio",
+        ),
+        (
+            "any_rule_hit",
+            ("rule_*_hit",),
+            "after_rule_evaluation",
+        ),
+        (
+            "rule_hit_count",
+            ("rule_*_hit",),
+            "after_rule_evaluation",
+        ),
+    )
+    for feature_name, source_columns, window in typology_history:
+        available_at = (
+            "after_rule_evaluation"
+            if feature_name in {"any_rule_hit", "rule_hit_count"}
+            else "strictly_before_event_time"
+        )
+        add(
+            feature_name,
+            owner_group="typology_proxies",
+            source_columns=source_columns,
+            window=window,
+            available_at=available_at,
+            unit_test="tests/test_pit_features.py",
+        )
 
     history_definitions = (
         ("count", (CANONICAL.event_ts,)),

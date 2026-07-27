@@ -1,8 +1,6 @@
 from pathlib import Path
 
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
+import polars as pl
 
 from aml_evidence_graph.ingestion.smoke_subset import prepare_smoke_subset
 
@@ -12,10 +10,7 @@ def test_prepare_smoke_subset_copies_requested_dates(tmp_path: Path) -> None:
     for event_date in ("2023-04-30", "2023-05-01", "2023-07-01"):
         target = source / f"event_date={event_date}" / "split=train"
         target.mkdir(parents=True)
-        pq.write_table(
-            pa.Table.from_pandas(pd.DataFrame({"transaction_id": [event_date]})),
-            target / "part.parquet",
-        )
+        pl.DataFrame({"transaction_id": [event_date]}).write_parquet(target / "part.parquet")
 
     summary = prepare_smoke_subset(
         source,

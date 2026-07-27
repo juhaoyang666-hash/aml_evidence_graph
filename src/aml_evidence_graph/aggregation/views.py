@@ -14,10 +14,11 @@ import heapq
 import json
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
+import polars as pl
 import pyarrow.dataset as ds
 
 from aml_evidence_graph.data.contract import CANONICAL
@@ -101,7 +102,7 @@ class InvestigationViews:
 
     as_of_ts: str
     window_start_ts: str
-    account_risk: pd.DataFrame
+    account_risk: pl.DataFrame
     funds_paths: tuple[FundsPath, ...]
     case_views: tuple[InvestigationCaseView, ...]
 
@@ -109,7 +110,7 @@ class InvestigationViews:
 @dataclass(frozen=True)
 class _ScoredEdge:
     transaction_id: str
-    event_ts: pd.Timestamp
+    event_ts: datetime
     sender_account_id: str
     receiver_account_id: str
     amount: float
@@ -118,15 +119,18 @@ class _ScoredEdge:
     rule_hit_count: int
 
 
-def _as_utc_timestamp(value: str | pd.Timestamp) -> pd.Timestamp:
-    timestamp = pd.to_datetime(value, utc=True, errors="raise")
-    if pd.isna(timestamp):
-        raise ValueError("Timestamp cannot be null.")
-    return pd.Timestamp(timestamp)
+def _as_utc_timestamp(value: str | datetime) -> datetime:
+    if isinstance(value, datetime):
+        timestamp = value
+    else:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc)
 
 
-def _as_iso_timestamp(value: pd.Timestamp) -> str:
-    return value.to_pydatetime().isoformat()
+def _as_iso_timestamp(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat()
 
 
 def _stable_identifier(prefix: str, values: tuple[str, ...]) -> str:
@@ -135,12 +139,12 @@ def _stable_identifier(prefix: str, values: tuple[str, ...]) -> str:
 
 
 def _normalise_scored_transactions(
-    scored_transactions: pd.DataFrame,
+    scored_transactions: pl.DataFrame,
     *,
     score_column: str,
-    as_of_ts: str | pd.Timestamp,
+    as_of_ts: str | datetime,
     window_days: int,
-) -> tuple[pd.DataFrame, pd.Timestamp, pd.Timestamp]:
+) -> tuple[pl.DataFrame, datetime, datetime]:
     if window_days < 1:
         raise ValueError("window_days must be positive.")
     forbidden = sorted(LABEL_COLUMNS.intersection(scored_transactions.columns))
@@ -162,63 +166,71 @@ def _normalise_scored_transactions(
         raise ValueError("Scored transactions are missing: " + ", ".join(missing))
 
     as_of = _as_utc_timestamp(as_of_ts)
-    window_start = as_of - pd.Timedelta(days=window_days)
+    window_start = as_of - timedelta(days=window_days)
     columns = list(required)
     if "rule_hit_count" in scored_transactions.columns:
         columns.append("rule_hit_count")
-    frame = scored_transactions.loc[:, columns].copy()
-    frame[CANONICAL.event_ts] = pd.to_datetime(
-        frame[CANONICAL.event_ts], utc=True, errors="raise"
+    frame = scored_transactions.select(columns).with_columns(
+        pl.col(CANONICAL.event_ts).cast(pl.Datetime(time_zone="UTC"), strict=True),
     )
-    if frame[CANONICAL.event_ts].isna().any():
+    if frame[CANONICAL.event_ts].null_count() > 0:
         raise ValueError("event_ts cannot contain null timestamps.")
     if (frame[CANONICAL.event_ts] > as_of).any():
         raise ValueError("Scored transactions contain events after the explicit as_of_ts.")
-    if frame[CANONICAL.transaction_id].isna().any() or frame[
+    if frame[CANONICAL.transaction_id].null_count() > 0 or frame[
         CANONICAL.transaction_id
-    ].duplicated().any():
+    ].is_duplicated().any():
         raise ValueError("transaction_id must be non-null and unique.")
     for account_column in (CANONICAL.sender_account_id, CANONICAL.receiver_account_id):
-        is_missing_or_empty = frame[account_column].isna().any() or (
-            frame[account_column].astype(str).str.len().eq(0).any()
+        is_missing_or_empty = frame[account_column].null_count() > 0 or (
+            frame[account_column].cast(pl.Utf8).str.len_chars().eq(0).any()
         )
         if is_missing_or_empty:
             raise ValueError(f"{account_column} must contain non-empty de-identified account IDs.")
-        frame[account_column] = frame[account_column].astype(str)
-    frame[CANONICAL.transaction_id] = frame[CANONICAL.transaction_id].astype(str)
-    frame[CANONICAL.amount] = pd.to_numeric(frame[CANONICAL.amount], errors="raise")
-    if frame[CANONICAL.amount].isna().any() or (frame[CANONICAL.amount] < 0).any():
+        frame = frame.with_columns(pl.col(account_column).cast(pl.Utf8))
+    frame = frame.with_columns(
+        pl.col(CANONICAL.transaction_id).cast(pl.Utf8),
+        pl.col(CANONICAL.amount).cast(pl.Float64, strict=True),
+    )
+    if frame[CANONICAL.amount].null_count() > 0 or (frame[CANONICAL.amount] < 0).any():
         raise ValueError("amount must be non-null and non-negative.")
-    frame[score_column] = pd.to_numeric(frame[score_column], errors="raise")
-    if frame[score_column].isna().any() or not frame[score_column].between(0, 1).all():
+    frame = frame.with_columns(pl.col(score_column).cast(pl.Float64, strict=True))
+    if (
+        frame[score_column].null_count() > 0
+        or (frame[score_column] < 0).any()
+        or (frame[score_column] > 1).any()
+    ):
         raise ValueError(f"{score_column} must contain probabilities in [0, 1].")
-    source_rows = pd.to_numeric(frame[CANONICAL.source_row_number], errors="raise")
-    if source_rows.isna().any() or (source_rows < 1).any():
+    source_rows = frame[CANONICAL.source_row_number].cast(pl.Float64, strict=True)
+    if source_rows.null_count() > 0 or (source_rows < 1).any() or ((source_rows % 1) != 0).any():
         raise ValueError("source_row_number must be positive.")
-    frame[CANONICAL.source_row_number] = source_rows.astype(int)
-    if "rule_hit_count" not in frame:
-        frame["rule_hit_count"] = 0
+    frame = frame.with_columns(pl.col(CANONICAL.source_row_number).cast(pl.Int64))
+    if "rule_hit_count" not in frame.columns:
+        frame = frame.with_columns(pl.lit(0).alias("rule_hit_count"))
     else:
-        rule_hits = pd.to_numeric(frame["rule_hit_count"], errors="raise")
-        if rule_hits.isna().any() or (rule_hits < 0).any() or not (rule_hits % 1 == 0).all():
+        rule_hits = frame["rule_hit_count"].cast(pl.Float64, strict=True)
+        if (
+            rule_hits.null_count() > 0
+            or (rule_hits < 0).any()
+            or ((rule_hits % 1) != 0).any()
+        ):
             raise ValueError("rule_hit_count must be a non-negative integer.")
-        frame["rule_hit_count"] = rule_hits.astype(int)
-    frame = frame.loc[
-        frame[CANONICAL.event_ts].ge(window_start)
-        & frame[CANONICAL.event_ts].le(as_of)
-    ].copy()
+        frame = frame.with_columns(pl.col("rule_hit_count").cast(pl.Int64))
+    frame = frame.filter(
+        pl.col(CANONICAL.event_ts).is_between(window_start, as_of, closed="both")
+    )
     return frame, as_of, window_start
 
 
 def _build_account_risk(
-    frame: pd.DataFrame,
+    frame: pl.DataFrame,
     *,
     score_column: str,
     risk_threshold: float,
     top_n: int,
-    as_of: pd.Timestamp,
-    window_start: pd.Timestamp,
-) -> pd.DataFrame:
+    as_of: datetime,
+    window_start: datetime,
+) -> pl.DataFrame:
     accumulators: dict[str, _AccountAccumulator] = {}
     columns = [
         CANONICAL.sender_account_id,
@@ -226,11 +238,12 @@ def _build_account_risk(
         score_column,
         "rule_hit_count",
     ]
-    for sender, receiver, score, rule_hits in frame.loc[:, columns].itertuples(
-        index=False, name=None
-    ):
-        score_value = float(score)
+    for row in frame.select(columns).iter_rows(named=True):
+        sender = row[CANONICAL.sender_account_id]
+        receiver = row[CANONICAL.receiver_account_id]
+        score_value = float(row[score_column])
         alert = score_value >= risk_threshold
+        rule_hits = int(row["rule_hit_count"])
         accounts = ((str(sender), "both"),) if sender == receiver else (
             (str(sender), "sender"),
             (str(receiver), "receiver"),
@@ -240,7 +253,7 @@ def _build_account_risk(
             accumulator.observe(
                 score=score_value,
                 is_alert=alert,
-                rule_hit_count=int(rule_hits),
+                rule_hit_count=rule_hits,
                 role=role,
             )
     records = [
@@ -270,47 +283,59 @@ def _build_account_risk(
         "top_n_mean_risk_score",
         "rule_hit_count",
     ]
-    return pd.DataFrame(records, columns=columns_out).sort_values(
-        ["max_risk_score", "account_id"], ascending=[False, True], kind="stable"
-    ).reset_index(drop=True)
+    if not records:
+        return pl.DataFrame(
+            schema={
+                "account_id": pl.Utf8,
+                "as_of_ts": pl.Utf8,
+                "window_start_ts": pl.Utf8,
+                "scored_transaction_count": pl.Int64,
+                "alert_transaction_count": pl.Int64,
+                "sender_transaction_count": pl.Int64,
+                "receiver_transaction_count": pl.Int64,
+                "max_risk_score": pl.Float64,
+                "top_n_mean_risk_score": pl.Float64,
+                "rule_hit_count": pl.Int64,
+            }
+        )
+    return pl.DataFrame(records).select(columns_out).sort(
+        ["max_risk_score", "account_id"],
+        descending=[True, False],
+    )
 
 
 def _high_risk_edges(
-    frame: pd.DataFrame,
+    frame: pl.DataFrame,
     *,
     score_column: str,
     risk_threshold: float,
 ) -> list[_ScoredEdge]:
-    high_risk = frame.loc[frame[score_column].ge(risk_threshold)].copy()
-    high_risk = high_risk.sort_values(
-        [CANONICAL.event_ts, CANONICAL.source_row_number, CANONICAL.transaction_id], kind="stable"
+    high_risk = frame.filter(pl.col(score_column) >= risk_threshold).sort(
+        [CANONICAL.event_ts, CANONICAL.source_row_number, CANONICAL.transaction_id],
     )
     return [
         _ScoredEdge(
-            transaction_id=str(transaction_id),
-            event_ts=pd.Timestamp(event_ts),
-            sender_account_id=str(sender),
-            receiver_account_id=str(receiver),
-            amount=float(amount),
-            risk_score=float(score),
-            source_row_number=int(source_row),
-            rule_hit_count=int(rule_hits),
+            transaction_id=str(row[CANONICAL.transaction_id]),
+            event_ts=row[CANONICAL.event_ts],
+            sender_account_id=str(row[CANONICAL.sender_account_id]),
+            receiver_account_id=str(row[CANONICAL.receiver_account_id]),
+            amount=float(row[CANONICAL.amount]),
+            risk_score=float(row[score_column]),
+            source_row_number=int(row[CANONICAL.source_row_number]),
+            rule_hit_count=int(row["rule_hit_count"]),
         )
-        for transaction_id, event_ts, sender, receiver, amount, score, source_row, rule_hits in (
-            high_risk.loc[
-                :,
-                [
-                    CANONICAL.transaction_id,
-                    CANONICAL.event_ts,
-                    CANONICAL.sender_account_id,
-                    CANONICAL.receiver_account_id,
-                    CANONICAL.amount,
-                    score_column,
-                    CANONICAL.source_row_number,
-                    "rule_hit_count",
-                ],
-            ].itertuples(index=False, name=None)
-        )
+        for row in high_risk.select(
+            [
+                CANONICAL.transaction_id,
+                CANONICAL.event_ts,
+                CANONICAL.sender_account_id,
+                CANONICAL.receiver_account_id,
+                CANONICAL.amount,
+                score_column,
+                CANONICAL.source_row_number,
+                "rule_hit_count",
+            ]
+        ).iter_rows(named=True)
     ]
 
 
@@ -484,9 +509,9 @@ def _build_case_views(
 
 
 def build_investigation_views(
-    scored_transactions: pd.DataFrame,
+    scored_transactions: pl.DataFrame,
     *,
-    as_of_ts: str | pd.Timestamp,
+    as_of_ts: str | datetime,
     score_column: str = "risk_score",
     window_days: int = 30,
     risk_threshold: float = 0.5,
@@ -547,7 +572,7 @@ def write_investigation_views(output_dir: Path, views: InvestigationViews) -> di
     if output_dir.exists():
         raise FileExistsError(f"Output already exists: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=False)
-    views.account_risk.to_parquet(output_dir / "account_risk.parquet", index=False)
+    views.account_risk.write_parquet(output_dir / "account_risk.parquet")
     (output_dir / "funds_paths.json").write_text(
         json.dumps([asdict(path) for path in views.funds_paths], ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -559,7 +584,7 @@ def write_investigation_views(output_dir: Path, views: InvestigationViews) -> di
     summary = {
         "as_of_ts": views.as_of_ts,
         "window_start_ts": views.window_start_ts,
-        "account_count": len(views.account_risk),
+        "account_count": views.account_risk.height,
         "funds_path_count": len(views.funds_paths),
         "investigation_case_count": len(views.case_views),
         "privacy_notice": (
@@ -573,25 +598,27 @@ def write_investigation_views(output_dir: Path, views: InvestigationViews) -> di
     return summary
 
 
-def _read_private_parquet(path: Path) -> pd.DataFrame:
+def _read_private_parquet(path: Path) -> pl.DataFrame:
     if path.is_file():
-        return pd.read_parquet(path)
+        return pl.read_parquet(path)
     if path.is_dir():
-        return ds.dataset(
-            path,
-            format="parquet",
-            partitioning="hive",
-            exclude_invalid_files=True,
-        ).to_table().to_pandas()
+        return pl.from_arrow(
+            ds.dataset(
+                path,
+                format="parquet",
+                partitioning="hive",
+                exclude_invalid_files=True,
+            ).to_table()
+        )
     raise FileNotFoundError(f"Private input does not exist: {path}")
 
 
 def _join_private_scores(
-    transactions: pd.DataFrame,
-    scores: pd.DataFrame,
+    transactions: pl.DataFrame,
+    scores: pl.DataFrame,
     *,
     score_column: str,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     transaction_columns = [
         CANONICAL.transaction_id,
         CANONICAL.event_ts,
@@ -606,12 +633,12 @@ def _join_private_scores(
     missing_scores = sorted({CANONICAL.transaction_id, score_column}.difference(scores.columns))
     if missing_scores:
         raise ValueError("Score input is missing: " + ", ".join(missing_scores))
-    if transactions[CANONICAL.transaction_id].duplicated().any() or scores[
+    if transactions[CANONICAL.transaction_id].is_duplicated().any() or scores[
         CANONICAL.transaction_id
-    ].duplicated().any():
+    ].is_duplicated().any():
         raise ValueError("Transaction and score inputs require unique transaction IDs.")
-    transaction_ids = set(transactions[CANONICAL.transaction_id].astype(str))
-    score_ids = set(scores[CANONICAL.transaction_id].astype(str))
+    transaction_ids = set(transactions[CANONICAL.transaction_id].cast(pl.Utf8).to_list())
+    score_ids = set(scores[CANONICAL.transaction_id].cast(pl.Utf8).to_list())
     unknown_score_ids = score_ids.difference(transaction_ids)
     if unknown_score_ids:
         raise ValueError(
@@ -622,24 +649,27 @@ def _join_private_scores(
         for column in transactions.columns
         if column.startswith("rule_") and column.endswith("_hit")
     )
-    left = transactions.loc[
-        transactions[CANONICAL.transaction_id].astype(str).isin(score_ids),
-        [*transaction_columns, *rule_columns],
-    ].copy()
-    right = scores.loc[:, [CANONICAL.transaction_id, score_column]].copy()
-    left[CANONICAL.transaction_id] = left[CANONICAL.transaction_id].astype(str)
-    right[CANONICAL.transaction_id] = right[CANONICAL.transaction_id].astype(str)
-    joined = left.merge(
+    left = transactions.filter(
+        pl.col(CANONICAL.transaction_id).cast(pl.Utf8).is_in(list(score_ids))
+    ).select([*transaction_columns, *rule_columns])
+    right = scores.select([CANONICAL.transaction_id, score_column]).with_columns(
+        pl.col(CANONICAL.transaction_id).cast(pl.Utf8)
+    )
+    joined = left.with_columns(
+        pl.col(CANONICAL.transaction_id).cast(pl.Utf8)
+    ).join(
         right,
         on=CANONICAL.transaction_id,
         how="inner",
-        validate="one_to_one",
+        validate="1:1",
     )
     if rule_columns:
-        joined["rule_hit_count"] = joined.loc[:, rule_columns].apply(
-            pd.to_numeric, errors="raise"
-        ).sum(axis=1)
-    return joined.drop(columns=rule_columns)
+        joined = joined.with_columns(
+            pl.sum_horizontal(
+                [pl.col(column).cast(pl.Float64) for column in rule_columns]
+            ).alias("rule_hit_count")
+        ).drop(rule_columns)
+    return joined
 
 
 def main() -> None:

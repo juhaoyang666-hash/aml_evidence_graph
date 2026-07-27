@@ -2,7 +2,7 @@ import json
 import sys
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 import pytest
 
 from aml_evidence_graph.aggregation.views import (
@@ -14,17 +14,19 @@ from aml_evidence_graph.aggregation.views import (
 from aml_evidence_graph.data.contract import CANONICAL
 
 
-def _scored_transactions() -> pd.DataFrame:
-    return pd.DataFrame(
+def _scored_transactions() -> pl.DataFrame:
+    return pl.DataFrame(
         {
             CANONICAL.transaction_id: ["t1", "t-same", "t2", "t3", "t-low"],
-            CANONICAL.event_ts: [
-                "2023-07-01T10:00:00Z",
-                "2023-07-01T10:00:00Z",
-                "2023-07-01T11:00:00Z",
-                "2023-07-01T12:00:00Z",
-                "2023-07-01T11:00:00Z",
-            ],
+            CANONICAL.event_ts: pl.Series(
+                [
+                    "2023-07-01T10:00:00Z",
+                    "2023-07-01T10:00:00Z",
+                    "2023-07-01T11:00:00Z",
+                    "2023-07-01T12:00:00Z",
+                    "2023-07-01T11:00:00Z",
+                ]
+            ).str.to_datetime(time_zone="UTC"),
             CANONICAL.sender_account_id: ["acct-a", "acct-b", "acct-b", "acct-c", "acct-a"],
             CANONICAL.receiver_account_id: ["acct-b", "acct-c", "acct-c", "acct-d", "acct-e"],
             CANONICAL.amount: [10.0, 15.0, 20.0, 30.0, 5.0],
@@ -45,7 +47,9 @@ def test_investigation_views_aggregate_scores_without_account_labels(tmp_path: P
         top_n=2,
     )
 
-    account_a = views.account_risk.set_index("account_id").loc["acct-a"]
+    account_a = (
+        views.account_risk.filter(pl.col("account_id") == "acct-a").row(0, named=True)
+    )
     assert account_a["scored_transaction_count"] == 2
     assert account_a["alert_transaction_count"] == 1
     assert account_a["max_risk_score"] == 0.90
@@ -73,7 +77,9 @@ def test_investigation_views_aggregate_scores_without_account_labels(tmp_path: P
 
 
 def test_investigation_views_reject_labels_and_future_events() -> None:
-    labelled = _scored_transactions().assign(**{CANONICAL.is_laundering: [0, 1, 0, 0, 0]})
+    labelled = _scored_transactions().with_columns(
+        pl.Series(CANONICAL.is_laundering, [0, 1, 0, 0, 0])
+    )
     with pytest.raises(ValueError, match="must not receive labels"):
         build_investigation_views(labelled, as_of_ts="2023-07-01T12:00:00Z")
 
@@ -85,29 +91,29 @@ def test_investigation_views_reject_labels_and_future_events() -> None:
 
 
 def test_private_score_join_uses_explicit_id_equality_and_drops_labels() -> None:
-    transactions = _scored_transactions().assign(
-        **{
-            CANONICAL.is_laundering: [0, 1, 0, 0, 0],
-            CANONICAL.laundering_type: ["", "x", "", "", ""],
-            "rule_demo_hit": [1, 0, 1, 0, 0],
-        }
+    transactions = _scored_transactions().with_columns(
+        pl.Series(CANONICAL.is_laundering, [0, 1, 0, 0, 0]),
+        pl.Series(CANONICAL.laundering_type, ["", "x", "", "", ""]),
+        pl.Series("rule_demo_hit", [1, 0, 1, 0, 0]),
     )
-    scores = transactions.loc[:, [CANONICAL.transaction_id, "risk_score"]].copy()
+    scores = transactions.select([CANONICAL.transaction_id, "risk_score"])
     joined = _join_private_scores(transactions, scores, score_column="risk_score")
 
-    assert CANONICAL.is_laundering not in joined
-    assert CANONICAL.laundering_type not in joined
-    assert joined["rule_hit_count"].tolist() == [1, 0, 1, 0, 0]
+    assert CANONICAL.is_laundering not in joined.columns
+    assert CANONICAL.laundering_type not in joined.columns
+    assert joined["rule_hit_count"].to_list() == [1, 0, 1, 0, 0]
 
     with pytest.raises(ValueError, match="absent from the transaction"):
         _join_private_scores(
             transactions,
-            pd.concat(
+            pl.concat(
                 [
-                    scores.iloc[:-1],
-                    pd.DataFrame({CANONICAL.transaction_id: ["unknown"], "risk_score": [0.9]}),
+                    scores.slice(0, scores.height - 1),
+                    pl.DataFrame(
+                        {CANONICAL.transaction_id: ["unknown"], "risk_score": [0.9]}
+                    ),
                 ],
-                ignore_index=True,
+                how="vertical_relaxed",
             ),
             score_column="risk_score",
         )
@@ -118,17 +124,14 @@ def test_investigation_view_cli_writes_private_artifacts(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    transactions = _scored_transactions().assign(
-        **{CANONICAL.is_laundering: [0, 1, 0, 0, 0]}
+    transactions = _scored_transactions().with_columns(
+        pl.Series(CANONICAL.is_laundering, [0, 1, 0, 0, 0])
     )
     transaction_path = tmp_path / "transactions.parquet"
     score_path = tmp_path / "scores.parquet"
     output_dir = tmp_path / "views"
-    transactions.to_parquet(transaction_path, index=False)
-    transactions.loc[:, [CANONICAL.transaction_id, "risk_score"]].to_parquet(
-        score_path,
-        index=False,
-    )
+    transactions.write_parquet(transaction_path)
+    transactions.select([CANONICAL.transaction_id, "risk_score"]).write_parquet(score_path)
     monkeypatch.setattr(
         sys,
         "argv",

@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import polars as pl
 from catboost import CatBoostClassifier
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
@@ -14,6 +15,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
+from aml_evidence_graph.compat import is_numeric_dtype, to_pandas, to_polars
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.data.splits import TimeSplit
 
@@ -46,7 +48,7 @@ class TrainedTableModels:
     logistic: Pipeline
     catboost: CatBoostClassifier
 
-    def predict_proba(self, frame: pd.DataFrame) -> dict[str, np.ndarray]:
+    def predict_proba(self, frame: pl.DataFrame | pd.DataFrame) -> dict[str, np.ndarray]:
         """Return positive-class probabilities for both deterministic baselines."""
         logistic_frame, catboost_frame = prepare_feature_frames(frame, self.feature_spec)
         return {
@@ -56,40 +58,52 @@ class TrainedTableModels:
 
 
 def infer_feature_spec(
-    frame: pd.DataFrame,
+    frame: pl.DataFrame | pd.DataFrame,
     *,
     excluded_prefixes: tuple[str, ...] = (),
 ) -> FeatureSpec:
     """Select model features while explicitly excluding labels and identifiers."""
+    data = to_polars(frame)
     candidates = [
         column
-        for column in frame.columns
+        for column in data.columns
         if column not in LEAKAGE_COLUMNS
         and not any(column.startswith(prefix) for prefix in excluded_prefixes)
     ]
     if not candidates:
         raise ValueError("No model features remain after excluding labels and identifiers.")
     numeric = tuple(
-        column for column in candidates if pd.api.types.is_numeric_dtype(frame[column])
+        column for column in candidates if is_numeric_dtype(data.schema[column])
     )
     categorical = tuple(column for column in candidates if column not in numeric)
     return FeatureSpec(numeric_columns=numeric, categorical_columns=categorical)
 
 
 def prepare_feature_frames(
-    frame: pd.DataFrame,
+    frame: pl.DataFrame | pd.DataFrame,
     spec: FeatureSpec,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Prepare matching feature frames without fitting transformations on validation/test."""
-    missing = sorted(set(spec.all_columns).difference(frame.columns))
+    """Prepare matching feature frames without fitting transformations on validation/test.
+
+    Returns pandas DataFrames because sklearn and CatBoost still require them.
+    """
+    data = to_polars(frame)
+    missing = sorted(set(spec.all_columns).difference(data.columns))
     if missing:
         raise ValueError(f"Model input is missing columns: {', '.join(missing)}")
     feature_columns = list(spec.all_columns)
-    logistic_frame = frame.loc[:, feature_columns].copy()
-    catboost_frame = frame.loc[:, feature_columns].copy()
+    prepared = data.select(feature_columns)
     for column in spec.categorical_columns:
-        logistic_frame[column] = logistic_frame[column].astype("string")
-        catboost_frame[column] = catboost_frame[column].astype("string").fillna("__MISSING__")
+        prepared = prepared.with_columns(pl.col(column).cast(pl.Utf8))
+    logistic_frame = to_pandas(prepared)
+    catboost_frame = to_pandas(
+        prepared.with_columns(
+            [
+                pl.col(column).fill_null("__MISSING__")
+                for column in spec.categorical_columns
+            ]
+        )
+    )
     return logistic_frame, catboost_frame
 
 
@@ -136,27 +150,29 @@ def _build_logistic_pipeline(spec: FeatureSpec, *, random_seed: int) -> Pipeline
     )
 
 
-def _class_weights(labels: pd.Series) -> list[float]:
-    positive_count = int(labels.sum())
-    negative_count = int(len(labels) - positive_count)
+def _class_weights(labels: pl.Series | pd.Series | np.ndarray) -> list[float]:
+    values = np.asarray(labels, dtype=int)
+    positive_count = int(values.sum())
+    negative_count = int(len(values) - positive_count)
     if positive_count == 0 or negative_count == 0:
         raise ValueError("Training split must contain both positive and negative examples.")
     return [1.0, negative_count / positive_count]
 
 
 def fit_table_models(
-    frame: pd.DataFrame,
+    frame: pl.DataFrame | pd.DataFrame,
     *,
     random_seed: int = 20260722,
     catboost_params: dict[str, Any] | None = None,
     excluded_feature_prefixes: tuple[str, ...] = (),
 ) -> TrainedTableModels:
     """Fit table baselines using only the pre-registered training period."""
-    if "split" not in frame or CANONICAL.is_laundering not in frame:
+    data = to_polars(frame)
+    if "split" not in data.columns or CANONICAL.is_laundering not in data.columns:
         raise ValueError("Frame requires split and canonical is_laundering columns.")
-    train = frame.loc[frame["split"].eq(TimeSplit.TRAIN.value)].copy()
-    validation = frame.loc[frame["split"].eq(TimeSplit.VALIDATION.value)].copy()
-    if train.empty or validation.empty:
+    train = data.filter(pl.col("split") == TimeSplit.TRAIN.value)
+    validation = data.filter(pl.col("split") == TimeSplit.VALIDATION.value)
+    if train.is_empty() or validation.is_empty():
         raise ValueError("Both train and validation chronological partitions are required.")
     return fit_table_models_for_partitions(
         train,
@@ -168,24 +184,29 @@ def fit_table_models(
 
 
 def fit_table_models_for_partitions(
-    train: pd.DataFrame,
-    validation: pd.DataFrame,
+    train: pl.DataFrame | pd.DataFrame,
+    validation: pl.DataFrame | pd.DataFrame,
     *,
     random_seed: int = 20260722,
     catboost_params: dict[str, Any] | None = None,
     excluded_feature_prefixes: tuple[str, ...] = (),
 ) -> TrainedTableModels:
     """Fit table models from explicitly supplied chronological train/validation frames."""
-    if train.empty or validation.empty:
+    train_frame = to_polars(train)
+    validation_frame = to_polars(validation)
+    if train_frame.is_empty() or validation_frame.is_empty():
         raise ValueError("Both chronological train and validation frames are required.")
-    if CANONICAL.is_laundering not in train or CANONICAL.is_laundering not in validation:
+    if (
+        CANONICAL.is_laundering not in train_frame.columns
+        or CANONICAL.is_laundering not in validation_frame.columns
+    ):
         raise ValueError("Both partitions require canonical is_laundering labels.")
 
-    spec = infer_feature_spec(train, excluded_prefixes=excluded_feature_prefixes)
-    train_logistic, train_catboost = prepare_feature_frames(train, spec)
-    validation_logistic, validation_catboost = prepare_feature_frames(validation, spec)
-    labels = train[CANONICAL.is_laundering].astype(int)
-    validation_labels = validation[CANONICAL.is_laundering].astype(int)
+    spec = infer_feature_spec(train_frame, excluded_prefixes=excluded_feature_prefixes)
+    train_logistic, train_catboost = prepare_feature_frames(train_frame, spec)
+    validation_logistic, validation_catboost = prepare_feature_frames(validation_frame, spec)
+    labels = train_frame[CANONICAL.is_laundering].cast(pl.Int64).to_numpy()
+    validation_labels = validation_frame[CANONICAL.is_laundering].cast(pl.Int64).to_numpy()
 
     logistic = _build_logistic_pipeline(spec, random_seed=random_seed)
     logistic.fit(train_logistic, labels)

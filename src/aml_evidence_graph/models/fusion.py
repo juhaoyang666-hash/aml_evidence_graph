@@ -7,8 +7,11 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
+import polars as pl
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
+
+from aml_evidence_graph.compat import to_polars
 
 
 @dataclass
@@ -18,9 +21,10 @@ class OOFFusionModel:
     model_names: tuple[str, ...]
     classifier: LogisticRegression
 
-    def predict_proba(self, scores: pd.DataFrame) -> np.ndarray:
-        _validate_score_frame(scores, self.model_names)
-        return self.classifier.predict_proba(scores.loc[:, self.model_names])[:, 1]
+    def predict_proba(self, scores: pl.DataFrame | pd.DataFrame) -> np.ndarray:
+        frame = to_polars(scores)
+        _validate_score_frame(frame, self.model_names)
+        return self.classifier.predict_proba(frame.select(list(self.model_names)).to_numpy())[:, 1]
 
 
 @dataclass
@@ -41,49 +45,58 @@ class ValidationCalibration:
         return self.calibrator.predict(values)
 
 
-def _validate_score_frame(scores: pd.DataFrame, model_names: tuple[str, ...]) -> None:
+def _validate_score_frame(scores: pl.DataFrame, model_names: tuple[str, ...]) -> None:
     missing = sorted(set(model_names).difference(scores.columns))
     if missing:
         raise ValueError(f"Fusion scores are missing model columns: {', '.join(missing)}")
-    values = scores.loc[:, model_names].to_numpy(dtype=float)
+    values = scores.select(list(model_names)).to_numpy()
     if not np.isfinite(values).all() or (values < 0).any() or (values > 1).any():
         raise ValueError("All fusion input scores must be finite probabilities in [0, 1].")
 
 
 def fit_oof_fusion(
-    oof_scores: pd.DataFrame,
-    labels: pd.Series | np.ndarray,
+    oof_scores: pl.DataFrame | pd.DataFrame,
+    labels: pl.Series | pd.Series | np.ndarray,
     *,
     model_names: tuple[str, ...] | None = None,
     random_seed: int = 20260722,
 ) -> OOFFusionModel:
     """Fit the fusioner on train-period OOF predictions, never validation/test scores."""
-    names = model_names or tuple(oof_scores.columns)
+    frame = to_polars(oof_scores)
+    names = model_names or tuple(frame.columns)
     if not names:
         raise ValueError("At least one component score is required for fusion.")
-    _validate_score_frame(oof_scores, names)
-    y_true = np.asarray(labels, dtype=int)
-    if len(y_true) != len(oof_scores) or set(np.unique(y_true)) != {0, 1}:
+    _validate_score_frame(frame, names)
+    y_true = np.asarray(
+        labels.to_list() if isinstance(labels, (pl.Series, pd.Series)) else labels,
+        dtype=int,
+    )
+    if len(y_true) != frame.height or set(np.unique(y_true)) != {0, 1}:
         raise ValueError("Fusion labels must align with scores and contain both binary classes.")
     classifier = LogisticRegression(
         class_weight="balanced",
         max_iter=1_000,
         random_state=random_seed,
     )
-    classifier.fit(oof_scores.loc[:, names], y_true)
+    classifier.fit(frame.select(list(names)).to_numpy(), y_true)
     return OOFFusionModel(model_names=names, classifier=classifier)
 
 
 def fit_validation_calibration_and_threshold(
     validation_raw_scores: np.ndarray,
-    validation_labels: pd.Series | np.ndarray,
+    validation_labels: pl.Series | pd.Series | np.ndarray,
     *,
     alert_fraction: float = 0.005,
     method: Literal["auto", "platt", "isotonic"] = "auto",
 ) -> ValidationCalibration:
     """Fit calibration and choose the alert cutoff only on the validation period."""
     scores = np.asarray(validation_raw_scores, dtype=float)
-    labels = np.asarray(validation_labels, dtype=int)
+    labels = np.asarray(
+        validation_labels.to_list()
+        if isinstance(validation_labels, (pl.Series, pd.Series))
+        else validation_labels,
+        dtype=int,
+    )
     if len(scores) != len(labels) or len(scores) == 0:
         raise ValueError("Validation scores and labels must be non-empty and aligned.")
     if set(np.unique(labels)) != {0, 1}:

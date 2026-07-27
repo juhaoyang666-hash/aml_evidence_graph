@@ -1,16 +1,16 @@
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 from aml_evidence_graph.explain.tabular import write_catboost_explanations
 from aml_evidence_graph.models.tabular import fit_table_models
 
 
 def test_catboost_explanations_write_bounded_private_artifacts(tmp_path: Path) -> None:
-    frame = pd.DataFrame(
+    frame = pl.DataFrame(
         {
             "transaction_id": [f"t{index}" for index in range(12)],
-            "event_ts": pd.date_range("2022-10-07", periods=12, tz="UTC"),
+            "event_ts": [f"2022-10-{7 + index:02d}T00:00:00Z" for index in range(12)],
             "source_row_number": range(12),
             "split": ["train"] * 6 + ["validation"] * 3 + ["test"] * 3,
             "is_laundering": [0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0],
@@ -26,7 +26,7 @@ def test_catboost_explanations_write_bounded_private_artifacts(tmp_path: Path) -
 
     result = write_catboost_explanations(
         models,
-        frame.loc[frame["split"] == "validation"],
+        frame.filter(pl.col("split") == "validation"),
         tmp_path,
         model_name="table",
         max_rows=2,

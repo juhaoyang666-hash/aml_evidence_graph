@@ -1,5 +1,5 @@
 import numpy as np
-import pandas as pd
+import polars as pl
 
 from aml_evidence_graph.models.fusion import (
     fit_oof_fusion,
@@ -8,7 +8,7 @@ from aml_evidence_graph.models.fusion import (
 
 
 def test_oof_fusion_and_validation_calibration_keep_periods_separate() -> None:
-    oof_scores = pd.DataFrame(
+    oof_scores = pl.DataFrame(
         {
             "catboost": [0.1, 0.9, 0.2, 0.8, 0.3, 0.7],
             "graphsage": [0.2, 0.8, 0.1, 0.9, 0.4, 0.6],

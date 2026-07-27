@@ -1,8 +1,6 @@
 from pathlib import Path
 
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
+import polars as pl
 
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.features.build import build_pit_feature_dataset
@@ -11,8 +9,9 @@ from aml_evidence_graph.features.build import build_pit_feature_dataset
 def _write_partition(root: Path, event_date: str, rows: list[dict[str, object]]) -> None:
     target = root / f"event_date={event_date}" / "split=train"
     target.mkdir(parents=True)
-    table = pa.Table.from_pandas(pd.DataFrame(rows), preserve_index=False)
-    pq.write_table(table, target / "part.parquet")
+    pl.DataFrame(rows).with_columns(
+        pl.col(CANONICAL.event_ts).str.to_datetime(time_zone="UTC")
+    ).write_parquet(target / "part.parquet")
 
 
 def test_build_feature_dataset_preserves_history_and_adds_approved_rule(tmp_path: Path) -> None:
@@ -86,21 +85,27 @@ rules:
 
     assert summary.row_count == 2
     assert summary.rule_hit_count == 1
-    assert summary.feature_registry_version == "features-v1"
-    output = pd.read_parquet(
+    assert summary.feature_registry_version == "features-v2"
+    output = pl.read_parquet(
         tmp_path / "features" / "event_date=2023-01-02" / "split=train" / "part-00000.parquet"
     )
-    assert output.loc[0, "sender_outgoing_count_7d"] == 1.0
-    assert output.loc[0, "is_cross_border_current_transaction"] == 1.0
-    assert output.loc[0, "graph_sender_historical_out_degree"] == 1.0
-    assert output.loc[0, "graph_directed_edge_prior_count"] == 0.0
-    assert output.loc[0, "rule_R-HISTORY_hit"] == 1
+    row = output.row(0, named=True)
+    assert row["sender_outgoing_count_7d"] == 1.0
+    assert row["is_cross_border_current_transaction"] == 1.0
+    assert row["graph_sender_historical_out_degree"] == 1.0
+    assert row["graph_directed_edge_prior_count"] == 0.0
+    assert row["rule_R-HISTORY_hit"] == 1
+    assert row["any_rule_hit"] == 1
+    assert row["rule_hit_count"] == 1
+    assert row["hour_of_day"] == 12
     assert (tmp_path / "features" / "_rule_evidence" / "event_date=2023-01-02.json").is_file()
     assert summary.run_id
     assert (tmp_path / "features" / "_run_manifest.json").is_file()
     registry = (tmp_path / "features" / "_feature_registry.json").read_text(encoding="utf-8")
     assert "sender_outgoing_count_7d" in registry
     assert "rule_R-HISTORY_hit" in registry
+    assert "is_high_risk_corridor" in registry
+    assert "any_rule_hit" in registry
 
 
 def test_build_feature_dataset_respects_max_dates(tmp_path: Path) -> None:

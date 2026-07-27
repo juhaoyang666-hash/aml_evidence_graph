@@ -1,6 +1,6 @@
 import json
 
-import pandas as pd
+import polars as pl
 import pytest
 
 from aml_evidence_graph.ingestion.profile import build_manifest, write_manifest
@@ -8,7 +8,7 @@ from aml_evidence_graph.ingestion.profile import build_manifest, write_manifest
 
 def test_build_manifest_writes_only_aggregates(tmp_path) -> None:
     path = tmp_path / "transactions.csv"
-    pd.DataFrame(
+    pl.DataFrame(
         {
             "Time": ["10:00:00", "11:00:00"],
             "Date": ["2022-10-07", "2023-07-01"],
@@ -23,7 +23,7 @@ def test_build_manifest_writes_only_aggregates(tmp_path) -> None:
             "Is_laundering": [0, 1],
             "Laundering_type": ["Normal", "Fan_In"],
         }
-    ).to_csv(path, index=False)
+    ).write_csv(path)
 
     manifest = build_manifest(path, chunk_size=1)
     output = tmp_path / "manifest.json"
@@ -40,7 +40,7 @@ def test_build_manifest_writes_only_aggregates(tmp_path) -> None:
 
 def test_manifest_applies_required_column_null_rate_gate(tmp_path) -> None:
     path = tmp_path / "transactions.csv"
-    pd.DataFrame(
+    pl.DataFrame(
         {
             "Time": ["10:00:00"],
             "Date": ["2022-10-07"],
@@ -55,7 +55,7 @@ def test_manifest_applies_required_column_null_rate_gate(tmp_path) -> None:
             "Is_laundering": [0],
             "Laundering_type": ["Normal"],
         }
-    ).to_csv(path, index=False)
+    ).write_csv(path)
 
     with pytest.raises(ValueError, match="null rate"):
         build_manifest(path)

@@ -1,0 +1,53 @@
+# Point-in-time feature-engineering constants for SAML-D typology proxies (P0/P1).
+# Thresholds that depend on amount distributions are documented as training-period
+# constants (same discipline as configs/rules/default.yaml v2026.2). Do not retune
+# on validation/test when comparing against the formal baseline.
+version: "fe-v2"
+owners:
+  typology_proxies: aml-feature-engineering
+
+# Author-named high-risk jurisdictions from Oztas et al. (IEEE ICEBE 2023),
+# plus common community expansions used in public SAML-D notebooks.
+high_risk_locations:
+  - Mexico
+  - Turkey
+  - Morocco
+  - UAE
+  - United Arab Emirates
+  - Nigeria
+  - Iran
+  - Myanmar
+
+# Payment_type values treated as cash-like (deposit / withdrawal / plain cash).
+cash_like_payment_types:
+  - Cash
+  - Cash Deposit
+  - Cash Withdrawal
+  - CASH
+  - CASH DEPOSIT
+  - CASH WITHDRAWAL
+
+# Payment_type values that explicitly encode a cross-border rail.
+cross_border_payment_types:
+  - Cross-border
+  - Cross Border
+  - CROSS-BORDER
+  - CROSS_BORDER
+
+# Training-period 99.0th percentile of amount (see R-HIGH-AMOUNT-001).
+reporting_threshold: 45225.28
+# Flag amounts in [ratio * threshold, threshold).
+just_below_reporting_threshold_ratio: 0.90
+
+# Whole-currency round amounts (structuring neighbourhood).
+round_amount_tolerance: 0.01
+
+# Smurfing / fan-out: amounts strictly below this count toward small-amount
+# unique-counterparty tallies. Documented constant; calibrate on train only.
+small_amount_threshold: 1000.0
+
+# Deposit-Send proxy: cash-like incoming then any outgoing within this window.
+cash_in_then_out_window_hours: 24.0
+
+# Recency features when an account has no prior history in that direction.
+missing_recency_seconds: 2592000.0

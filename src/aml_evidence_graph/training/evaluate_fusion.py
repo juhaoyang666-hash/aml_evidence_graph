@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.data.splits import TimeSplit
@@ -18,11 +18,11 @@ from aml_evidence_graph.training.fusion import (
 from aml_evidence_graph.training.table_baseline import load_feature_split
 
 
-def _read_scores(path: Path) -> pd.DataFrame:
+def _read_scores(path: Path) -> pl.DataFrame:
     if path.suffix.lower() == ".parquet":
-        return pd.read_parquet(path)
+        return pl.read_parquet(path)
     if path.suffix.lower() == ".csv":
-        return pd.read_csv(path)
+        return pl.read_csv(path)
     raise ValueError("Fusion score inputs must be Parquet or CSV.")
 
 
@@ -51,15 +51,15 @@ def main() -> None:
     if args.features:
         training = load_feature_split(args.features, TimeSplit.TRAIN)
         training_accounts = set(
-            pd.concat(
+            pl.concat(
                 [
                     training[CANONICAL.sender_account_id],
                     training[CANONICAL.receiver_account_id],
                 ],
-                ignore_index=True,
+                how="vertical",
             )
-            .astype(str)
-            .tolist()
+            .cast(pl.Utf8)
+            .to_list()
         )
     summary = evaluate_persisted_fusion(
         args.fusion_dir,

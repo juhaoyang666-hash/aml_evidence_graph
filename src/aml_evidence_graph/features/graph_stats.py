@@ -3,10 +3,22 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from datetime import datetime, timezone
 
-import pandas as pd
+import polars as pl
 
+from aml_evidence_graph.compat import to_polars
 from aml_evidence_graph.data.contract import CANONICAL
+
+
+def _as_utc_datetime(value: object) -> datetime:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    parsed = pl.Series([value]).cast(pl.Datetime(time_zone="UTC"), strict=True)[0]
+    assert isinstance(parsed, datetime)
+    return parsed
 
 
 class CausalGraphStatisticsBuilder:
@@ -16,10 +28,11 @@ class CausalGraphStatisticsBuilder:
         self._outgoing_neighbors: dict[str, set[str]] = defaultdict(set)
         self._incoming_neighbors: dict[str, set[str]] = defaultdict(set)
         self._edge_counts: Counter[tuple[str, str]] = Counter()
-        self._last_processed_ts: pd.Timestamp | None = None
+        self._last_processed_ts: datetime | None = None
 
-    def transform_partition(self, transactions: pd.DataFrame) -> pd.DataFrame:
+    def transform_partition(self, transactions: pl.DataFrame | object) -> pl.DataFrame:
         """Return graph features for a complete chronological event-date partition."""
+        frame = to_polars(transactions)
         required = {
             CANONICAL.transaction_id,
             CANONICAL.event_ts,
@@ -27,39 +40,35 @@ class CausalGraphStatisticsBuilder:
             CANONICAL.receiver_account_id,
             CANONICAL.source_row_number,
         }
-        missing = sorted(required.difference(transactions.columns))
+        missing = sorted(required.difference(frame.columns))
         if missing:
             raise ValueError(
                 f"Transactions are missing required graph-stat columns: {', '.join(missing)}"
             )
-        ordered = transactions.sort_values(
+        ordered = frame.sort(
             [CANONICAL.event_ts, CANONICAL.source_row_number],
-            kind="stable",
-        ).copy()
-        ordered[CANONICAL.event_ts] = pd.to_datetime(
-            ordered[CANONICAL.event_ts],
-            utc=True,
-            errors="raise",
+            maintain_order=True,
+        ).with_columns(
+            pl.col(CANONICAL.event_ts).cast(pl.Datetime(time_zone="UTC"), strict=True)
         )
-        first_timestamp = ordered[CANONICAL.event_ts].min()
+        first_timestamp = _as_utc_datetime(ordered[CANONICAL.event_ts].min())
         if self._last_processed_ts is not None and first_timestamp <= self._last_processed_ts:
             raise ValueError(
                 "Graph-stat partitions must not split or revisit an event timestamp."
             )
 
         rows: list[dict[str, float | str]] = []
-        for event_ts, batch in ordered.groupby(CANONICAL.event_ts, sort=False):
+        for batch in ordered.partition_by(CANONICAL.event_ts, maintain_order=True):
+            event_ts = _as_utc_datetime(batch[CANONICAL.event_ts][0])
             pending_edges: list[tuple[str, str]] = []
-            for row in batch.itertuples(index=False):
-                sender = str(getattr(row, CANONICAL.sender_account_id))
-                receiver = str(getattr(row, CANONICAL.receiver_account_id))
+            for row in batch.iter_rows(named=True):
+                sender = str(row[CANONICAL.sender_account_id])
+                receiver = str(row[CANONICAL.receiver_account_id])
                 directed_edge = (sender, receiver)
                 reverse_edge = (receiver, sender)
                 rows.append(
                     {
-                        CANONICAL.transaction_id: str(
-                            getattr(row, CANONICAL.transaction_id)
-                        ),
+                        CANONICAL.transaction_id: str(row[CANONICAL.transaction_id]),
                         "graph_sender_historical_out_degree": float(
                             len(self._outgoing_neighbors[sender])
                         ),
@@ -90,4 +99,4 @@ class CausalGraphStatisticsBuilder:
                 self._edge_counts[(sender, receiver)] += 1
             self._last_processed_ts = event_ts
 
-        return pd.DataFrame(rows)
+        return pl.DataFrame(rows)

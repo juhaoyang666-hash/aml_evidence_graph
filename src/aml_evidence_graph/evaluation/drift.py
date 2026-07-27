@@ -5,32 +5,34 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-import pandas as pd
+import polars as pl
+
+from aml_evidence_graph.compat import is_numeric_dtype, to_polars, to_polars_series
 
 
 def population_stability_index(
-    reference: pd.Series,
-    current: pd.Series,
+    reference: pl.Series | object,
+    current: pl.Series | object,
     *,
     bins: int = 10,
 ) -> float:
     """Compute PSI using reference quantile bins with finite numerical safeguards."""
     if bins < 2:
         raise ValueError("bins must be at least two.")
-    reference_values = pd.to_numeric(reference, errors="coerce")
-    current_values = pd.to_numeric(current, errors="coerce")
-    reference_non_null = reference_values.dropna()
-    if reference_non_null.empty:
+    reference_values = to_polars_series(reference).cast(pl.Float64, strict=False)
+    current_values = to_polars_series(current).cast(pl.Float64, strict=False)
+    reference_non_null = reference_values.drop_nulls().to_numpy()
+    if len(reference_non_null) == 0:
         return 0.0
     edges = np.unique(np.quantile(reference_non_null, np.linspace(0, 1, bins + 1)))
     if len(edges) < 2:
         return 0.0
     edges[0] = -np.inf
     edges[-1] = np.inf
-    reference_counts = np.histogram(reference_values.dropna(), bins=edges)[0]
-    current_counts = np.histogram(current_values.dropna(), bins=edges)[0]
-    reference_missing = int(reference_values.isna().sum())
-    current_missing = int(current_values.isna().sum())
+    reference_counts = np.histogram(reference_values.drop_nulls().to_numpy(), bins=edges)[0]
+    current_counts = np.histogram(current_values.drop_nulls().to_numpy(), bins=edges)[0]
+    reference_missing = int(reference_values.null_count())
+    current_missing = int(current_values.null_count())
     reference_distribution = np.append(reference_counts, reference_missing).astype(float)
     current_distribution = np.append(current_counts, current_missing).astype(float)
     reference_distribution /= max(reference_distribution.sum(), 1)
@@ -47,39 +49,46 @@ def population_stability_index(
 
 
 def categorical_population_stability_index(
-    reference: pd.Series,
-    current: pd.Series,
+    reference: pl.Series | object,
+    current: pl.Series | object,
     *,
     max_categories: int = 100,
 ) -> float:
     """Compute PSI for category frequencies, grouping rare/unseen values as OTHER."""
     if max_categories < 1:
         raise ValueError("max_categories must be positive.")
-    reference_values = reference.astype("string").fillna("__MISSING__")
-    current_values = current.astype("string").fillna("__MISSING__")
-    top_categories = reference_values.value_counts().head(max_categories).index
-    reference_grouped = reference_values.where(
-        reference_values.isin(top_categories),
-        "__OTHER__",
+    reference_values = to_polars_series(reference).cast(pl.Utf8).fill_null("__MISSING__")
+    current_values = to_polars_series(current).cast(pl.Utf8).fill_null("__MISSING__")
+    value_column = reference_values.name
+    top_categories = set(
+        reference_values.value_counts()
+        .sort(["count", value_column], descending=[True, False])
+        .head(max_categories)[value_column]
+        .to_list()
     )
-    current_grouped = current_values.where(
-        current_values.isin(top_categories),
-        "__OTHER__",
-    )
-    categories = sorted(set(reference_grouped.unique()).union(current_grouped.unique()))
-    reference_distribution = reference_grouped.value_counts().reindex(
-        categories,
-        fill_value=0,
-    )
-    current_distribution = current_grouped.value_counts().reindex(categories, fill_value=0)
+    reference_grouped = [
+        value if value in top_categories else "__OTHER__" for value in reference_values.to_list()
+    ]
+    current_grouped = [
+        value if value in top_categories else "__OTHER__" for value in current_values.to_list()
+    ]
+    categories = sorted(set(reference_grouped).union(current_grouped))
+    reference_counts = {category: 0 for category in categories}
+    current_counts = {category: 0 for category in categories}
+    for value in reference_grouped:
+        reference_counts[value] += 1
+    for value in current_grouped:
+        current_counts[value] += 1
     epsilon = 1e-6
     ref = np.clip(
-        reference_distribution.to_numpy(dtype=float) / len(reference_grouped),
+        np.asarray([reference_counts[category] for category in categories], dtype=float)
+        / max(len(reference_grouped), 1),
         epsilon,
         None,
     )
     cur = np.clip(
-        current_distribution.to_numpy(dtype=float) / len(current_grouped),
+        np.asarray([current_counts[category] for category in categories], dtype=float)
+        / max(len(current_grouped), 1),
         epsilon,
         None,
     )
@@ -87,32 +96,37 @@ def categorical_population_stability_index(
 
 
 def feature_drift_report(
-    reference: pd.DataFrame,
-    current: pd.DataFrame,
+    reference: pl.DataFrame | object,
+    current: pl.DataFrame | object,
     *,
     feature_columns: list[str],
 ) -> dict[str, dict[str, Any]]:
     """Return PSI and method per feature; schema changes are explicit errors."""
+    reference_frame = to_polars(reference)
+    current_frame = to_polars(current)
     missing = sorted(
-        set(feature_columns).difference(reference.columns).union(
-            set(feature_columns).difference(current.columns)
+        set(feature_columns).difference(reference_frame.columns).union(
+            set(feature_columns).difference(current_frame.columns)
         )
     )
     if missing:
         raise ValueError(f"Feature drift input is missing: {', '.join(missing)}")
     result: dict[str, dict[str, Any]] = {}
     for column in feature_columns:
-        if pd.api.types.is_numeric_dtype(reference[column]):
+        if is_numeric_dtype(reference_frame.schema[column]):
             result[column] = {
                 "method": "numeric_psi",
-                "psi": population_stability_index(reference[column], current[column]),
+                "psi": population_stability_index(
+                    reference_frame[column],
+                    current_frame[column],
+                ),
             }
         else:
             result[column] = {
                 "method": "categorical_psi",
                 "psi": categorical_population_stability_index(
-                    reference[column],
-                    current[column],
+                    reference_frame[column],
+                    current_frame[column],
                 ),
             }
     return result

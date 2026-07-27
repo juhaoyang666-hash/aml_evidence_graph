@@ -1,16 +1,16 @@
-import pandas as pd
+import polars as pl
 
 from aml_evidence_graph.evaluation.drift import feature_drift_report
 
 
 def test_feature_drift_reports_numeric_and_categorical_psi() -> None:
-    reference = pd.DataFrame(
+    reference = pl.DataFrame(
         {
             "amount": [1.0, 2.0, 3.0, 4.0],
             "payment_type": ["A", "A", "B", "B"],
         }
     )
-    current = pd.DataFrame(
+    current = pl.DataFrame(
         {
             "amount": [10.0, 11.0, 12.0, 13.0],
             "payment_type": ["B", "B", "B", "C"],

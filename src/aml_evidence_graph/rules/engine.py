@@ -7,9 +7,10 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
-import pandas as pd
+import polars as pl
 import yaml
 
+from aml_evidence_graph.compat import to_polars
 from aml_evidence_graph.data.contract import CANONICAL
 
 RuleOperator = Literal["gt", "gte", "lt", "lte"]
@@ -125,50 +126,57 @@ def load_rules(path: Path) -> list[RuleDefinition]:
     return rules
 
 
-def _hit_mask(values: pd.Series, rule: RuleDefinition) -> pd.Series:
+def _hit_expression(feature: str, rule: RuleDefinition) -> pl.Expr:
     assert rule.threshold is not None
+    column = pl.col(feature).cast(pl.Float64, strict=True)
     if rule.operator == "gt":
-        return values > rule.threshold
+        return column > rule.threshold
     if rule.operator == "gte":
-        return values >= rule.threshold
+        return column >= rule.threshold
     if rule.operator == "lt":
-        return values < rule.threshold
-    return values <= rule.threshold
+        return column < rule.threshold
+    return column <= rule.threshold
 
 
 def apply_rules(
-    frame: pd.DataFrame,
+    frame: pl.DataFrame | object,
     rules: list[RuleDefinition],
     *,
     as_of_date: date,
-) -> tuple[pd.DataFrame, list[RuleHit]]:
+) -> tuple[pl.DataFrame, list[RuleHit]]:
     """Produce boolean rule features and structured hits for active approved rules."""
-    if CANONICAL.transaction_id not in frame:
+    data = to_polars(frame)
+    if CANONICAL.transaction_id not in data.columns:
         raise ValueError("Rule evaluation requires canonical transaction_id.")
-    output = pd.DataFrame(index=frame.index)
+    hit_columns: list[pl.Series] = []
     hits: list[RuleHit] = []
 
     for rule in rules:
         if not rule.is_active_on(as_of_date):
             continue
-        if rule.feature not in frame:
+        if rule.feature not in data.columns:
             raise ValueError(f"Rule {rule.rule_id} requires missing feature {rule.feature}.")
-        values = pd.to_numeric(frame[rule.feature], errors="raise")
-        mask = _hit_mask(values, rule)
-        output[f"rule_{rule.rule_id}_hit"] = mask.astype("int8")
-        for index in frame.index[mask]:
-            observed = float(values.loc[index])
-            assert rule.threshold is not None
-            hits.append(
-                RuleHit(
-                    transaction_id=str(frame.at[index, CANONICAL.transaction_id]),
-                    rule_id=rule.rule_id,
-                    rule_version=rule.version,
-                    feature=rule.feature,
-                    observed_value=observed,
-                    threshold=rule.threshold,
-                    operator=rule.operator,
-                    explanation=rule.explanation_template,
-                )
+        mask = data.select(_hit_expression(rule.feature, rule).alias("hit")).get_column("hit")
+        hit_columns.append(mask.cast(pl.Int8).alias(f"rule_{rule.rule_id}_hit"))
+        if mask.any():
+            hit_rows = data.filter(mask).select(
+                pl.col(CANONICAL.transaction_id),
+                pl.col(rule.feature).cast(pl.Float64, strict=True).alias("observed_value"),
             )
-    return output, hits
+            assert rule.threshold is not None
+            for row in hit_rows.iter_rows(named=True):
+                hits.append(
+                    RuleHit(
+                        transaction_id=str(row[CANONICAL.transaction_id]),
+                        rule_id=rule.rule_id,
+                        rule_version=rule.version,
+                        feature=rule.feature,
+                        observed_value=float(row["observed_value"]),
+                        threshold=rule.threshold,
+                        operator=rule.operator,
+                        explanation=rule.explanation_template,
+                    )
+                )
+    if not hit_columns:
+        return pl.DataFrame(schema={}), hits
+    return pl.DataFrame(hit_columns), hits

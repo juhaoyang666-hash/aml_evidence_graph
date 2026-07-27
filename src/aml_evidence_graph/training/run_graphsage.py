@@ -7,13 +7,14 @@ import json
 import shutil
 import time
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import torch
 
+from aml_evidence_graph.compat import is_numeric_dtype
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.data.splits import TimeSplit
 from aml_evidence_graph.evaluation.metrics import evaluate_binary_risk_scores
@@ -63,24 +64,25 @@ class GraphSAGERunSummary:
     runtime: dict[str, float]
 
 
-def select_graph_edge_features(frame: pd.DataFrame) -> tuple[str, ...]:
+def select_graph_edge_features(frame: pl.DataFrame) -> tuple[str, ...]:
     """Select numeric current-edge features while excluding labels, IDs, and dates."""
     preferred = (
         CANONICAL.amount,
         "is_cross_border_current_transaction",
     )
     causal_prefixes = ("sender_outgoing_", "receiver_incoming_", "relationship_", "graph_")
+    schema = frame.schema
     selected = [
         column
         for column in preferred
-        if column in frame and pd.api.types.is_numeric_dtype(frame[column])
+        if column in frame.columns and is_numeric_dtype(schema[column])
     ]
     selected.extend(
         sorted(
             column
             for column in frame.columns
             if column.startswith(causal_prefixes)
-            and pd.api.types.is_numeric_dtype(frame[column])
+            and is_numeric_dtype(schema[column])
             and column not in selected
         )
     )
@@ -108,9 +110,9 @@ def _write_graph_scores(
     output_dir: Path,
     *,
     split_name: str,
-    frame: pd.DataFrame,
+    frame: pl.DataFrame,
     scores: object,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Persist scores in the exact chronological snapshot order used for inference."""
     required = {
         CANONICAL.transaction_id,
@@ -123,25 +125,23 @@ def _write_graph_scores(
         raise ValueError(
             "Graph score artifact requires columns: " + ", ".join(missing)
         )
-    ordered = frame.sort_values(
+    ordered = frame.sort(
         [CANONICAL.event_ts, CANONICAL.source_row_number],
-        kind="stable",
+        maintain_order=True,
     )
     score_values = np.asarray(scores, dtype=float)
-    if len(score_values) != len(ordered):
+    if len(score_values) != ordered.height:
         raise ValueError("Graph score count does not match the scored partition.")
-    output = ordered.loc[
-        :,
+    output = ordered.select(
         [
             CANONICAL.transaction_id,
             CANONICAL.event_ts,
             CANONICAL.is_laundering,
-        ],
-    ].copy().reset_index(drop=True)
-    output["graphsage"] = score_values
+        ]
+    ).with_columns(pl.Series("graphsage", score_values))
     score_dir = output_dir / "scores"
     score_dir.mkdir(exist_ok=True)
-    output.to_parquet(score_dir / f"graphsage_{split_name}_scores.parquet", index=False)
+    output.write_parquet(score_dir / f"graphsage_{split_name}_scores.parquet")
     return output
 
 
@@ -165,7 +165,7 @@ def train_and_evaluate_graphsage(
     builder = DailyGraphSnapshotBuilder(
         node_indexer,
         edge_feature_columns=edge_feature_columns,
-        history_window=pd.Timedelta(days=configuration.history_window_days),
+        history_window=timedelta(days=configuration.history_window_days),
         store_relation_types=configuration.num_relations > 1,
     )
     raw_training = builder.build(training)
@@ -200,14 +200,18 @@ def train_and_evaluate_graphsage(
             num_nodes=node_indexer.num_nodes,
         )
     )
-    validation_labels = pd.concat(
-        [pd.Series(snapshot.labels) for snapshot in validation_snapshots],
-        ignore_index=True,
+    validation_labels = np.concatenate(
+        [snapshot.labels for snapshot in validation_snapshots],
+        dtype=int,
     )
-    test_labels = test.sort_values(
-        [CANONICAL.event_ts, CANONICAL.source_row_number],
-        kind="stable",
-    )[CANONICAL.is_laundering].astype(int).reset_index(drop=True)
+    test_labels = (
+        test.sort(
+            [CANONICAL.event_ts, CANONICAL.source_row_number],
+            maintain_order=True,
+        )[CANONICAL.is_laundering]
+        .cast(pl.Int64)
+        .to_numpy()
+    )
     _write_graph_scores(
         output_dir,
         split_name="validation",

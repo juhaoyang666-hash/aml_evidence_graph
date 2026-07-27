@@ -2,9 +2,7 @@ import json
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
+import polars as pl
 import torch
 
 from aml_evidence_graph.api.private_scoring import PrivateFeaturePartitionScoringService
@@ -19,10 +17,10 @@ from aml_evidence_graph.training.graphsage import GraphSAGETrainingConfig
 
 
 def test_persisted_table_models_can_be_loaded_for_private_scoring(tmp_path: Path) -> None:
-    frame = pd.DataFrame(
+    frame = pl.DataFrame(
         {
             "transaction_id": [f"t{index}" for index in range(12)],
-            "event_ts": pd.date_range("2022-10-07", periods=12, tz="UTC"),
+            "event_ts": [f"2022-10-{7 + index:02d}T00:00:00Z" for index in range(12)],
             "source_row_number": range(12),
             "split": ["train"] * 6 + ["validation"] * 3 + ["test"] * 3,
             "is_laundering": [0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0],
@@ -47,16 +45,16 @@ def test_persisted_table_models_can_be_loaded_for_private_scoring(tmp_path: Path
 
     loaded = load_table_model_artifacts(model_dir)
 
-    assert len(loaded.predict_proba(frame.iloc[:2])["catboost"]) == 2
+    assert len(loaded.predict_proba(frame.head(2))["catboost"]) == 2
 
 
 def test_private_partition_scorer_uses_controlled_date_and_opaque_alerts(
     tmp_path: Path,
 ) -> None:
-    frame = pd.DataFrame(
+    frame = pl.DataFrame(
         {
             "transaction_id": [f"t{index}" for index in range(12)],
-            "event_ts": pd.date_range("2022-10-07", periods=12, tz="UTC"),
+            "event_ts": [f"2022-10-{7 + index:02d}T00:00:00Z" for index in range(12)],
             "source_row_number": range(12),
             "split": ["train"] * 6 + ["validation"] * 3 + ["test"] * 3,
             "is_laundering": [0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0],
@@ -81,11 +79,8 @@ def test_private_partition_scorer_uses_controlled_date_and_opaque_alerts(
     feature_root = tmp_path / "features"
     target = feature_root / "event_date=2023-07-01" / "split=test"
     target.mkdir(parents=True)
-    scoring_frame = frame.iloc[-3:].drop(columns=["split"]).copy()
-    pq.write_table(
-        pa.Table.from_pandas(scoring_frame, preserve_index=False),
-        target / "part.parquet",
-    )
+    scoring_frame = frame.tail(3).drop("split")
+    scoring_frame.write_parquet(target / "part.parquet")
     rule_evidence_dir = feature_root / "_rule_evidence"
     rule_evidence_dir.mkdir()
     (rule_evidence_dir / "event_date=2023-07-01.json").write_text(
@@ -131,10 +126,12 @@ def test_private_partition_scorer_uses_controlled_date_and_opaque_alerts(
 
 
 def test_persisted_graphsage_artifact_can_score_label_free_snapshots(tmp_path: Path) -> None:
-    frame = pd.DataFrame(
+    frame = pl.DataFrame(
         {
             "transaction_id": ["one", "two"],
-            "event_ts": pd.to_datetime(["2023-07-01T00:00:00Z", "2023-07-02T00:00:00Z"]),
+            "event_ts": pl.Series(
+                ["2023-07-01T00:00:00Z", "2023-07-02T00:00:00Z"]
+            ).str.to_datetime(time_zone="UTC"),
             "sender_account_id": ["a", "b"],
             "receiver_account_id": ["b", "a"],
             "source_row_number": [1, 2],
@@ -196,10 +193,10 @@ def test_persisted_graphsage_artifact_can_score_label_free_snapshots(tmp_path: P
 def test_private_scorer_can_apply_frozen_graph_and_fusion_without_labels(
     tmp_path: Path,
 ) -> None:
-    training = pd.DataFrame(
+    training = pl.DataFrame(
         {
             "transaction_id": [f"train-{index}" for index in range(12)],
-            "event_ts": pd.date_range("2022-10-07", periods=12, tz="UTC"),
+            "event_ts": [f"2022-10-{7 + index:02d}T00:00:00Z" for index in range(12)],
             "source_row_number": range(12),
             "split": ["train"] * 6 + ["validation"] * 3 + ["test"] * 3,
             "is_laundering": [0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0],
@@ -222,19 +219,23 @@ def test_private_scorer_can_apply_frozen_graph_and_fusion_without_labels(
         encoding="utf-8",
     )
 
-    graph_training = pd.DataFrame(
+    graph_training = pl.DataFrame(
         {
             "transaction_id": ["history-1", "current-1", "current-2"],
-            "event_ts": pd.to_datetime(
-                ["2023-07-01T00:00:00Z", "2023-07-02T00:00:00Z", "2023-07-02T01:00:00Z"]
-            ),
+            "event_ts": pl.Series(
+                [
+                    "2023-07-01T00:00:00Z",
+                    "2023-07-02T00:00:00Z",
+                    "2023-07-02T01:00:00Z",
+                ]
+            ).str.to_datetime(time_zone="UTC"),
             "sender_account_id": ["a", "a", "b"],
             "receiver_account_id": ["b", "b", "a"],
             "source_row_number": [1, 2, 3],
             "amount": [1.0, 2.0, 3.0],
         }
     )
-    indexer = TemporalNodeIndexer(unknown_hash_buckets=8).fit(graph_training.iloc[:1])
+    indexer = TemporalNodeIndexer(unknown_hash_buckets=8).fit(graph_training.head(1))
     graph_config = GraphSAGETrainingConfig(
         hidden_dim=8,
         num_layers=1,
@@ -274,7 +275,7 @@ def test_private_scorer_can_apply_frozen_graph_and_fusion_without_labels(
         graph_path,
     )
 
-    fusion_scores = pd.DataFrame(
+    fusion_scores = pl.DataFrame(
         {
             "transaction_id": [f"f{index}" for index in range(8)],
             "is_laundering": [0, 1, 0, 1, 0, 1, 0, 1],
@@ -285,7 +286,7 @@ def test_private_scorer_can_apply_frozen_graph_and_fusion_without_labels(
     fusion_dir = tmp_path / "fusion"
     fit_and_persist_fusion(
         fusion_scores,
-        fusion_scores.iloc[::-1].reset_index(drop=True),
+        fusion_scores[::-1],
         fusion_dir,
         component_models=("catboost", "graphsage"),
         alert_fraction=1,
@@ -296,14 +297,8 @@ def test_private_scorer_can_apply_frozen_graph_and_fusion_without_labels(
     current_target = feature_root / "event_date=2023-07-02" / "split=test"
     history_target.mkdir(parents=True)
     current_target.mkdir(parents=True)
-    pq.write_table(
-        pa.Table.from_pandas(graph_training.iloc[:1], preserve_index=False),
-        history_target / "part.parquet",
-    )
-    pq.write_table(
-        pa.Table.from_pandas(graph_training.iloc[1:], preserve_index=False),
-        current_target / "part.parquet",
-    )
+    graph_training.head(1).write_parquet(history_target / "part.parquet")
+    graph_training.tail(2).write_parquet(current_target / "part.parquet")
     store = InMemoryEvidenceStore()
     scorer = PrivateFeaturePartitionScoringService(
         feature_root=feature_root,

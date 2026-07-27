@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import pyarrow.dataset as ds
 
 from aml_evidence_graph.api.services import EvidenceStore, ScoreBatchResult
@@ -97,12 +97,14 @@ class PrivateFeaturePartitionScoringService:
         *,
         event_date: str,
         columns: set[str],
-    ) -> pd.DataFrame:
-        frame = dataset.to_table(
-            filter=ds.field("event_date") == event_date,
-            columns=sorted(columns),
-        ).to_pandas()
-        if frame.empty:
+    ) -> pl.DataFrame:
+        frame = pl.from_arrow(
+            dataset.to_table(
+                filter=ds.field("event_date") == event_date,
+                columns=sorted(columns),
+            )
+        )
+        if frame.is_empty():
             raise ValueError(f"No private feature rows for event date {event_date}.")
         return frame
 
@@ -131,9 +133,8 @@ class PrivateFeaturePartitionScoringService:
             return None
         event_date = event_day.isoformat()
         history_start = (
-            pd.Timestamp(event_day)
-            - pd.Timedelta(days=self._graphsage.config.history_window_days)
-        ).date().isoformat()
+            event_day - timedelta(days=self._graphsage.config.history_window_days)
+        ).isoformat()
         graph_columns = {
             CANONICAL.transaction_id,
             CANONICAL.event_ts,
@@ -142,11 +143,13 @@ class PrivateFeaturePartitionScoringService:
             CANONICAL.source_row_number,
             *self._graphsage.edge_feature_columns,
         }
-        history = dataset.to_table(
-            filter=(ds.field("event_date") >= history_start)
-            & (ds.field("event_date") < event_date),
-            columns=sorted(graph_columns),
-        ).to_pandas()
+        history = pl.from_arrow(
+            dataset.to_table(
+                filter=(ds.field("event_date") >= history_start)
+                & (ds.field("event_date") < event_date),
+                columns=sorted(graph_columns),
+            )
+        )
         current = self._read_partition(
             dataset,
             event_date=event_date,
@@ -155,9 +158,9 @@ class PrivateFeaturePartitionScoringService:
         builder = DailyGraphSnapshotBuilder(
             self._graphsage.node_indexer,
             edge_feature_columns=self._graphsage.edge_feature_columns,
-            history_window=pd.Timedelta(days=self._graphsage.config.history_window_days),
+            history_window=timedelta(days=self._graphsage.config.history_window_days),
         )
-        if not history.empty:
+        if not history.is_empty():
             builder.build(history, include_labels=False)
         current_snapshots = builder.build(current, include_labels=False)
         scores = self._graphsage.predict(current_snapshots)
@@ -201,7 +204,7 @@ class PrivateFeaturePartitionScoringService:
             set(self.selected_feature_names).intersection(available_columns)
         )
         frame = self._read_partition(dataset, event_date=event_date, columns=table_columns)
-        if frame[CANONICAL.transaction_id].duplicated().any():
+        if frame[CANONICAL.transaction_id].is_duplicated().any():
             raise ValueError("Private feature partition has duplicate transaction IDs.")
         component_scores = self._models.predict_proba(frame)
         graph_result = self._score_graphsage(dataset, event_day=event_day)
@@ -233,7 +236,7 @@ class PrivateFeaturePartitionScoringService:
                     + ", ".join(missing_components)
                 )
             raw_fusion = self._fusion.predict_proba(
-                pd.DataFrame(component_scores).loc[:, self._fusion.model_names]
+                pl.DataFrame(component_scores).select(self._fusion.model_names)
             )
             fusion_scores = self._calibration.predict_proba(raw_fusion)
             threshold = float(self._calibration.threshold)
@@ -242,7 +245,7 @@ class PrivateFeaturePartitionScoringService:
             feature for feature in self.selected_feature_names if feature in frame.columns
         )
         alert_ids: list[str] = []
-        for row_position in range(len(frame)):
+        for row_position in range(frame.height):
             decision_score = (
                 float(fusion_scores[row_position])
                 if fusion_scores is not None
@@ -250,7 +253,7 @@ class PrivateFeaturePartitionScoringService:
             )
             if decision_score < threshold:
                 continue
-            transaction = frame.iloc[row_position]
+            transaction = frame.row(row_position, named=True)
             transaction_id = str(transaction[CANONICAL.transaction_id])
             alert_id = f"alert-{uuid.uuid4().hex}"
             source_versions = {"table_model": self.source_version}

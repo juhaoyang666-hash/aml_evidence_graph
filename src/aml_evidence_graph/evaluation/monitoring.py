@@ -10,10 +10,11 @@ from threading import Event, Thread
 from typing import Any, TypeVar
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import psutil
 from sklearn.metrics import average_precision_score, roc_auc_score
 
+from aml_evidence_graph.compat import to_polars
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.evaluation.metrics import evaluate_binary_risk_scores
 
@@ -69,11 +70,11 @@ class ProcessResourceMonitor:
         self._rss_peak = max(self._rss_peak, self._rss_bytes())
 
 
-def _safe_metrics(labels: pd.Series, scores: pd.Series) -> dict[str, Any]:
+def _safe_metrics(labels: np.ndarray, scores: np.ndarray) -> dict[str, Any]:
     """Return availability instead of failing a slice with one observed class."""
     if len(labels) == 0:
         return {"available": False, "reason": "empty_slice", "sample_count": 0}
-    if labels.nunique() < 2:
+    if len(np.unique(labels)) < 2:
         return {
             "available": False,
             "reason": "single_label_class",
@@ -83,141 +84,147 @@ def _safe_metrics(labels: pd.Series, scores: pd.Series) -> dict[str, Any]:
     return {"available": True, **evaluate_binary_risk_scores(labels, scores)}
 
 
+def _aligned_scores(frame: pl.DataFrame, probabilities: Iterable[float]) -> np.ndarray:
+    scores = np.asarray(list(probabilities), dtype=float)
+    if len(scores) != frame.height:
+        raise ValueError("Probabilities must align with the frame.")
+    return scores
+
+
 def monthly_stability_report(
-    frame: pd.DataFrame,
+    frame: pl.DataFrame | object,
     probabilities: Iterable[float],
 ) -> dict[str, dict[str, Any]]:
     """Evaluate scores month-by-month without inventing unavailable ranking metrics."""
+    data = to_polars(frame)
     required = {CANONICAL.event_ts, CANONICAL.is_laundering}
-    missing = sorted(required.difference(frame.columns))
+    missing = sorted(required.difference(data.columns))
     if missing:
         raise ValueError(f"Monthly report requires: {', '.join(missing)}")
-    scores = pd.Series(list(probabilities), index=frame.index, dtype=float)
-    if len(scores) != len(frame):
-        raise ValueError("Probabilities must align with the frame.")
-    event_ts = pd.to_datetime(frame[CANONICAL.event_ts], utc=True, errors="raise")
-    months = event_ts.dt.strftime("%Y-%m")
-    return {
-        month: _safe_metrics(
-            frame.loc[months.eq(month), CANONICAL.is_laundering].astype(int),
-            scores.loc[months.eq(month)],
-        )
-        for month in sorted(months.unique())
-    }
+    scores = _aligned_scores(data, probabilities)
+    months = (
+        data[CANONICAL.event_ts]
+        .cast(pl.Datetime(time_zone="UTC"), strict=True)
+        .dt.strftime("%Y-%m")
+    )
+    labels = data[CANONICAL.is_laundering].cast(pl.Int64).to_numpy()
+    report: dict[str, dict[str, Any]] = {}
+    for month in sorted(set(months.to_list())):
+        mask = np.asarray(months == month)
+        report[month] = _safe_metrics(labels[mask], scores[mask])
+    return report
 
 
 def typology_slice_report(
-    frame: pd.DataFrame,
+    frame: pl.DataFrame | object,
     probabilities: Iterable[float],
 ) -> dict[str, dict[str, Any]]:
     """Compare each positive typology against all negatives in the same period."""
+    data = to_polars(frame)
     required = {CANONICAL.is_laundering, CANONICAL.laundering_type}
-    missing = sorted(required.difference(frame.columns))
+    missing = sorted(required.difference(data.columns))
     if missing:
         raise ValueError(f"Typology report requires: {', '.join(missing)}")
-    scores = pd.Series(list(probabilities), index=frame.index, dtype=float)
-    labels = frame[CANONICAL.is_laundering].astype(int)
-    positive_types = sorted(
-        frame.loc[labels.eq(1), CANONICAL.laundering_type].astype(str).unique()
-    )
+    scores = _aligned_scores(data, probabilities)
+    labels = data[CANONICAL.is_laundering].cast(pl.Int64).to_numpy()
+    typology_values = data[CANONICAL.laundering_type].cast(pl.Utf8).to_numpy()
+    positive_types = sorted(set(typology_values[labels == 1].tolist()))
     return {
         typology: _safe_metrics(
-            labels.loc[labels.eq(0) | frame[CANONICAL.laundering_type].astype(str).eq(typology)],
-            scores.loc[labels.eq(0) | frame[CANONICAL.laundering_type].astype(str).eq(typology)],
+            labels[(labels == 0) | (typology_values == typology)],
+            scores[(labels == 0) | (typology_values == typology)],
         )
         for typology in positive_types
     }
 
 
 def new_account_slice_report(
-    frame: pd.DataFrame,
+    frame: pl.DataFrame | object,
     probabilities: Iterable[float],
     *,
     training_accounts: set[str],
 ) -> dict[str, dict[str, Any]]:
     """Report endpoint novelty using only account membership known in the training period."""
+    data = to_polars(frame)
     required = {CANONICAL.sender_account_id, CANONICAL.receiver_account_id}
-    missing = sorted(required.difference(frame.columns))
+    missing = sorted(required.difference(data.columns))
     if missing:
         raise ValueError("New-account report requires: " + ", ".join(missing))
-    scores = pd.Series(list(probabilities), index=frame.index, dtype=float)
-    labels = frame[CANONICAL.is_laundering].astype(int)
-    sender_new = ~frame[CANONICAL.sender_account_id].astype(str).isin(training_accounts)
-    receiver_new = ~frame[CANONICAL.receiver_account_id].astype(str).isin(training_accounts)
+    scores = _aligned_scores(data, probabilities)
+    labels = data[CANONICAL.is_laundering].cast(pl.Int64).to_numpy()
+    sender_ids = data[CANONICAL.sender_account_id].cast(pl.Utf8).to_numpy()
+    receiver_ids = data[CANONICAL.receiver_account_id].cast(pl.Utf8).to_numpy()
+    sender_new = np.asarray([value not in training_accounts for value in sender_ids])
+    receiver_new = np.asarray([value not in training_accounts for value in receiver_ids])
     return {
-        "sender_new": _safe_metrics(labels.loc[sender_new], scores.loc[sender_new]),
-        "sender_seen": _safe_metrics(labels.loc[~sender_new], scores.loc[~sender_new]),
-        "receiver_new": _safe_metrics(labels.loc[receiver_new], scores.loc[receiver_new]),
-        "receiver_seen": _safe_metrics(labels.loc[~receiver_new], scores.loc[~receiver_new]),
+        "sender_new": _safe_metrics(labels[sender_new], scores[sender_new]),
+        "sender_seen": _safe_metrics(labels[~sender_new], scores[~sender_new]),
+        "receiver_new": _safe_metrics(labels[receiver_new], scores[receiver_new]),
+        "receiver_seen": _safe_metrics(labels[~receiver_new], scores[~receiver_new]),
         "either_endpoint_new": _safe_metrics(
-            labels.loc[sender_new | receiver_new],
-            scores.loc[sender_new | receiver_new],
+            labels[sender_new | receiver_new],
+            scores[sender_new | receiver_new],
         ),
         "both_endpoints_seen": _safe_metrics(
-            labels.loc[~sender_new & ~receiver_new],
-            scores.loc[~sender_new & ~receiver_new],
+            labels[~sender_new & ~receiver_new],
+            scores[~sender_new & ~receiver_new],
         ),
     }
 
 
 def _categorical_slice_report(
-    labels: pd.Series,
-    scores: pd.Series,
-    values: pd.Series,
+    labels: np.ndarray,
+    scores: np.ndarray,
+    values: np.ndarray,
     *,
     max_categories: int,
 ) -> dict[str, dict[str, Any]]:
     if max_categories < 1:
         raise ValueError("max_categories must be positive.")
-    categories = values.astype("string").fillna("__MISSING__").astype(str)
-    counts = (
-        categories.value_counts()
-        .rename_axis("category")
-        .reset_index(name="row_count")
-        .sort_values(["row_count", "category"], ascending=[False, True], kind="stable")
+    categories = np.asarray(
+        ["__MISSING__" if value is None else str(value) for value in values],
+        dtype=object,
     )
-    selected_categories = set(counts.head(max_categories)["category"])
-    grouped_categories = categories.where(
-        categories.isin(selected_categories),
-        "__OTHER_CATEGORIES__",
+    unique, counts = np.unique(categories, return_counts=True)
+    order = np.lexsort((unique, -counts))
+    selected = set(unique[order][:max_categories].tolist())
+    grouped = np.asarray(
+        [value if value in selected else "__OTHER_CATEGORIES__" for value in categories],
+        dtype=object,
     )
-    ordered_categories = sorted(selected_categories)
-    if grouped_categories.eq("__OTHER_CATEGORIES__").any():
+    ordered_categories = sorted(selected)
+    if "__OTHER_CATEGORIES__" in grouped:
         ordered_categories.append("__OTHER_CATEGORIES__")
     return {
-        category: _safe_metrics(
-            labels.loc[grouped_categories.eq(category)],
-            scores.loc[grouped_categories.eq(category)],
-        )
+        category: _safe_metrics(labels[grouped == category], scores[grouped == category])
         for category in ordered_categories
     }
 
 
 def categorical_slice_report(
-    frame: pd.DataFrame,
+    frame: pl.DataFrame | object,
     probabilities: Iterable[float],
     *,
     column: str,
     max_categories: int = 50,
 ) -> dict[str, dict[str, Any]]:
     """Report bounded categorical slices without dropping rare values silently."""
+    data = to_polars(frame)
     required = {CANONICAL.is_laundering, column}
-    missing = sorted(required.difference(frame.columns))
+    missing = sorted(required.difference(data.columns))
     if missing:
         raise ValueError("Categorical slice report requires: " + ", ".join(missing))
-    scores = pd.Series(list(probabilities), index=frame.index, dtype=float)
-    if len(scores) != len(frame):
-        raise ValueError("Probabilities must align with the frame.")
+    scores = _aligned_scores(data, probabilities)
     return _categorical_slice_report(
-        frame[CANONICAL.is_laundering].astype(int),
+        data[CANONICAL.is_laundering].cast(pl.Int64).to_numpy(),
         scores,
-        frame[column],
+        data[column].to_numpy(),
         max_categories=max_categories,
     )
 
 
 def paired_categorical_slice_report(
-    frame: pd.DataFrame,
+    frame: pl.DataFrame | object,
     probabilities: Iterable[float],
     *,
     left_column: str,
@@ -225,20 +232,17 @@ def paired_categorical_slice_report(
     max_categories: int = 50,
 ) -> dict[str, dict[str, Any]]:
     """Report a bounded pair slice, such as currency or sender/receiver region."""
+    data = to_polars(frame)
     required = {CANONICAL.is_laundering, left_column, right_column}
-    missing = sorted(required.difference(frame.columns))
+    missing = sorted(required.difference(data.columns))
     if missing:
         raise ValueError("Paired categorical slice report requires: " + ", ".join(missing))
-    scores = pd.Series(list(probabilities), index=frame.index, dtype=float)
-    if len(scores) != len(frame):
-        raise ValueError("Probabilities must align with the frame.")
-    values = (
-        frame[left_column].astype("string").fillna("__MISSING__")
-        + " -> "
-        + frame[right_column].astype("string").fillna("__MISSING__")
-    )
+    scores = _aligned_scores(data, probabilities)
+    left = data[left_column].cast(pl.Utf8).fill_null("__MISSING__")
+    right = data[right_column].cast(pl.Utf8).fill_null("__MISSING__")
+    values = (left + " -> " + right).to_numpy()
     return _categorical_slice_report(
-        frame[CANONICAL.is_laundering].astype(int),
+        data[CANONICAL.is_laundering].cast(pl.Int64).to_numpy(),
         scores,
         values,
         max_categories=max_categories,

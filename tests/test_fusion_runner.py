@@ -1,6 +1,7 @@
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
+import pytest
 
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.training.fusion import (
@@ -10,8 +11,8 @@ from aml_evidence_graph.training.fusion import (
 )
 
 
-def _scores() -> pd.DataFrame:
-    return pd.DataFrame(
+def _scores() -> pl.DataFrame:
+    return pl.DataFrame(
         {
             CANONICAL.transaction_id: [f"t{index}" for index in range(8)],
             CANONICAL.is_laundering: [0, 1, 0, 1, 0, 1, 0, 1],
@@ -23,7 +24,7 @@ def _scores() -> pd.DataFrame:
 
 def test_fusion_runner_only_uses_oof_and_validation_inputs(tmp_path: Path) -> None:
     oof = _scores()
-    validation = _scores().iloc[::-1].reset_index(drop=True)
+    validation = _scores()[::-1]
     summary = fit_and_persist_fusion(
         oof,
         validation,
@@ -49,25 +50,22 @@ def test_fusion_runner_only_uses_oof_and_validation_inputs(tmp_path: Path) -> No
 
 
 def test_component_scores_merge_only_on_equal_transaction_and_label_keys() -> None:
-    first = _scores().loc[:, [CANONICAL.transaction_id, CANONICAL.is_laundering, "catboost"]]
-    second = _scores().loc[:, [CANONICAL.transaction_id, CANONICAL.is_laundering, "graphsage"]]
+    first = _scores().select([CANONICAL.transaction_id, CANONICAL.is_laundering, "catboost"])
+    second = _scores().select([CANONICAL.transaction_id, CANONICAL.is_laundering, "graphsage"])
 
     merged = merge_component_scores(
         [first, second],
         component_columns=["catboost", "graphsage"],
     )
 
-    assert len(merged) == len(first)
+    assert merged.height == first.height
 
 
 def test_component_score_merge_rejects_nonmatching_coverage() -> None:
-    first = _scores().loc[:, [CANONICAL.transaction_id, CANONICAL.is_laundering, "catboost"]]
-    second = _scores().loc[
-        1:,
-        [CANONICAL.transaction_id, CANONICAL.is_laundering, "graphsage"],
-    ]
-
-    import pytest
+    first = _scores().select([CANONICAL.transaction_id, CANONICAL.is_laundering, "catboost"])
+    second = _scores().slice(1).select(
+        [CANONICAL.transaction_id, CANONICAL.is_laundering, "graphsage"]
+    )
 
     with pytest.raises(ValueError, match="exactly the same"):
         merge_component_scores(

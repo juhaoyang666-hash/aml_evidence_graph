@@ -1,10 +1,10 @@
-import pandas as pd
+import polars as pl
 
 from aml_evidence_graph.training.table_baseline import rule_baseline_scores
 
 
 def test_rule_baseline_uses_versioned_rule_hit_features_only() -> None:
-    frame = pd.DataFrame(
+    frame = pl.DataFrame(
         {
             "rule_R-A_hit": [0, 1, 1],
             "rule_R-B_hit": [0, 0, 1],

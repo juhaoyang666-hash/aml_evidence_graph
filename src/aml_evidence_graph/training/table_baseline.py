@@ -12,9 +12,10 @@ from pathlib import Path
 from typing import Any
 
 import joblib
-import pandas as pd
-import pyarrow.dataset as ds
+import numpy as np
+import polars as pl
 
+from aml_evidence_graph.compat import stable_row_hash
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.data.splits import TimeSplit
 from aml_evidence_graph.evaluation.drift import feature_drift_report
@@ -73,60 +74,75 @@ class TableBaselineSummary:
     feature_drift: dict[str, dict[str, dict[str, Any]]]
 
 
-def load_feature_split(feature_root: Path, split: TimeSplit) -> pd.DataFrame:
+def load_feature_split(feature_root: Path, split: TimeSplit) -> pl.DataFrame:
     """Load exactly one persisted chronological split without random sampling."""
     if not feature_root.is_dir():
         raise FileNotFoundError(f"Feature dataset does not exist: {feature_root}")
-    dataset = ds.dataset(feature_root, format="parquet", partitioning="hive")
-    frame = dataset.to_table(
-        filter=ds.field("split") == split.value,
-    ).to_pandas()
-    if frame.empty:
+    paths = sorted(feature_root.glob(f"**/split={split.value}/**/*.parquet"))
+    if not paths:
+        paths = sorted(feature_root.glob(f"**/split={split.value}/*.parquet"))
+    if not paths:
         raise ValueError(f"Feature dataset contains no rows for split={split.value}.")
-    return frame
+    frames: list[pl.DataFrame] = []
+    for path in paths:
+        frame = pl.read_parquet(path)
+        if "split" not in frame.columns:
+            frame = frame.with_columns(pl.lit(split.value).alias("split"))
+        if "event_date" not in frame.columns:
+            event_date = next(
+                (
+                    part.removeprefix("event_date=")
+                    for part in path.parts
+                    if part.startswith("event_date=")
+                ),
+                None,
+            )
+            if event_date is not None:
+                frame = frame.with_columns(pl.lit(event_date).alias("event_date"))
+        frames.append(frame)
+    result = pl.concat(frames, how="diagonal_relaxed")
+    if result.is_empty():
+        raise ValueError(f"Feature dataset contains no rows for split={split.value}.")
+    return result
 
 
 def deterministic_negative_downsample(
-    training: pd.DataFrame,
+    training: pl.DataFrame,
     *,
     maximum_negative_rows: int | None,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Optionally downsample only training negatives via stable row-number hashing."""
     if maximum_negative_rows is None:
-        return training.copy()
+        return training
     if maximum_negative_rows < 1:
         raise ValueError("maximum_negative_rows must be positive when provided.")
-    labels = training[CANONICAL.is_laundering].astype(int)
-    negatives = training.loc[labels.eq(0)]
-    positives = training.loc[labels.eq(1)]
-    if len(negatives) <= maximum_negative_rows:
-        return training.copy()
-    if CANONICAL.source_row_number not in training:
+    labels = training[CANONICAL.is_laundering].cast(pl.Int64)
+    negatives = training.filter(labels == 0)
+    positives = training.filter(labels == 1)
+    if negatives.height <= maximum_negative_rows:
+        return training
+    if CANONICAL.source_row_number not in training.columns:
         raise ValueError("Training data requires source_row_number for deterministic sampling.")
 
-    stable_hash = pd.util.hash_pandas_object(
-        negatives[CANONICAL.source_row_number],
-        index=False,
+    selected_negatives = (
+        negatives.with_columns(
+            stable_row_hash(negatives[CANONICAL.source_row_number]).alias("_stable_hash")
+        )
+        .sort("_stable_hash")
+        .head(maximum_negative_rows)
+        .drop("_stable_hash")
     )
-    selected_negative_index = stable_hash.nsmallest(maximum_negative_rows).index
-    sampled = pd.concat(
-        [positives, negatives.loc[selected_negative_index]],
-        axis=0,
-        ignore_index=True,
-    )
-    return sampled.sort_values(
-        [CANONICAL.event_ts, CANONICAL.source_row_number],
-        kind="stable",
-    ).reset_index(drop=True)
+    sampled = pl.concat([positives, selected_negatives], how="vertical_relaxed")
+    return sampled.sort([CANONICAL.event_ts, CANONICAL.source_row_number], maintain_order=True)
 
 
 def deterministic_hard_negative_downsample(
-    training: pd.DataFrame,
-    hard_negative_oof: pd.DataFrame,
+    training: pl.DataFrame,
+    hard_negative_oof: pl.DataFrame,
     *,
     maximum_negative_rows: int,
     score_column: str = "catboost",
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Keep highest temporal-OOF negative scores, filling any remainder deterministically.
 
     The supplied scores must be OOF predictions created inside the training
@@ -147,67 +163,59 @@ def deterministic_hard_negative_downsample(
     missing_oof = sorted(required_oof.difference(hard_negative_oof.columns))
     if missing_oof:
         raise ValueError("Hard-negative OOF data requires: " + ", ".join(missing_oof))
-    if training[CANONICAL.transaction_id].duplicated().any():
+    if training[CANONICAL.transaction_id].is_duplicated().any():
         raise ValueError("Training transaction IDs must be unique.")
-    if hard_negative_oof[CANONICAL.transaction_id].duplicated().any():
+    if hard_negative_oof[CANONICAL.transaction_id].is_duplicated().any():
         raise ValueError("Hard-negative OOF transaction IDs must be unique.")
-    raw_scores = pd.to_numeric(hard_negative_oof[score_column], errors="raise")
-    if not raw_scores.between(0, 1).all():
+    raw_scores = hard_negative_oof[score_column].cast(pl.Float64, strict=True)
+    if ((raw_scores < 0) | (raw_scores > 1)).any():
         raise ValueError("Hard-negative OOF scores must be probabilities in [0, 1].")
-    training_ids = set(training[CANONICAL.transaction_id].astype(str))
-    unknown_ids = set(hard_negative_oof[CANONICAL.transaction_id].astype(str)).difference(
-        training_ids
-    )
+    training_ids = set(training[CANONICAL.transaction_id].cast(pl.Utf8).to_list())
+    unknown_ids = set(
+        hard_negative_oof[CANONICAL.transaction_id].cast(pl.Utf8).to_list()
+    ).difference(training_ids)
     if unknown_ids:
         raise ValueError("Hard-negative OOF scores contain IDs outside the training period.")
 
-    labels = training[CANONICAL.is_laundering].astype(int)
-    positives = training.loc[labels.eq(1)]
-    negatives = training.loc[labels.eq(0)].copy()
-    if len(negatives) <= maximum_negative_rows:
-        return training.copy()
-    oof_scores = hard_negative_oof.loc[:, [CANONICAL.transaction_id, score_column]].copy()
-    oof_scores[CANONICAL.transaction_id] = oof_scores[CANONICAL.transaction_id].astype(str)
-    negatives[CANONICAL.transaction_id] = negatives[CANONICAL.transaction_id].astype(str)
-    ranked = negatives.merge(
-        oof_scores,
-        on=CANONICAL.transaction_id,
-        how="left",
-        validate="one_to_one",
+    labels = training[CANONICAL.is_laundering].cast(pl.Int64)
+    positives = training.filter(labels == 1)
+    negatives = training.filter(labels == 0)
+    if negatives.height <= maximum_negative_rows:
+        return training
+    oof_scores = hard_negative_oof.select(
+        pl.col(CANONICAL.transaction_id).cast(pl.Utf8),
+        pl.col(score_column).cast(pl.Float64),
     )
-    scored = ranked.loc[ranked[score_column].notna()].sort_values(
+    ranked = negatives.with_columns(
+        pl.col(CANONICAL.transaction_id).cast(pl.Utf8)
+    ).join(oof_scores, on=CANONICAL.transaction_id, how="left")
+    scored = ranked.filter(pl.col(score_column).is_not_null()).sort(
         [score_column, CANONICAL.source_row_number],
-        ascending=[False, True],
-        kind="stable",
+        descending=[True, False],
+        maintain_order=True,
     )
     selected = scored.head(maximum_negative_rows)
-    remaining_count = maximum_negative_rows - len(selected)
+    remaining_count = maximum_negative_rows - selected.height
     if remaining_count:
-        selected_ids = set(selected[CANONICAL.transaction_id])
-        remaining = ranked.loc[~ranked[CANONICAL.transaction_id].isin(selected_ids)].copy()
-        remaining["_stable_hash"] = pd.util.hash_pandas_object(
-            remaining[CANONICAL.source_row_number],
-            index=False,
+        selected_ids = set(selected[CANONICAL.transaction_id].to_list())
+        remaining = ranked.filter(~pl.col(CANONICAL.transaction_id).is_in(list(selected_ids)))
+        remaining = (
+            remaining.with_columns(
+                stable_row_hash(remaining[CANONICAL.source_row_number]).alias("_stable_hash")
+            )
+            .sort("_stable_hash")
+            .head(remaining_count)
+            .drop("_stable_hash")
         )
-        selected = pd.concat(
-            [
-                selected,
-                remaining.nsmallest(remaining_count, "_stable_hash"),
-            ],
-            ignore_index=True,
-        )
-    sampled = pd.concat(
-        [positives, selected.loc[:, training.columns]],
-        axis=0,
-        ignore_index=True,
+        selected = pl.concat([selected, remaining], how="vertical_relaxed")
+    sampled = pl.concat(
+        [positives, selected.select(training.columns)],
+        how="vertical_relaxed",
     )
-    return sampled.sort_values(
-        [CANONICAL.event_ts, CANONICAL.source_row_number],
-        kind="stable",
-    ).reset_index(drop=True)
+    return sampled.sort([CANONICAL.event_ts, CANONICAL.source_row_number], maintain_order=True)
 
 
-def rule_baseline_scores(frame: pd.DataFrame) -> pd.Series | None:
+def rule_baseline_scores(frame: pl.DataFrame) -> np.ndarray | None:
     """Return the approved-rule baseline score, or None when no rule features exist."""
     rule_columns = sorted(
         column
@@ -216,8 +224,14 @@ def rule_baseline_scores(frame: pd.DataFrame) -> pd.Series | None:
     )
     if not rule_columns:
         return None
-    score = frame.loc[:, rule_columns].apply(pd.to_numeric, errors="raise").sum(axis=1)
-    return score.clip(lower=0, upper=1).astype(float)
+    score = (
+        frame.select([pl.col(column).cast(pl.Float64) for column in rule_columns])
+        .sum_horizontal()
+        .clip(0, 1)
+        .to_numpy()
+        .astype(float)
+    )
+    return score
 
 
 def _write_model_artifacts(
@@ -247,7 +261,7 @@ def _write_component_scores(
     output_dir: Path,
     *,
     split_name: str,
-    frame: pd.DataFrame,
+    frame: pl.DataFrame,
     component_scores: dict[str, Any],
 ) -> Path:
     """Persist private component score rows for later OOF/validation-only fusion."""
@@ -256,15 +270,16 @@ def _write_component_scores(
         CANONICAL.event_ts,
         CANONICAL.is_laundering,
     ]
-    output = frame.loc[:, required].copy()
+    output = frame.select(required)
     for name, scores in component_scores.items():
-        if len(scores) != len(output):
+        values = np.asarray(scores)
+        if len(values) != output.height:
             raise ValueError(f"Score length mismatch for component {name}.")
-        output[name] = scores
+        output = output.with_columns(pl.Series(name, values))
     score_dir = output_dir / "scores"
     score_dir.mkdir(exist_ok=True)
     path = score_dir / f"table_{split_name}_scores.parquet"
-    output.to_parquet(path, index=False)
+    output.write_parquet(path)
     return path
 
 
@@ -290,7 +305,7 @@ def train_and_evaluate_table_baselines(
     maximum_training_negative_rows: int | None = 500_000,
     random_seed: int = 20260722,
     catboost_params: dict[str, Any] | None = None,
-    hard_negative_oof: pd.DataFrame | None = None,
+    hard_negative_oof: pl.DataFrame | None = None,
     hard_negative_oof_path: Path | None = None,
     hard_negative_score_column: str = "catboost",
     model_config_path: Path | None = None,
@@ -320,7 +335,7 @@ def train_and_evaluate_table_baselines(
         )
         sampling_strategy = "stable_hash_negative_downsample"
     validation = load_feature_split(feature_root, TimeSplit.VALIDATION)
-    fitting_frame = pd.concat([sampled_training, validation], ignore_index=True)
+    fitting_frame = pl.concat([sampled_training, validation], how="diagonal_relaxed")
     models, table_fit_resources = measure_runtime(
         lambda: fit_table_models(
             fitting_frame,
@@ -346,7 +361,7 @@ def train_and_evaluate_table_baselines(
     validation_scores, validation_inference_resources = measure_runtime(
         lambda: models.predict_proba(validation)
     )
-    validation_labels = validation[CANONICAL.is_laundering].astype(int)
+    validation_labels = validation[CANONICAL.is_laundering].cast(pl.Int64).to_numpy()
     validation_metrics = {
         name: evaluate_binary_risk_scores(validation_labels, scores)
         for name, scores in validation_scores.items()
@@ -366,11 +381,11 @@ def train_and_evaluate_table_baselines(
             validation_labels,
             validation_rule_scores,
         )
-        validation_scores["rules"] = validation_rule_scores.to_numpy()
+        validation_scores["rules"] = validation_rule_scores
 
     test = load_feature_split(feature_root, TimeSplit.TEST)
     test_scores, test_inference_resources = measure_runtime(lambda: models.predict_proba(test))
-    test_labels = test[CANONICAL.is_laundering].astype(int)
+    test_labels = test[CANONICAL.is_laundering].cast(pl.Int64).to_numpy()
     test_metrics = {
         name: evaluate_binary_risk_scores(test_labels, scores)
         for name, scores in test_scores.items()
@@ -387,7 +402,7 @@ def train_and_evaluate_table_baselines(
     test_rule_scores = rule_baseline_scores(test)
     if test_rule_scores is not None:
         test_metrics["rules"] = evaluate_binary_risk_scores(test_labels, test_rule_scores)
-        test_scores["rules"] = test_rule_scores.to_numpy()
+        test_scores["rules"] = test_rule_scores
 
     alert_reduction_vs_rules: dict[str, dict[str, Any]] = {}
     if test_rule_scores is not None:
@@ -411,15 +426,18 @@ def train_and_evaluate_table_baselines(
 
     selected_test_scores = test_scores["catboost"]
     training_accounts = set(
-        pd.concat(
+        pl.concat(
             [
-                full_training[CANONICAL.sender_account_id],
-                full_training[CANONICAL.receiver_account_id],
-            ],
-            ignore_index=True,
+                full_training.select(pl.col(CANONICAL.sender_account_id).cast(pl.Utf8)),
+                full_training.select(
+                    pl.col(CANONICAL.receiver_account_id)
+                    .cast(pl.Utf8)
+                    .alias(CANONICAL.sender_account_id)
+                ),
+            ]
         )
-        .astype(str)
-        .tolist()
+        .to_series()
+        .to_list()
     )
     test_monthly_stability = monthly_stability_report(test, selected_test_scores)
     test_typology_slices = typology_slice_report(test, selected_test_scores)
@@ -527,17 +545,18 @@ def train_and_evaluate_table_baselines(
             ),
             "bootstrap_iterations": bootstrap_iterations,
             "model_names": sorted(test_metrics),
+            "engine": "polars",
         },
     )
     summary = TableBaselineSummary(
         created_at_utc=datetime.now(UTC).isoformat(),
         run_id=manifest.run_id,
         input_root=str(feature_root),
-        training_rows_before_sampling=len(full_training),
-        training_rows_after_sampling=len(sampled_training),
+        training_rows_before_sampling=full_training.height,
+        training_rows_after_sampling=sampled_training.height,
         training_sampling_strategy=sampling_strategy,
-        validation_rows=len(validation),
-        test_rows=len(test),
+        validation_rows=validation.height,
+        test_rows=test.height,
         feature_columns=list(models.feature_spec.all_columns),
         graph_feature_columns=graph_feature_columns,
         validation_metrics=validation_metrics,
@@ -582,9 +601,9 @@ def train_and_evaluate_table_baselines(
                 if graph_stat_models is not None
                 else {}
             ),
-            "validation_rows_per_second": len(validation)
+            "validation_rows_per_second": validation.height
             / max(validation_inference_resources["wall_time_ms"] / 1_000, 1e-9),
-            "test_rows_per_second": len(test)
+            "test_rows_per_second": test.height
             / max(test_inference_resources["wall_time_ms"] / 1_000, 1e-9),
         },
         explanation_artifacts=explanation_artifacts,
@@ -629,9 +648,9 @@ def main() -> None:
     if args.hard_negative_oof is not None:
         suffix = args.hard_negative_oof.suffix.lower()
         if suffix == ".parquet":
-            hard_negative_oof = pd.read_parquet(args.hard_negative_oof)
+            hard_negative_oof = pl.read_parquet(args.hard_negative_oof)
         elif suffix == ".csv":
-            hard_negative_oof = pd.read_csv(args.hard_negative_oof)
+            hard_negative_oof = pl.read_csv(args.hard_negative_oof)
         else:
             raise ValueError("Hard-negative OOF input must be Parquet or CSV.")
     summary = train_and_evaluate_table_baselines(

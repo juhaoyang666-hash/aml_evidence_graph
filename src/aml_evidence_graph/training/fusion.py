@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any
 
 import joblib
-import pandas as pd
+import numpy as np
+import polars as pl
 
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.evaluation.metrics import evaluate_binary_risk_scores
@@ -75,10 +76,10 @@ class FusionTestEvaluationSummary:
 
 
 def merge_component_scores(
-    frames: list[pd.DataFrame],
+    frames: list[pl.DataFrame],
     *,
     component_columns: list[str],
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Merge score artifacts only by explicit transaction ID equality."""
     if not frames:
         raise ValueError("At least one score frame is required.")
@@ -87,34 +88,33 @@ def merge_component_scores(
         missing = sorted(required.difference(frame.columns))
         if missing:
             raise ValueError(f"Score frame missing required columns: {', '.join(missing)}")
-        if frame[CANONICAL.transaction_id].duplicated().any():
+        if frame[CANONICAL.transaction_id].is_duplicated().any():
             raise ValueError("Each score artifact must have unique transaction IDs.")
     key_columns = [CANONICAL.transaction_id, CANONICAL.is_laundering]
-    base_keys = set(map(tuple, frames[0].loc[:, key_columns].itertuples(index=False, name=None)))
-    if len(base_keys) != len(frames[0]):
+    base_keys = set(frames[0].select(key_columns).iter_rows())
+    if len(base_keys) != frames[0].height:
         raise ValueError("Each score artifact must have unique transaction and label keys.")
-    merged = frames[0].copy()
+    merged = frames[0]
     for frame in frames[1:]:
-        frame_keys = set(map(tuple, frame.loc[:, key_columns].itertuples(index=False, name=None)))
-        if len(frame_keys) != len(frame) or frame_keys != base_keys:
+        frame_keys = set(frame.select(key_columns).iter_rows())
+        if len(frame_keys) != frame.height or frame_keys != base_keys:
             raise ValueError(
                 "All component score artifacts must cover exactly the same transaction keys."
             )
         available_components = [
             column for column in component_columns if column in frame.columns
         ]
-        merged = merged.merge(
-            frame.loc[
-                :,
+        merged = merged.join(
+            frame.select(
                 [
                     CANONICAL.transaction_id,
                     CANONICAL.is_laundering,
                     *available_components,
-                ],
-            ],
+                ]
+            ),
             on=key_columns,
             how="inner",
-            validate="one_to_one",
+            validate="1:1",
         )
     missing_components = sorted(set(component_columns).difference(merged.columns))
     if missing_components:
@@ -142,22 +142,22 @@ def load_persisted_fusion_artifacts(
 
 
 def _align_test_context(
-    test_scores: pd.DataFrame,
-    context: pd.DataFrame,
-) -> pd.DataFrame:
+    test_scores: pl.DataFrame,
+    context: pl.DataFrame,
+) -> pl.DataFrame:
     """Join score rows to private feature context through explicit one-to-one keys."""
     key_columns = [CANONICAL.transaction_id, CANONICAL.is_laundering]
     missing = sorted(set(key_columns).difference(context.columns))
     if missing:
         raise ValueError("Test context is missing: " + ", ".join(missing))
-    aligned = context.merge(
+    aligned = context.join(
         test_scores,
         on=key_columns,
         how="inner",
-        validate="one_to_one",
-        suffixes=("", "_score"),
+        validate="1:1",
+        suffix="_score",
     )
-    if len(aligned) != len(context) or len(aligned) != len(test_scores):
+    if aligned.height != context.height or aligned.height != test_scores.height:
         raise ValueError("Test context and component scores must cover the same rows.")
     return aligned
 
@@ -178,8 +178,8 @@ def _prepare_output_dir(output_dir: Path, *, overwrite: bool) -> None:
 
 
 def fit_and_persist_fusion(
-    oof_scores: pd.DataFrame,
-    validation_scores: pd.DataFrame,
+    oof_scores: pl.DataFrame,
+    validation_scores: pl.DataFrame,
     output_dir: Path,
     *,
     component_models: tuple[str, ...],
@@ -196,15 +196,15 @@ def fit_and_persist_fusion(
         missing = sorted(required.difference(frame.columns))
         if missing:
             raise ValueError(f"{name} scores missing: {', '.join(missing)}")
-        if frame[CANONICAL.transaction_id].duplicated().any():
+        if frame[CANONICAL.transaction_id].is_duplicated().any():
             raise ValueError(f"{name} scores must have unique transaction IDs.")
     fusion = fit_oof_fusion(
-        oof_scores.loc[:, component_models],
+        oof_scores.select(component_models),
         oof_scores[CANONICAL.is_laundering],
         model_names=component_models,
         random_seed=random_seed,
     )
-    validation_raw = fusion.predict_proba(validation_scores.loc[:, component_models])
+    validation_raw = fusion.predict_proba(validation_scores.select(component_models))
     calibration = fit_validation_calibration_and_threshold(
         validation_raw,
         validation_scores[CANONICAL.is_laundering],
@@ -212,7 +212,7 @@ def fit_and_persist_fusion(
     )
     validation_calibrated = calibration.predict_proba(validation_raw)
     validation_metrics = evaluate_binary_risk_scores(
-        validation_scores[CANONICAL.is_laundering],
+        validation_scores[CANONICAL.is_laundering].cast(pl.Int64).to_numpy(),
         validation_calibrated,
     )
     joblib.dump(fusion, output_dir / "oof_fusion.joblib")
@@ -238,16 +238,16 @@ def fit_and_persist_fusion(
         config_paths={"model_config": model_config_path or DEFAULT_MODEL_CONFIG_PATH},
         metadata={
             "component_models": list(component_models),
-            "oof_row_count": len(oof_scores),
-            "validation_row_count": len(validation_scores),
+            "oof_row_count": oof_scores.height,
+            "validation_row_count": validation_scores.height,
         },
     )
     summary = FusionRunSummary(
         created_at_utc=datetime.now(UTC).isoformat(),
         run_id=manifest.run_id,
         component_models=list(component_models),
-        oof_row_count=len(oof_scores),
-        validation_row_count=len(validation_scores),
+        oof_row_count=oof_scores.height,
+        validation_row_count=validation_scores.height,
         alert_fraction=alert_fraction,
         calibrated_threshold=calibration.threshold,
         calibration_method=calibration.method,
@@ -262,10 +262,10 @@ def fit_and_persist_fusion(
 
 def evaluate_persisted_fusion(
     fusion_dir: Path,
-    test_scores: pd.DataFrame,
+    test_scores: pl.DataFrame,
     output_dir: Path,
     *,
-    test_context: pd.DataFrame | None = None,
+    test_context: pl.DataFrame | None = None,
     training_accounts: set[str] | None = None,
     bootstrap_iterations: int = 0,
     input_paths: dict[str, Path] | None = None,
@@ -281,12 +281,12 @@ def evaluate_persisted_fusion(
     missing = sorted(required.difference(test_scores.columns))
     if missing:
         raise ValueError("Test component scores are missing: " + ", ".join(missing))
-    if test_scores[CANONICAL.transaction_id].duplicated().any():
+    if test_scores[CANONICAL.transaction_id].is_duplicated().any():
         raise ValueError("Test component scores must have unique transaction IDs.")
 
-    raw_scores = fusion.predict_proba(test_scores.loc[:, fusion.model_names])
+    raw_scores = fusion.predict_proba(test_scores.select(fusion.model_names))
     calibrated_scores = calibration.predict_proba(raw_scores)
-    labels = test_scores[CANONICAL.is_laundering].astype(int)
+    labels = test_scores[CANONICAL.is_laundering].cast(pl.Int64).to_numpy()
     test_metrics = evaluate_binary_risk_scores(labels, calibrated_scores)
     score_columns = [
         column
@@ -296,15 +296,17 @@ def evaluate_persisted_fusion(
             CANONICAL.is_laundering,
             *fusion.model_names,
         )
-        if column in test_scores
+        if column in test_scores.columns
     ]
-    scored_rows = test_scores.loc[:, score_columns].copy()
-    scored_rows["fusion_raw_probability"] = raw_scores
-    scored_rows["fusion_calibrated_probability"] = calibrated_scores
-    scored_rows["is_alert_at_validation_threshold"] = (
-        calibrated_scores >= calibration.threshold
-    ).astype("int8")
-    scored_rows.to_parquet(output_dir / "test_fusion_scores.parquet", index=False)
+    scored_rows = test_scores.select(score_columns).with_columns(
+        pl.Series("fusion_raw_probability", raw_scores),
+        pl.Series("fusion_calibrated_probability", calibrated_scores),
+        pl.Series(
+            "is_alert_at_validation_threshold",
+            (calibrated_scores >= calibration.threshold).astype(np.int8),
+        ),
+    )
+    scored_rows.write_parquet(output_dir / "test_fusion_scores.parquet")
 
     monthly: dict[str, dict[str, Any]] | None = None
     typology: dict[str, dict[str, Any]] | None = None
@@ -351,7 +353,7 @@ def evaluate_persisted_fusion(
         input_paths={"fusion_artifacts": fusion_dir, **(input_paths or {})},
         metadata={
             "component_models": list(fusion.model_names),
-            "test_row_count": len(test_scores),
+            "test_row_count": test_scores.height,
             "selection_split": "validation",
             "bootstrap_iterations": bootstrap_iterations,
         },
@@ -360,7 +362,7 @@ def evaluate_persisted_fusion(
         created_at_utc=datetime.now(UTC).isoformat(),
         run_id=manifest.run_id,
         component_models=list(fusion.model_names),
-        test_row_count=len(test_scores),
+        test_row_count=test_scores.height,
         calibration_method=calibration.method,
         calibrated_threshold=calibration.threshold,
         test_metrics=test_metrics,
@@ -380,11 +382,11 @@ def evaluate_persisted_fusion(
     return summary
 
 
-def _read_scores(path: Path) -> pd.DataFrame:
+def _read_scores(path: Path) -> pl.DataFrame:
     if path.suffix.lower() == ".parquet":
-        return pd.read_parquet(path)
+        return pl.read_parquet(path)
     if path.suffix.lower() == ".csv":
-        return pd.read_csv(path)
+        return pl.read_csv(path)
     raise ValueError("Fusion score inputs must be Parquet or CSV.")
 
 

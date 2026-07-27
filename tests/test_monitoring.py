@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.evaluation.monitoring import (
@@ -15,17 +15,17 @@ from aml_evidence_graph.evaluation.monitoring import (
 from aml_evidence_graph.tracking.run import create_run_manifest
 
 
-def _evaluation_frame() -> pd.DataFrame:
-    return pd.DataFrame(
+def _evaluation_frame() -> pl.DataFrame:
+    return pl.DataFrame(
         {
-            CANONICAL.event_ts: pd.to_datetime(
+            CANONICAL.event_ts: pl.Series(
                 [
                     "2023-07-01T10:00:00Z",
                     "2023-07-02T10:00:00Z",
                     "2023-08-01T10:00:00Z",
                     "2023-08-02T10:00:00Z",
                 ]
-            ),
+            ).str.to_datetime(time_zone="UTC"),
             CANONICAL.is_laundering: [0, 1, 0, 1],
             CANONICAL.laundering_type: ["None", "Structuring", "None", "Layering"],
             CANONICAL.sender_account_id: ["seen", "new", "new", "seen"],
@@ -53,7 +53,7 @@ def test_stability_and_slice_reports_do_not_drop_single_class_segments() -> None
     assert new_accounts["sender_seen"]["available"]
     assert new_accounts["receiver_new"]["available"]
     assert new_accounts["either_endpoint_new"]["available"]
-    single_class = monthly_stability_report(frame.iloc[:1], scores[:1])
+    single_class = monthly_stability_report(frame.head(1), scores[:1])
     assert single_class["2023-07"]["available"] is False
 
 

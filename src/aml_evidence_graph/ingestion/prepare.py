@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import shutil
 import sys
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
+import polars as pl
 
 from aml_evidence_graph.data.configuration import DEFAULT_DATA_CONFIG_PATH, load_data_configuration
 from aml_evidence_graph.data.contract import CANONICAL, normalize_transaction_chunk
@@ -66,25 +65,28 @@ def convert_csv_to_parquet(
     row_count = 0
     chunk_count = 0
     event_dates: set[str] = set()
-    for raw_chunk in pd.read_csv(input_path, chunksize=chunk_size):
+    for raw_chunk in pl.scan_csv(str(input_path)).collect_batches(chunk_size=chunk_size):
         normalized = normalize_transaction_chunk(
             raw_chunk,
             source_row_start=source_row_start,
             timezone=timezone,
         )
-        source_row_start += len(normalized)
-        row_count += len(normalized)
+        source_row_start += normalized.height
+        row_count += normalized.height
         chunk_count += 1
-        prepared = normalized.copy()
-        prepared["event_date"] = prepared[CANONICAL.event_ts].dt.strftime("%Y-%m-%d")
-        event_dates.update(prepared["event_date"].unique().tolist())
-        prepared["split"] = assign_time_split(prepared[CANONICAL.event_ts])
-        table = pa.Table.from_pandas(prepared, preserve_index=False)
-        pq.write_to_dataset(
-            table,
-            root_path=str(output_root),
-            partition_cols=["event_date", "split"],
-            compression="zstd",
+        prepared = normalized.with_columns(
+            pl.col(CANONICAL.event_ts).dt.strftime("%Y-%m-%d").alias("event_date"),
+            assign_time_split(normalized[CANONICAL.event_ts]).alias("split"),
+        )
+        event_dates.update(prepared["event_date"].unique().to_list())
+        prepared.write_parquet(
+            output_root,
+            use_pyarrow=True,
+            pyarrow_options={
+                "partition_cols": ["event_date", "split"],
+                "compression": "zstd",
+                "existing_data_behavior": "overwrite_or_ignore",
+            },
         )
     if not event_dates:
         raise ValueError("Input CSV contains no transactions after schema validation.")
@@ -100,6 +102,7 @@ def convert_csv_to_parquet(
             "data_configuration_version": configuration.version,
             "row_count": row_count,
             "partition_count": len(event_dates),
+            "engine": "polars",
         },
         filename="_run_manifest.json",
     )
@@ -109,7 +112,7 @@ def convert_csv_to_parquet(
         input_name=input_path.name,
         output_root=str(output_root),
         row_count=row_count,
-        chunk_count=chunk_count,
+        chunk_count=chunk_count or max(1, math.ceil(row_count / chunk_size)),
         partition_count=len(event_dates),
         event_date_min=min(event_dates),
         event_date_max=max(event_dates),

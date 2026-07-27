@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import date
 from enum import StrEnum
 
-import pandas as pd
+import polars as pl
+
+from aml_evidence_graph.compat import to_polars_series
 
 
 class TimeSplit(StrEnum):
@@ -21,24 +23,46 @@ SPLIT_BOUNDS: dict[TimeSplit, tuple[date, date]] = {
 }
 
 
-def assign_time_split(event_ts: pd.Series) -> pd.Series:
+def _as_utc_datetime(event_ts: pl.Series) -> pl.Series:
+    """Cast event timestamps to UTC datetime, coercing invalid values to null."""
+    timestamps = event_ts
+    if timestamps.dtype in (pl.Utf8, pl.String):
+        return timestamps.str.to_datetime(time_zone="UTC", strict=False)
+    if isinstance(timestamps.dtype, pl.Datetime):
+        if timestamps.dtype.time_zone is None:
+            return timestamps.dt.replace_time_zone("UTC")
+        if timestamps.dtype.time_zone != "UTC":
+            return timestamps.dt.convert_time_zone("UTC")
+        return timestamps
+    return timestamps.cast(pl.Datetime(time_zone="UTC"), strict=False)
+
+
+def assign_time_split(event_ts: pl.Series | object) -> pl.Series:
     """Assign every timestamp to the one pre-registered time split.
 
     Timestamps outside the protocol window are rejected instead of silently
     falling into a training or test set.
     """
-    timestamps = pd.to_datetime(event_ts, errors="coerce", utc=True)
-    if timestamps.isna().any():
+    timestamps = _as_utc_datetime(to_polars_series(event_ts, name="event_ts"))
+    if timestamps.null_count() > 0:
         raise ValueError("event_ts contains invalid timestamps.")
 
-    result = pd.Series(pd.NA, index=event_ts.index, dtype="string")
+    event_dates = timestamps.dt.date()
+    expression = pl.lit(None, dtype=pl.Utf8)
     for split, (start, end) in SPLIT_BOUNDS.items():
-        mask = (timestamps.dt.date >= start) & (timestamps.dt.date <= end)
-        result.loc[mask] = split.value
-
-    if result.isna().any():
+        expression = (
+            pl.when((pl.col("event_date") >= start) & (pl.col("event_date") <= end))
+            .then(pl.lit(split.value))
+            .otherwise(expression)
+        )
+    result = (
+        pl.DataFrame({"event_date": event_dates})
+        .select(expression.alias("split"))
+        .get_column("split")
+    )
+    if result.null_count() > 0:
         raise ValueError("event_ts contains values outside the approved split windows.")
-    return result.astype("string")
+    return result
 
 
 def split_bounds_as_iso() -> dict[str, dict[str, str]]:
@@ -47,4 +71,3 @@ def split_bounds_as_iso() -> dict[str, dict[str, str]]:
         split.value: {"start": start.isoformat(), "end": end.isoformat()}
         for split, (start, end) in SPLIT_BOUNDS.items()
     }
-

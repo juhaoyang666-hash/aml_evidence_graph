@@ -1,5 +1,5 @@
 import numpy as np
-import pandas as pd
+import polars as pl
 import torch
 
 from aml_evidence_graph.data.contract import CANONICAL
@@ -20,16 +20,16 @@ from aml_evidence_graph.training.graphsage import (
 
 
 def test_daily_graph_snapshots_use_only_prior_days_and_score_edges() -> None:
-    frame = pd.DataFrame(
+    frame = pl.DataFrame(
         {
             CANONICAL.transaction_id: ["one", "two", "three"],
-            CANONICAL.event_ts: pd.to_datetime(
+            CANONICAL.event_ts: pl.Series(
                 [
                     "2022-10-07T10:00:00Z",
                     "2022-10-07T11:00:00Z",
                     "2022-10-08T10:00:00Z",
                 ]
-            ),
+            ).str.to_datetime(time_zone="UTC"),
             CANONICAL.sender_account_id: ["a", "b", "b"],
             CANONICAL.receiver_account_id: ["b", "a", "a"],
             CANONICAL.source_row_number: [1, 2, 3],
@@ -38,7 +38,7 @@ def test_daily_graph_snapshots_use_only_prior_days_and_score_edges() -> None:
             "graph_sender_historical_out_degree": [0.0, 0.0, 1.0],
         }
     )
-    indexer = TemporalNodeIndexer(unknown_hash_buckets=8).fit(frame.iloc[:2])
+    indexer = TemporalNodeIndexer(unknown_hash_buckets=8).fit(frame.head(2))
     builder = DailyGraphSnapshotBuilder(
         indexer,
         edge_feature_columns=("amount", "graph_sender_historical_out_degree"),
@@ -75,12 +75,15 @@ def test_daily_graph_snapshots_use_only_prior_days_and_score_edges() -> None:
 
 
 def test_scoring_snapshots_do_not_require_labels() -> None:
-    frame = pd.DataFrame(
+    frame = pl.DataFrame(
         {
             CANONICAL.transaction_id: ["one", "two"],
-            CANONICAL.event_ts: pd.to_datetime(
-                ["2023-07-01T10:00:00Z", "2023-07-02T10:00:00Z"]
-            ),
+            CANONICAL.event_ts: pl.Series(
+                [
+                    "2023-07-01T10:00:00Z",
+                    "2023-07-02T10:00:00Z",
+                ]
+            ).str.to_datetime(time_zone="UTC"),
             CANONICAL.sender_account_id: ["a", "b"],
             CANONICAL.receiver_account_id: ["b", "a"],
             CANONICAL.source_row_number: [1, 2],
@@ -99,13 +102,13 @@ def test_scoring_snapshots_do_not_require_labels() -> None:
 
 
 def test_graph_population_audit_reports_overlap_without_identifiers() -> None:
-    reference = pd.DataFrame(
+    reference = pl.DataFrame(
         {
             CANONICAL.sender_account_id: ["a", "b"],
             CANONICAL.receiver_account_id: ["b", "c"],
         }
     )
-    scored = pd.DataFrame(
+    scored = pl.DataFrame(
         {
             CANONICAL.sender_account_id: ["a", "new"],
             CANONICAL.receiver_account_id: ["new", "c"],
@@ -122,10 +125,10 @@ def test_graph_population_audit_reports_overlap_without_identifiers() -> None:
 
 
 def test_graphsage_training_uses_neighbor_loader_and_scores_all_validation_edges() -> None:
-    frame = pd.DataFrame(
+    frame = pl.DataFrame(
         {
             CANONICAL.transaction_id: [f"t{number}" for number in range(6)],
-            CANONICAL.event_ts: pd.to_datetime(
+            CANONICAL.event_ts: pl.Series(
                 [
                     "2022-10-07T10:00:00Z",
                     "2022-10-07T11:00:00Z",
@@ -134,7 +137,7 @@ def test_graphsage_training_uses_neighbor_loader_and_scores_all_validation_edges
                     "2023-05-01T10:00:00Z",
                     "2023-05-01T11:00:00Z",
                 ]
-            ),
+            ).str.to_datetime(time_zone="UTC"),
             CANONICAL.sender_account_id: ["a", "b", "a", "c", "a", "c"],
             CANONICAL.receiver_account_id: ["b", "a", "c", "a", "c", "a"],
             CANONICAL.source_row_number: range(6),
@@ -142,13 +145,13 @@ def test_graphsage_training_uses_neighbor_loader_and_scores_all_validation_edges
             "amount": [10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
         }
     )
-    indexer = TemporalNodeIndexer(unknown_hash_buckets=8).fit(frame.iloc[:4])
+    indexer = TemporalNodeIndexer(unknown_hash_buckets=8).fit(frame.head(4))
     builder = DailyGraphSnapshotBuilder(
         indexer,
         edge_feature_columns=("amount",),
     )
-    raw_train = builder.build(frame.iloc[:4])
-    raw_validation = builder.build(frame.iloc[4:])
+    raw_train = builder.build(frame.head(4))
+    raw_validation = builder.build(frame.tail(2))
     scaler = fit_edge_feature_scaler(raw_train)
     train_snapshots = transform_edge_features(raw_train, scaler)
     validation_snapshots = transform_edge_features(raw_validation, scaler)

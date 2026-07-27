@@ -5,16 +5,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 from catboost import Pool
 
+from aml_evidence_graph.compat import to_polars
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.models.tabular import TrainedTableModels, prepare_feature_frames
 
 
 def write_catboost_explanations(
     models: TrainedTableModels,
-    frame: pd.DataFrame,
+    frame: pl.DataFrame,
     output_dir: Path,
     *,
     model_name: str,
@@ -24,17 +25,21 @@ def write_catboost_explanations(
     if max_rows < 1:
         raise ValueError("max_rows must be positive.")
     output_dir.mkdir(parents=True, exist_ok=True)
-    _, catboost_frame = prepare_feature_frames(frame, models.feature_spec)
+    data = to_polars(frame)
+    _, catboost_frame = prepare_feature_frames(data, models.feature_spec)
     sample = catboost_frame.iloc[:max_rows].copy()
-    transaction_ids = frame.iloc[: len(sample)][CANONICAL.transaction_id].astype(str)
+    transaction_ids = (
+        data.head(len(sample))[CANONICAL.transaction_id].cast(pl.Utf8).to_list()
+    )
     pool = Pool(sample, cat_features=list(models.feature_spec.categorical_columns))
     shap_values = models.catboost.get_feature_importance(pool, type="ShapValues")
     feature_names = list(models.feature_spec.all_columns)
-    local = pd.DataFrame(shap_values[:, :-1], columns=feature_names)
-    local.insert(0, CANONICAL.transaction_id, transaction_ids.to_numpy())
-    local["base_value"] = shap_values[:, -1]
+    local = pl.from_numpy(shap_values[:, :-1], schema=feature_names).with_columns(
+        pl.Series(CANONICAL.transaction_id, transaction_ids),
+        pl.Series("base_value", shap_values[:, -1]),
+    ).select([CANONICAL.transaction_id, *feature_names, "base_value"])
     local_path = output_dir / f"{model_name}_local_shap.parquet"
-    local.to_parquet(local_path, index=False)
+    local.write_parquet(local_path)
 
     importance = models.catboost.get_feature_importance(type="FeatureImportance")
     global_importance = [
@@ -62,5 +67,5 @@ def write_catboost_explanations(
     return {
         "local_path": str(local_path),
         "global_path": str(global_path),
-        "sample_count": len(local),
+        "sample_count": local.height,
     }

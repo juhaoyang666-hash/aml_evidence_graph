@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.training.graphsage import GraphSAGETrainingConfig
@@ -9,7 +9,7 @@ from aml_evidence_graph.training.oof import (
 )
 
 
-def _training_frame() -> pd.DataFrame:
+def _training_frame() -> pl.DataFrame:
     rows: list[dict[str, object]] = []
     for month in ("2022-10", "2022-11", "2022-12", "2023-01"):
         for day, label in ((1, 0), (2, 1), (3, 0), (4, 1)):
@@ -25,7 +25,9 @@ def _training_frame() -> pd.DataFrame:
                     "payment_type_feature": "A" if day % 2 else "B",
                 }
             )
-    return pd.DataFrame(rows)
+    return pl.DataFrame(rows).with_columns(
+        pl.col(CANONICAL.event_ts).str.to_datetime(time_zone="UTC")
+    )
 
 
 def test_expanding_time_oof_predictions_are_only_for_later_months() -> None:
@@ -39,9 +41,10 @@ def test_expanding_time_oof_predictions_are_only_for_later_months() -> None:
     )
 
     assert folds[0].training_months == ("2022-10", "2022-11")
-    assert len(predictions) == 8
-    assert set(predictions["oof_fold_id"]) == {1, 2}
-    assert predictions["catboost"].between(0, 1).all()
+    assert predictions.height == 8
+    assert set(predictions["oof_fold_id"].to_list()) == {1, 2}
+    catboost = predictions["catboost"]
+    assert ((catboost >= 0) & (catboost <= 1)).all()
 
 
 def test_graphsage_oof_predictions_do_not_use_later_month_edges() -> None:
@@ -60,5 +63,6 @@ def test_graphsage_oof_predictions_do_not_use_later_month_edges() -> None:
         ),
     )
 
-    assert len(predictions) == 8
-    assert predictions["graphsage"].between(0, 1).all()
+    assert predictions.height == 8
+    graphsage = predictions["graphsage"]
+    assert ((graphsage >= 0) & (graphsage <= 1)).all()
