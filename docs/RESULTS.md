@@ -28,6 +28,32 @@ Notes:
   `graph_stats` is **excluded** from both 2-way fusions.
 - Budget columns are precision/recall at top-k alert fractions of the test set.
 
+## FE v2 sidecar（Polars + P0/P1，独立于主线）
+
+> 该小节记录一次 **sidecar** 试验结果，用于特征工程路线跟踪；**sidecar 不覆盖主线**
+> CatBoost/GAT/fusion 定义与排序口径。
+
+- 指标唯一真值来源：`artifacts/table_baseline_fe_v2/metrics.json`。
+- 运行状态：complete（`artifacts/logs/fe_v2_pipeline_status.json`（仅用于状态/时间）。
+- 全流程时间（UTC）：约 2026-07-27T08:39:33Z ~ 2026-07-27T10:18:17Z。
+- 复现入口：scripts/run_fe_v2_pipeline_resumable.py（PIT sidecar + table CatBoost）。
+
+关键指标（sidecar 最终口径）：
+
+| Metric | Value |
+|---|---:|
+| CatBoost validation PR-AUC | **0.8660898669** |
+| CatBoost validation ROC-AUC | **0.9982223689** |
+| CatBoost test PR-AUC | **0.8754139061** |
+| CatBoost test ROC-AUC | **0.9984022445** |
+| 相对主线 CatBoost test PR-AUC=0.8092 的差值 | **+0.0662**（四舍五入） |
+
+说明与边界：
+
+- 该结果仅用于 FE v2 侧线评估，不替代主线 `artifacts/table_baseline_rules` 既有结论。
+- smoke 产物仅用于链路验证，不可引用为正式效果数字。
+- 仍需复核是否存在过拟合、采样口径差异、或数据切分/特征差异导致的数值偏移。
+
 ## Main-line model choice: GAT vs GraphSAGE (2-way fusion)
 
 Both fusions use identical protocol and identical frozen CatBoost score files

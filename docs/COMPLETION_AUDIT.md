@@ -26,6 +26,18 @@
 - 全量转换 / PIT / 训练 / 融合 / 调查视图：见 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)。
 - 正式数字与 run_id：见 [RESULTS.md](RESULTS.md)。
 
+## FE v2 sidecar 审计补记（2026-07-27）
+
+- 本次 `fe_v2`（Polars + P0/P1）已跑完，状态 complete。
+- 指标唯一真值来源：`artifacts/table_baseline_fe_v2/metrics.json`。
+- 运行状态时间来源：`artifacts/logs/fe_v2_pipeline_status.json`（仅状态/时间）。
+- sidecar 结果：validation PR-AUC **0.8660898669**、validation ROC-AUC **0.9982223689**、
+  test PR-AUC **0.8754139061**、test ROC-AUC **0.9984022445**。
+- 对主线 CatBoost test PR-AUC 0.8092 的差值为 **+0.0662**（四舍五入）。
+- 口径约束：该结果仅为 sidecar 路线补充（sidecar 不覆盖主线），不替代主线；smoke 产物只做链路验证，不作为
+  对外指标。
+- 风险提示：仍需后续复核是否存在过拟合、采样差异或数据切分差异。
+
 ## 组织侧仍开放（非工程缺口）
 
 1. 合成基准不能替代真实业务外推与晋升阈值审批。

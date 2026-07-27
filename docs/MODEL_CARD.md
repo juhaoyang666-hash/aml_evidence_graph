@@ -65,6 +65,23 @@ RGCN / GAT）。详见 RESULTS「Edge GNN」与 [RELATION_ABLATION.md](RELATION_
 `graph_stats_catboost` 与含该组件的三路融合另作对照，见 RESULTS；主线报告优先引用
 CatBoost、GAT 与 `catboost + GAT` 双组件融合。两路融合均不含 `graph_stats`。
 
+## FE v2 sidecar（Polars + P0/P1）补充记录
+
+该结果属于特征工程 sidecar 路线，**sidecar 不覆盖主线**；主线仍为
+CatBoost / GAT / catboost + GAT。
+
+- 指标唯一真值来源：`artifacts/table_baseline_fe_v2/metrics.json`。
+- 运行状态时间来源：`artifacts/logs/fe_v2_pipeline_status.json`（仅状态/时间）。
+- sidecar 流程：scripts/run_fe_v2_pipeline_resumable.py。
+- sidecar 指标（CatBoost）：
+  - validation PR-AUC：**0.8660898669**
+  - validation ROC-AUC：**0.9982223689**
+  - test PR-AUC：**0.8754139061**
+  - test ROC-AUC：**0.9984022445**
+  - 相对主线 CatBoost test PR-AUC 0.8092：**+0.0662**（四舍五入）
+- 说明：smoke 路径仅用于工程链路验证，不得作为正式效果数字；该 sidecar 数值仍需结合
+  过拟合风险、采样/切分差异做后续复核。
+
 ## 评价与晋升
 
 统一报告 PR-AUC、概率输入的 ROC-AUC、KS、Brier、ECE、固定告警预算的

@@ -58,6 +58,22 @@
 - 全量复现命令：`docs/FULL_RUN_AFTER_PIT.md`；剩余 GPU 链：`scripts/run_remaining_gpu.sh`。
 - ECNU ecnu-max 可用于调查注释；默认 `AML_LLM_ENABLED` 受控，不影响评分链路。
 
+## FE v2 sidecar（Polars + P0/P1）同步状态
+
+- 定位：`fe_v2` 为 sidecar 试验链路，目的是验证新增特征工程实现；**sidecar 不覆盖主线**
+  catboost + GAT 的结果定义。
+- 指标唯一真值来源：`artifacts/table_baseline_fe_v2/metrics.json`。
+- 流程状态时间来源：`artifacts/logs/fe_v2_pipeline_status.json`（仅状态/时间）。
+- 流程状态：complete；时间约 2026-07-27T08:39:33Z ~ 2026-07-27T10:18:17Z。
+- 结果（table CatBoost）：
+  - validation PR-AUC **0.8660898669**
+  - validation ROC-AUC **0.9982223689**
+  - test PR-AUC **0.8754139061**
+  - test ROC-AUC **0.9984022445**
+  - 相对主线 CatBoost test PR-AUC 0.8092：**+0.0662**（四舍五入）
+- 复现方式：python scripts/run_fe_v2_pipeline_resumable.py。
+- 边界：smoke 仅用于链路验证，不得引用为正式结果；后续仍需复核是否存在过拟合或数据口径差异。
+
 ## 已关闭的工程项 / 仍开放的组织项
 
 - ~~GAT/RGCN/PNA 对比~~、~~Golden 裁定~~、~~主线升级为 catboost+GAT~~、
