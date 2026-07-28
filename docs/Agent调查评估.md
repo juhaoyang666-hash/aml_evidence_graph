@@ -35,6 +35,18 @@
 另外保存工具名、参数名、输出键、耗时、状态和错误码。完整逐案结果写入本地忽略的
 `artifacts/agent_evaluation/metrics.json`，Bad Case 同文件输出。
 
+## 独立审计存储
+
+受控 API 已支持与 LangGraph checkpoint 分离的 SQLite 追加式审计库。配置
+`AML_AGENT_AUDIT_PATH` 后，启动与人工复核恢复都会把当前可见事件投影到独立表；同一
+`event_id` 使用 `INSERT OR IGNORE`，因此重放同一 checkpoint 不会重复写入。关闭并重新
+创建存储对象后仍能按 `thread_id` 读取记录。
+
+审计表只允许工具名、参数名、输出键、节点状态变化、错误码、耗时、复核动作、复核人引用和
+“是否存在备注”。Schema 不提供证据正文、特征值、图边内容或备注正文列。该实现是本地持久化
+原型，不等于生产 WORM 审计系统；正式部署仍需组织确定访问控制、集中备份、法务保留期限、
+到期销毁与审计库自身监控。应用运行时不自动删除审计记录。
+
 ## 复现
 
 ```powershell
@@ -42,5 +54,6 @@ $env:PYTHONPATH = "src"
 D:\Miniconda3\envs\aml-evidence\python.exe scripts/evaluate_agent_golden.py --overwrite
 ```
 
-权威输入为 `golden/agent_cases_v2.json`。后续需要补充 API 层重复审批与并发恢复幂等测试，
-并在启用外部 LLM 后单独报告 provider token、配置价格下的成本和延迟，不能与本基线混算。
+权威输入为 `golden/agent_cases_v2.json`。后续需要补充 API 层并发恢复幂等压测和生产审计
+适配器，并在启用外部 LLM 后单独报告 provider token、配置价格下的成本和延迟，不能与本
+基线混算。

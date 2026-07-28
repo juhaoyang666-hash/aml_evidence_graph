@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -7,6 +8,7 @@ from aml_evidence_graph.evidence.typology import (
     LocalBM25TypologyRetriever,
     load_typology_documents,
 )
+from aml_evidence_graph.investigation.audit_store import SQLiteInvestigationAuditStore
 from aml_evidence_graph.investigation.workflow_v2 import create_sqlite_checkpointer
 
 
@@ -211,3 +213,47 @@ body: "Transaction risk investigation."
     assert restored.json()["status"] == "awaiting_human_review"
     assert completed.status_code == 200
     assert completed.json()["status"] == "completed"
+
+
+def test_controlled_api_writes_independent_minimized_audit_records(tmp_path: Path) -> None:
+    typology_root = tmp_path / "typologies"
+    typology_root.mkdir()
+    (typology_root / "test.yaml").write_text(
+        """
+typology_id: "TYPOLOGY-TEST"
+version: "1"
+title: "Test Typology"
+source: "Test"
+body: "Transaction risk investigation."
+""".strip(),
+        encoding="utf-8",
+    )
+    retriever = LocalBM25TypologyRetriever(load_typology_documents(typology_root))
+    audit_store = SQLiteInvestigationAuditStore(tmp_path / "audit.sqlite")
+    client = TestClient(create_app(retriever, controlled_audit_store=audit_store))
+
+    started = client.post(
+        "/v1/controlled-investigations/mock-alert-0001",
+        json={"thread_id": "audited-api-thread"},
+    )
+    completed = client.post(
+        "/v1/controlled-investigations/audited-api-thread/review",
+        json={
+            "action": "edit",
+            "reviewer_reference": "reviewer-audit",
+            "note": "SENSITIVE REVIEW NOTE MUST NOT BE STORED",
+        },
+    )
+    records = audit_store.list_by_thread("audited-api-thread")
+    serialized = json.dumps(
+        [record.model_dump(mode="json") for record in records],
+        ensure_ascii=False,
+    )
+
+    assert started.status_code == 200
+    assert completed.status_code == 200
+    assert {record.category for record in records} == {"tool", "node", "review"}
+    assert [record.name for record in records].count("human_review_decision") == 1
+    assert next(record for record in records if record.category == "review").note_present
+    assert "SENSITIVE REVIEW NOTE" not in serialized
+    assert "feature_values" not in serialized

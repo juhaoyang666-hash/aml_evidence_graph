@@ -37,6 +37,10 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="AML_AGENT_CHECKPOINT_PATH",
     )
+    agent_audit_path: Path | None = Field(
+        default=None,
+        validation_alias="AML_AGENT_AUDIT_PATH",
+    )
     graphsage_device: str = Field(default="auto", validation_alias="AML_GRAPHSAGE_DEVICE")
     alert_threshold: float = Field(default=0.5, validation_alias="AML_ALERT_THRESHOLD")
     model_version: str = Field(default="unconfigured", validation_alias="AML_MODEL_VERSION")
@@ -78,6 +82,7 @@ class Settings(BaseSettings):
         "graphsage_model_path",
         "fusion_dir",
         "agent_checkpoint_path",
+        "agent_audit_path",
         "internal_api_token",
         "llm_api_key",
         "ecnu_api_key",
@@ -147,3 +152,12 @@ class Settings(BaseSettings):
                 "AML_MODEL_VERSION must be configured before serving private artifacts."
             )
         return value
+
+    def validate_agent_storage_separation(self) -> None:
+        """Reject one SQLite file serving as both mutable state and append-only audit."""
+        if self.agent_checkpoint_path is None or self.agent_audit_path is None:
+            return
+        if self.agent_checkpoint_path.resolve() == self.agent_audit_path.resolve():
+            raise RuntimeError(
+                "AML_AGENT_CHECKPOINT_PATH and AML_AGENT_AUDIT_PATH must be different files."
+            )

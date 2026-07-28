@@ -111,6 +111,16 @@ $PY -m aml_evidence_graph.investigation.golden \
 $PY scripts/evaluate_agent_golden.py --overwrite
 ```
 
+受控 Agent 的本地持久化可分别配置 checkpoint 与独立审计文件：
+
+```bash
+export AML_AGENT_CHECKPOINT_PATH=artifacts/checkpoints/investigations.sqlite
+export AML_AGENT_AUDIT_PATH=artifacts/audit/investigation_events.sqlite
+```
+
+审计表只追加工具、节点和人工动作元数据，不保存证据正文、特征值、图边或复核备注正文；
+SQLite 是本地原型，不应表述为生产 WORM 审计系统。
+
 当前模板路径回归为 **34** 案（原 30 + 4 对抗扩容）；幻觉拦截 / 无证据拒答仍为 1.0，见
 [大模型调查系统.md](docs/大模型调查系统.md)。
 ## 本地验收

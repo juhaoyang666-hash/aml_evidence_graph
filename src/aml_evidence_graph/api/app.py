@@ -28,6 +28,12 @@ from aml_evidence_graph.evidence.typology import (
     LocalBM25TypologyRetriever,
     load_typology_documents,
 )
+from aml_evidence_graph.investigation.audit_store import (
+    InMemoryInvestigationAuditStore,
+    InvestigationAuditStore,
+    SQLiteInvestigationAuditStore,
+    persist_state_audit,
+)
 from aml_evidence_graph.investigation.llm import ECNUAnnotationClient, EvidenceAnnotationClient
 from aml_evidence_graph.investigation.tools import InvestigationToolRegistry
 from aml_evidence_graph.investigation.workflow import run_investigation
@@ -203,6 +209,7 @@ def create_app(
     review_store: ReviewStore | None = None,
     internal_api_token: str | None = None,
     controlled_checkpointer: object | None = None,
+    controlled_audit_store: InvestigationAuditStore | None = None,
 ) -> FastAPI:
     """Create an API bound to a local corpus; LLM use is annotation-only."""
     app = FastAPI(
@@ -220,6 +227,7 @@ def create_app(
     scorer = scoring_service or MockPartitionScoringService(store, mock_evidence)
     reviews = review_store or InMemoryReviewStore()
     checkpointer = controlled_checkpointer or InMemorySaver()
+    investigation_audits = controlled_audit_store or InMemoryInvestigationAuditStore()
     controlled_graph = build_controlled_investigation_graph(
         InvestigationToolRegistry(retriever),
         retriever=retriever,
@@ -352,6 +360,7 @@ def create_app(
             evidence,
             thread_id=thread_id,
         )
+        persist_state_audit(investigation_audits, thread_id=thread_id, state=state)
         return _controlled_api_response(
             thread_id,
             state,
@@ -393,6 +402,7 @@ def create_app(
             decision,
             thread_id=thread_id,
         )
+        persist_state_audit(investigation_audits, thread_id=thread_id, state=state)
         return _controlled_api_response(
             thread_id,
             state,
@@ -405,6 +415,7 @@ def create_app(
 def create_default_app() -> FastAPI:
     """Factory for Uvicorn; Typology retrieval stays local to the deployment."""
     settings = Settings()
+    settings.validate_agent_storage_separation()
     retriever = LocalBM25TypologyRetriever(
         load_typology_documents(settings.typology_root)
     )
@@ -412,6 +423,11 @@ def create_default_app() -> FastAPI:
     controlled_checkpointer = (
         create_sqlite_checkpointer(settings.agent_checkpoint_path)
         if settings.agent_checkpoint_path is not None
+        else None
+    )
+    controlled_audit_store = (
+        SQLiteInvestigationAuditStore(settings.agent_audit_path)
+        if settings.agent_audit_path is not None
         else None
     )
     if (settings.feature_root is None) != (settings.table_model_dir is None):
@@ -428,6 +444,7 @@ def create_default_app() -> FastAPI:
                 else None
             ),
             controlled_checkpointer=controlled_checkpointer,
+            controlled_audit_store=controlled_audit_store,
         )
     internal_api_token = settings.require_internal_api_token()
     model_version = settings.require_model_version()
@@ -449,6 +466,7 @@ def create_default_app() -> FastAPI:
         scoring_service=scorer,
         internal_api_token=internal_api_token,
         controlled_checkpointer=controlled_checkpointer,
+        controlled_audit_store=controlled_audit_store,
     )
 
 
