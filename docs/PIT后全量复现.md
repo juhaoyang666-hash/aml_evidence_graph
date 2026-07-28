@@ -4,7 +4,7 @@
 > **不要**沿用烟雾路径的 `--splits 1 --minimum-training-months 1` 或 `models.smoke.yaml`。  
 > 下列指标可写入模型卡；烟雾指标不可引用。
 >
-> **环境**：Linux + conda `risk`。详见 [环境配置.md](环境配置.md)。  
+> **环境**：Linux + conda `risk`。详见 [环境配置.md](环境配置.md)。
 > **主线报告**：`catboost` + **GAT**（`catboost + GAT` 融合）；`graph_stats` 与原
 > GraphSAGE 融合仅作对照。数字见 [实验结果.md](实验结果.md)。
 
