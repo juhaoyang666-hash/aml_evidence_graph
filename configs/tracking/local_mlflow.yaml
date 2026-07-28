@@ -1,0 +1,13 @@
+version: "local-mlflow-v1"
+tracking_uri: "sqlite:///artifacts/mlflow.db"
+experiment_name: "aml-evidence-graph"
+source_artifacts:
+  - "run_manifest.json"
+  - "metrics.json"
+privacy:
+  log_raw_rows: false
+  log_identifiers: false
+candidate_gate:
+  split: "validation"
+  metric: "pr_auc"
+  minimum_relative_gain: 0.0

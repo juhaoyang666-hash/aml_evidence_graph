@@ -3,6 +3,9 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.pytest_tmp*/
+.pytest_cache_*/
+.uv-cache-local/
 .ruff_cache/
 .mypy_cache/
 htmlcov/

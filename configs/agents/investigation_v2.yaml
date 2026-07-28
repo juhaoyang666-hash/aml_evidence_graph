@@ -1,0 +1,22 @@
+version: "investigation-agent-v2"
+router: "deterministic-read-only-v1"
+max_tool_calls: 4
+tools:
+  get_feature_snapshot:
+    read_only: true
+  get_bounded_subgraph:
+    read_only: true
+    max_hops: 2
+    max_edges: 50
+  search_typologies:
+    read_only: true
+    max_top_k: 5
+human_review:
+  required: true
+  decisions: ["approve", "edit", "reject"]
+  durable_checkpointer: "sqlite"
+security:
+  allow_arbitrary_sql: false
+  allow_arbitrary_paths: false
+  allow_external_urls: false
+  llm_changes_risk_score: false

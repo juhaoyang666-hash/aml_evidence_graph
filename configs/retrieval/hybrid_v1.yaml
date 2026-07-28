@@ -1,0 +1,16 @@
+version: "hybrid-v1"
+corpus: "knowledge/typologies"
+candidate_limit: 20
+result_limit: 3
+rrf_constant: 60
+bm25:
+  minimum_score: 0.0
+dense:
+  encoder: "tfidf"
+  minimum_score: 1.0e-12
+reranker:
+  type: "lexical_overlap"
+notes:
+  - "TF-IDF is the dependency-light dense baseline, not a semantic foundation model."
+  - "SentenceTransformer is optional and must be recorded by exact model revision."
+  - "Retrieval is an investigation lead and never changes the risk score."

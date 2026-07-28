@@ -24,6 +24,19 @@
 本文档与 `FULL_RUN_AFTER_PIT.md` 中的 PowerShell 命令属于该环境，
 在 Linux 上请改用上面的 `$PY -m ...` 形式。
 
+当前 Windows 本机仍用于 P0 框架开发和 FE v2 单卡实验：
+
+```powershell
+$PY = "D:\Miniconda3\envs\aml-evidence\python.exe"
+$env:PYTHONPATH = "src"
+$env:PIP_INDEX_URL = "https://pypi.tuna.tsinghua.edu.cn/simple"
+```
+
+求职改进框架的可选依赖和轻量验证命令见
+[P0_FRAMEWORK_STATUS.md](P0_FRAMEWORK_STATUS.md)。当前已通过清华镜像安装
+`langgraph-checkpoint-sqlite 3.1.0`；后台 GAT 运行期间不要安装 SentenceTransformer、
+MLflow 或 PySpark 等重型可选组。
+
 主训练数据是公开合成数据集 **SAML-D**（`../data/SAML-D.csv`）。不要把它包装成
 私有/真实业务数据。本地 API 令牌仍必须是至少 32 个字符的随机值；示例配置文件中的
 空值不是可用占位符。不要在项目文件、命令历史、Notebook 或版本库中保存外部服务密钥。

@@ -44,6 +44,7 @@
 | [FULL_RUN_AFTER_PIT.md](docs/FULL_RUN_AFTER_PIT.md) | **Linux 全量复现命令**（主线 GAT） |
 | [FE_V2_EXPERIMENT_PLAN.md](docs/FE_V2_EXPERIMENT_PLAN.md) | **FE v2 待补实验、判定标准与 Windows 单卡可恢复运行链** |
 | [RISK_ALGORITHM_INTERNSHIP_PROJECT_IMPROVEMENT_2026.md](docs/RISK_ALGORITHM_INTERNSHIP_PROJECT_IMPROVEMENT_2026.md) | **2026 风控算法/大模型实习岗位调研与求职导向改进建议** |
+| [P0_FRAMEWORK_STATUS.md](docs/P0_FRAMEWORK_STATUS.md) | 求职改进 P0 代码框架、环境和未完成验收项 |
 | [ENVIRONMENT.md](docs/ENVIRONMENT.md) | conda `risk`、GPU、ECNU LLM |
 | [RULE_BASELINE.md](docs/RULE_BASELINE.md) | 规则 v2026.2 定阈说明 |
 | [LLM_INVESTIGATION_SYSTEM.md](docs/LLM_INVESTIGATION_SYSTEM.md) | LLM 调查边界、实现、Golden 与后续缺口 |

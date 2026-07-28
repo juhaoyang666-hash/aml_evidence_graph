@@ -240,6 +240,25 @@ approve/edit/reject，再恢复并写入审计事件。LangGraph 官方文档说
 
 推荐投递前先完成前四项。P1/P2 应根据目标 JD 选择，不需要全部完成。
 
+### 4.1 代码框架落地状态（2026-07-28）
+
+在 FE v2 后台实验运行期间，已完成不会争抢 GPU 的框架工作：
+
+- P0-2：实现 BM25、TF-IDF 本地稠密基线、RRF、可选 rerank 和独立检索指标；15 条种子集
+  只验证程序，hybrid/rerank 尚无稳定增益，不能写成正式 Golden 结果。
+- P0-3：实现三个结构化只读工具、最多四次确定性路由、LangGraph checkpoint、强制
+  approve/edit/reject 中断恢复，以及不记录正文/特征值的成功与失败审计事件。
+- P0-4：实现有界并发 HTTP 压测与完整产物驱动的简历证据生成器；不会从运行中产物提取
+  简历数字，本机观测也不表述为生产 SLA。
+- P1-1：提供五个代表性 Spark PIT 窗口特征骨架，严格使用 `[t-window, t)`；当前 Windows
+  未安装 Java/PySpark，因此等价性和资源报告仍未验收。代码不包含普通笛卡尔积。
+- P1-2：提供 MLflow 可选适配层和仅使用验证指标的 candidate gate；MLflow 未在后台训练
+  期间安装，现有 manifest 仍是权威记录。
+
+环境采用 extras 分组，锁文件已更新；当前 GPU 版 PyTorch 与 SQLite checkpoint 可用，
+SentenceTransformer、MLflow、PySpark 按需安装。详细命令和未完成项见
+[`P0_FRAMEWORK_STATUS.md`](P0_FRAMEWORK_STATUS.md)。
+
 ## 五、目标仓库结构
 
 建议在现有结构上增量扩展：

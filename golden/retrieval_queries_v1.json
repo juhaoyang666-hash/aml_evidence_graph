@@ -1,0 +1,17 @@
+[
+  {"case_id":"ret-001","query":"repeated split transactions below monitoring thresholds","relevant_typology_ids":["TYPOLOGY-STRUCTURING"],"tags":["direct"]},
+  {"case_id":"ret-002","query":"smurfing across multiple accounts and short time intervals","relevant_typology_ids":["TYPOLOGY-STRUCTURING"],"tags":["synonym"]},
+  {"case_id":"ret-003","query":"one account rapidly disperses funds to many counterparties","relevant_typology_ids":["TYPOLOGY-FAN-OUT"],"tags":["direct"]},
+  {"case_id":"ret-004","query":"outbound dispersion after a concentrated inbound transfer","relevant_typology_ids":["TYPOLOGY-FAN-OUT"],"tags":["paraphrase"]},
+  {"case_id":"ret-005","query":"many inbound transfers aggregate through intermediaries","relevant_typology_ids":["TYPOLOGY-LAYERED-FAN-IN"],"tags":["direct"]},
+  {"case_id":"ret-006","query":"layering hops followed by aggregation into one destination","relevant_typology_ids":["TYPOLOGY-LAYERED-FAN-IN"],"tags":["paraphrase"]},
+  {"case_id":"ret-007","query":"closed group sends funds in a circular path","relevant_typology_ids":["TYPOLOGY-CYCLE"],"tags":["direct"]},
+  {"case_id":"ret-008","query":"money returns to an earlier account after several transfers","relevant_typology_ids":["TYPOLOGY-CYCLE"],"tags":["paraphrase"]},
+  {"case_id":"ret-009","query":"received funds are quickly converted into cash withdrawals","relevant_typology_ids":["TYPOLOGY-CASH-WITHDRAWAL"],"tags":["direct"]},
+  {"case_id":"ret-010","query":"rapid cash-out may break the audit trail","relevant_typology_ids":["TYPOLOGY-CASH-WITHDRAWAL"],"tags":["paraphrase"]},
+  {"case_id":"ret-011","query":"split deposits followed by distribution to multiple recipients","relevant_typology_ids":["TYPOLOGY-STRUCTURING","TYPOLOGY-FAN-OUT"],"tags":["multi"]},
+  {"case_id":"ret-012","query":"funds circle through intermediaries before final aggregation","relevant_typology_ids":["TYPOLOGY-CYCLE","TYPOLOGY-LAYERED-FAN-IN"],"tags":["multi"]},
+  {"case_id":"ret-013","query":"weather forecast and restaurant reservation","relevant_typology_ids":[],"expect_no_answer":true,"tags":["no-answer"]},
+  {"case_id":"ret-014","query":"software build pipeline dependency update","relevant_typology_ids":[],"expect_no_answer":true,"tags":["no-answer"]},
+  {"case_id":"ret-015","query":"quarterly employee vacation calendar","relevant_typology_ids":[],"expect_no_answer":true,"tags":["no-answer"]}
+]

@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Run a bounded async benchmark against the local Mock or controlled API."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import platform
+import time
+from dataclasses import asdict
+from pathlib import Path
+
+import httpx
+import psutil
+
+from aml_evidence_graph.evaluation.serving import summarize_serving_benchmark
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--base-url", default="http://127.0.0.1:8000")
+    parser.add_argument("--path", default="/demo/cases/mock-alert-0001/draft")
+    parser.add_argument("--method", choices=("GET", "POST"), default="POST")
+    parser.add_argument("--requests", type=int, default=100)
+    parser.add_argument("--concurrency", type=int, default=5)
+    parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--output", type=Path, default=Path("artifacts/serving_benchmark"))
+    return parser.parse_args()
+
+
+async def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
+    if args.requests < 1 or args.concurrency < 1:
+        raise ValueError("requests and concurrency must be positive.")
+    semaphore = asyncio.Semaphore(args.concurrency)
+    latencies: list[float] = []
+    errors = 0
+    token = os.environ.get("AML_INTERNAL_API_TOKEN")
+    headers = {"X-AML-Internal-Token": token} if token else {}
+
+    async with httpx.AsyncClient(
+        base_url=args.base_url,
+        timeout=args.timeout,
+        headers=headers,
+    ) as client:
+
+        async def one_request() -> None:
+            nonlocal errors
+            async with semaphore:
+                started = time.perf_counter()
+                try:
+                    response = await client.request(args.method, args.path)
+                    response.raise_for_status()
+                except (httpx.HTTPError, ValueError):
+                    errors += 1
+                else:
+                    latencies.append((time.perf_counter() - started) * 1_000)
+
+        wall_started = time.perf_counter()
+        await asyncio.gather(*(one_request() for _ in range(args.requests)))
+        wall_time = time.perf_counter() - wall_started
+
+    summary = summarize_serving_benchmark(
+        latencies,
+        errors=errors,
+        wall_time_seconds=wall_time,
+    )
+    process = psutil.Process()
+    return {
+        "schema_version": "1.0",
+        "scope": "local benchmark; not a production SLA",
+        "base_url": args.base_url,
+        "path": args.path,
+        "method": args.method,
+        "concurrency": args.concurrency,
+        "timeout_seconds": args.timeout,
+        "summary": asdict(summary),
+        "client_environment": {
+            "platform": platform.platform(),
+            "cpu_count": psutil.cpu_count(),
+            "client_rss_mb": process.memory_info().rss / 1024 / 1024,
+        },
+    }
+
+
+def main() -> None:
+    args = parse_args()
+    payload = asyncio.run(run_benchmark(args))
+    args.output.mkdir(parents=True, exist_ok=True)
+    (args.output / "metrics.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()
