@@ -234,7 +234,7 @@ Ran via `scripts/run_arch_comparison.sh` (sequential GAT → RGCN → PNA; outpu
 
 Ranking by test PR-AUC: **GAT > RGCN(single) > RGCN(R=4) > GraphSAGE > PNA**.  
 R=4 uses `configs/models.rgcn_rel.yaml` (cross-border × currency-conversion relation ids);
-see [RELATION_ABLATION.md](RELATION_ABLATION.md). **Does not replace** single-rel RGCN in
+see [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md). **Does not replace** single-rel RGCN in
 the original bake-off narrative; it is a negative hetero ablation.
 
 GAT was subsequently promoted through the full frozen-score chain (OOF → fusion →
@@ -248,12 +248,12 @@ nonlinear fusion). **Main-line numbers above are unchanged.** Full write-ups:
 | Experiment | Doc | Artifact |
 |---|---|---|
 | Monthly ops + threshold recalibration | [DRIFT_MONITORING.md](DRIFT_MONITORING.md) | `artifacts/drift_monitoring` |
-| High-score subgraph Louvain / CC | [COMMUNITY_BASELINE.md](COMMUNITY_BASELINE.md) | `artifacts/community_baseline` |
-| Isolation Forest / AE | [UNSUPERVISED_BASELINE.md](UNSUPERVISED_BASELINE.md) | `artifacts/unsupervised_baseline` |
-| Multi-rel RGCN (R=4) | [RELATION_ABLATION.md](RELATION_ABLATION.md) | `artifacts/rgcn_rel` |
-| Sequence GRU | [SEQUENCE_BASELINE.md](SEQUENCE_BASELINE.md) | `artifacts/sequence_baseline` |
-| GAT→CatBoost distill | [GAT_DISTILL.md](GAT_DISTILL.md) | `artifacts/table_baseline_gat_distill` |
-| Nonlinear OOF fusion heads | [NONLINEAR_FUSION.md](NONLINEAR_FUSION.md) | `artifacts/nonlinear_fusion` |
+| High-score subgraph Louvain / CC | [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md) | `artifacts/community_baseline` |
+| Isolation Forest / AE | [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md) | `artifacts/unsupervised_baseline` |
+| Multi-rel RGCN (R=4) | [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md) | `artifacts/rgcn_rel` |
+| Sequence GRU | [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md) | `artifacts/sequence_baseline` |
+| GAT→CatBoost distill | [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md) | `artifacts/table_baseline_gat_distill` |
+| Nonlinear OOF fusion heads | [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md) | `artifacts/nonlinear_fusion` |
 | DuckDB/Polars feature replay | [BATCH_FEATURE_REPLAY.md](BATCH_FEATURE_REPLAY.md) | `artifacts/batch_feature_replay` |
 
 ### Drift (frozen scores, test months Jul–Aug 2023)
@@ -271,7 +271,7 @@ Stale validation-month calibration mainly hurts **alert volume / precision**, no
 Louvain ≈ CC: ~724 communities, **case-account coverage 1.0**, top-10% communities hold
 ~53% of positive accounts in-subgraph. Homogeneous projection only — not a hetero GNN
 (multi-rel RGCN R=4 = **0.8873**, below single-rel RGCN 0.903; see
-[RELATION_ABLATION.md](RELATION_ABLATION.md)).
+[EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md)).
 
 ### Unsupervised (400k train negatives / 400k test sample)
 
@@ -304,10 +304,10 @@ Keep logistic main-line fusion; still below GAT alone (0.9483).
 
 ## Appendix — Tier A3 / Tier B (compute budget)
 
-- **A3 relation MLP**: with_rel PR-AUC 0.0363 vs no_rel 0.0379 (helps=False). See [RELATION_ABLATION.md](RELATION_ABLATION.md).
-- **A3 multi-rel RGCN (R=4)**: test PR-AUC **0.8873** (val 0.8412) · run `20260726T135457Z-045b0b06ab` · below single-rel RGCN 0.903 / GAT 0.948. [RELATION_ABLATION.md](RELATION_ABLATION.md).
-- **B1 sequence GRU**: sampled test PR-AUC 0.0103. [SEQUENCE_BASELINE.md](SEQUENCE_BASELINE.md).
-- **B2 GAT distill CatBoost**: test PR-AUC 0.9656 (beats_catboost=True). [GAT_DISTILL.md](GAT_DISTILL.md).
-- **B3 nonlinear fusion**: logistic 0.9177 > best nonlinear 0.9073. [NONLINEAR_FUSION.md](NONLINEAR_FUSION.md).
+- **A3 relation MLP**: with_rel PR-AUC 0.0363 vs no_rel 0.0379 (helps=False). See [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md).
+- **A3 multi-rel RGCN (R=4)**: test PR-AUC **0.8873** (val 0.8412) · run `20260726T135457Z-045b0b06ab` · below single-rel RGCN 0.903 / GAT 0.948. [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md).
+- **B1 sequence GRU**: sampled test PR-AUC 0.0103. [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md).
+- **B2 GAT distill CatBoost**: test PR-AUC 0.9656 (beats_catboost=True). [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md).
+- **B3 nonlinear fusion**: logistic 0.9177 > best nonlinear 0.9073. [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md).
 - **B4 batch replay**: DuckDB/Polars match rates 1.000/1.000. [BATCH_FEATURE_REPLAY.md](BATCH_FEATURE_REPLAY.md).
-- **B5 LLM probes**: Golden expanded to 34 cases; template hallucination intercept 1.0. [LLM_GUARDRAILS_SUMMARY.md](LLM_GUARDRAILS_SUMMARY.md).
+- **B5 LLM probes**: Golden expanded to 34 cases; template hallucination intercept 1.0. [LLM_INVESTIGATION_SYSTEM.md](LLM_INVESTIGATION_SYSTEM.md).

@@ -38,8 +38,8 @@
 
 | 项 | 文档 | 结论摘要 |
 |---|---|---|
-| 高分账户子图 Louvain / CC | [COMMUNITY_BASELINE.md](COMMUNITY_BASELINE.md) | 案件账户覆盖率 1.0；同构投影 |
-| 多关系 RGCN（R=4） | [RELATION_ABLATION.md](RELATION_ABLATION.md) | 测试 PR-AUC **0.887**，低于单关系 RGCN 0.903 / GAT 0.948 |
+| 高分账户子图 Louvain / CC | [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md) | 案件账户覆盖率 1.0；同构投影 |
+| 多关系 RGCN（R=4） | [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md) | 测试 PR-AUC **0.887**，低于单关系 RGCN 0.903 / GAT 0.948 |
 
 ## 明确未做（可作扩展点）
 

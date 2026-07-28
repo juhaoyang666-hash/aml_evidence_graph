@@ -120,7 +120,7 @@ $PY -m aml_evidence_graph.aggregation.views \
 全量跑完后更新（必须带 run_id，并声明数据为公开合成 SAML-D）：
 
 1. `docs/RESULTS.md` / `docs/MODEL_CARD.md`
-2. `docs/IMPLEMENTATION_STATUS.md` / `docs/COMPLETION_AUDIT.md`
+2. `docs/IMPLEMENTATION_STATUS.md`
 
 ## 与烟雾路径对照
 

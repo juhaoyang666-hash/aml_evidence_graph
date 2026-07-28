@@ -1,0 +1,142 @@
+# LLM 调查辅助系统：边界、实现与评测
+
+本系统中的 LLM 只辅助调查措辞和待查问题，不参与风险分数、阈值、告警排序或案件结论。
+模型主线与正式效果见 [MODEL_CARD.md](MODEL_CARD.md) 和 [RESULTS.md](RESULTS.md)。
+
+## 职责边界
+
+| 环节 | 决策方 | LLM 是否参与 |
+|---|---|---|
+| 交易风险概率 | CatBoost / GAT / 融合器 | 否 |
+| 概率校准、阈值和告警预算 | 验证期确定性代码 | 否 |
+| 账户、资金路径和案件候选聚合 | 冻结交易分数后的确定性代码 | 否 |
+| Typology 检索 | 本地 BM25 | 否 |
+| 分析性措辞和建议核查问题 | 可选 ECNU `ecnu-max` | 是，受事实校验约束 |
+| SAR 草稿骨架 | 确定性模板 | 否，LLM 只能补充非事实段落 |
+| 是否申报或采取案件动作 | 人工调查员 | 否 |
+
+一句话：**LLM 只负责措辞与提问，不负责判断与数字。**
+
+## 当前实现
+
+### 有界 LangGraph 工作流
+
+`src/aml_evidence_graph/investigation/workflow.py` 使用固定节点：
+
+```text
+retrieve_typologies
+  → fact_check
+  → annotate
+  → validate_annotation
+  → draft_report
+```
+
+当前实现无自由循环和自主工具选择，`MAX_TOOL_CALLS=4`。因此准确表述应为“有界单 Agent
+调查链”，不能描述为自主多 Agent 系统。固定 DAG 便于复现、审计和失败降级。
+
+### 出站数据最小化
+
+`minimize_evidence_for_llm()` 只发送概率名称、rule_id、特征名、图证据是否存在、Typology
+元信息和缺失证据类别。交易、账户、告警 ID、时间戳、金额和原始特征数值不会发送给外部服务。
+
+### 返回事实校验
+
+`validate_annotation()` 执行两类约束：
+
+1. `evidence_references` 必须属于证据包允许的引用路径。
+2. 分析与问题字段不得引入数字或 `transaction_*`、`account_*`、`alert_*` 实体 token。
+
+校验失败时报告状态为 `rejected_facts`，外部注释和 SAR 草稿不会暴露给复核人。
+
+### 降级策略
+
+| 失败 | 行为 |
+|---|---|
+| 未启用外部 LLM 或无 key | 仅运行本地模板路径 |
+| 网络、超时、HTTP 或 JSON 错误 | 标记 `external_annotation_unavailable`，回退确定性模板 |
+| 注释事实校验失败 | 状态变为 `rejected_facts` |
+| Typology 线索不足 | 保留缺失和不确定性，不编造匹配结论 |
+
+任何 LLM 故障都不会影响风险评分和告警，因为评分与调查属于不同代码路径。
+
+### 版本、用量与成本
+
+- Prompt：`configs/prompts/ecnu-risk-evidence-v1.yaml`
+- 当前生成参数：`temperature=0`、`max_tokens=500`、JSON object 输出
+- Prompt 内容或参数变化需新建版本并重跑 Golden
+- Provider 返回 token 时记录 prompt/completion/total usage
+- 未配置合同价格时成本保持空值，不推测 API 成本
+
+## Golden 评测
+
+案例来自 `golden/cases_v1.json`，裁定记录为 `golden/adjudication_v1.json`。它是用户授权的
+项目内 agent 裁定集，不是独立第三方合规专家面板，也不是生产标签。
+
+| 路径 | Cases | Schema/事实快照 | 幻觉拦截 | 无证据拒答 | Correct rejection | p50/p95 |
+|---|---:|---|---:|---:|---:|---|
+| 确定性模板 | 34 | 1.0 / 1.0 | 1.0（7/7） | 1.0 | 1.0 | 约 8.4 / 10.4 ms |
+| ECNU `ecnu-max` | 30 | 1.0 / 1.0 | 1.0（4/4） | 1.0 | 0.90 | 2684 / 3721 ms |
+
+模板路径产物：`artifacts/golden_summary.json`，run
+`20260726T124225Z-d0dc4bc053`。LLM 路径产物：`artifacts/golden_summary_llm.json`，
+测试时累计报告 prompt/completion tokens 为 7618/6161。
+
+LLM 路径有三个案例的注释未通过事实校验，安全门正确将其拒绝；这也说明“拦截成功”不等于
+模型输出质量已经满足人工调查要求。扩容后的 34 案尚未完成同模型外部调用复跑。
+
+## 已覆盖的对抗类型
+
+- Prompt 注入与忽略上级指令
+- 诱导编造金额、汇率、账户或百分比
+- 账户标识外传请求
+- 要求越权给出案件结论
+- 无证据情况下要求肯定回答
+- 引用不存在的证据字段
+
+当前 34 案中有 10 个 adversarial case，注入/事实探针共 7 条。
+
+## 当前不足与后续方向
+
+| 缺口 | 当前状态 | 下一步验收 |
+|---|---|---|
+| 检索评测 | 小型 YAML + BM25，无独立 retrieval Golden | 增加 Recall@k、MRR、nDCG 和无答案误召回 |
+| 工具路由 | 固定一次 Typology 检索 | 增加受限特征、子图、Typology 三类只读工具及选择评测 |
+| Human-in-the-loop | 报告要求人工复核，但没有持久化暂停/恢复 | checkpoint + approve/edit/reject + 幂等恢复 |
+| 运行轨迹 | 有报告级指标，无完整节点事件流 | 输出节点、工具、来源、耗时和审核事件 |
+| Golden 规模 | 34 案，项目内裁定 | 扩展失败模式；需要时另做独立专家复核 |
+| 服务漂移 | 记录模型名和 Prompt 版本 | 模型升级后固定版本重跑并比较 Bad Case |
+
+这些改进的求职优先级见
+[RISK_ALGORITHM_INTERNSHIP_PROJECT_IMPROVEMENT_2026.md](RISK_ALGORITHM_INTERNSHIP_PROJECT_IMPROVEMENT_2026.md)。
+
+## 运行方式
+
+```bash
+export PYTHONPATH=src
+python -m aml_evidence_graph.investigation.golden \
+  --cases golden/cases_v1.json \
+  --typologies knowledge/typologies \
+  --output artifacts/golden_summary.json
+
+# 可选外部注释；需显式启用并配置受控环境
+python -m aml_evidence_graph.investigation.golden \
+  --cases golden/cases_v1.json \
+  --typologies knowledge/typologies \
+  --output artifacts/golden_summary_llm.json \
+  --use-llm
+```
+
+## 对外表达纪律
+
+可以说：
+
+> 构建 RiskEvidencePackage 约束的 LangGraph 调查链，对外字段最小化，返回经过引用白名单与
+> 数值/实体校验；失败回退确定性模板，LLM 不参与评分和案件结论。
+
+不要说：
+
+- “用大模型提高 AML 识别率”
+- “自主 Agent 已代替人工调查”
+- “Golden 是第三方合规验收”
+- “Mock Demo 或合成数据代表真实生产效果”
+

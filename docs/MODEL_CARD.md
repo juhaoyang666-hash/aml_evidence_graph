@@ -53,7 +53,7 @@
 
 同协议边 GNN 架构对比：GAT 0.9483 / RGCN 0.9031 / GraphSAGE 0.8777 / PNA 0.7049；
 另做多关系 RGCN（R=4，`artifacts/rgcn_rel`）消融测试 PR-AUC **0.8873**（未超过单关系
-RGCN / GAT）。详见 RESULTS「Edge GNN」与 [RELATION_ABLATION.md](RELATION_ABLATION.md)。
+RGCN / GAT）。详见 RESULTS「Edge GNN」与 [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md)。
 
 **必须同时披露的口径**：`catboost + GAT` 融合（0.9175）优于原 `catboost + graphsage`
 （0.8973）与单独 CatBoost（0.8092），但**不**优于单独 GAT（0.9483）。对外引用融合数字时

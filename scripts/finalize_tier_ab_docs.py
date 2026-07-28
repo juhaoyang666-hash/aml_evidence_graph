@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Fill RELATION/SEQUENCE/DISTILL docs + RESULTS appendix from finished artifacts."""
+"""Refresh the consolidated RESULTS compute-budget appendix from finished artifacts."""
 from __future__ import annotations
+
 import json
 from pathlib import Path
 
@@ -25,7 +26,7 @@ def main() -> None:
         lines.append(
             f"- **A3 relation MLP**: with_rel PR-AUC {v['mlp_with_relation_pr_auc']:.4f} vs "
             f"no_rel {v['mlp_no_relation_pr_auc']:.4f} (helps={v['relation_embedding_helps']}). "
-            f"See [RELATION_ABLATION.md](RELATION_ABLATION.md)."
+            f"See [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md)."
         )
     if rgcn_rel and "test_metrics" in rgcn_rel:
         lines.append(
@@ -40,18 +41,20 @@ def main() -> None:
     if seq:
         lines.append(
             f"- **B1 sequence GRU**: sampled test PR-AUC {seq['test_metrics']['pr_auc']:.4f}. "
-            f"[SEQUENCE_BASELINE.md](SEQUENCE_BASELINE.md)."
+            f"[EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md)."
         )
     if dist:
         lines.append(
             f"- **B2 GAT distill CatBoost**: test PR-AUC {dist['test_metrics']['pr_auc']:.4f} "
-            f"(beats_catboost={dist.get('beats_catboost')}). [GAT_DISTILL.md](GAT_DISTILL.md)."
+            f"(beats_catboost={dist.get('beats_catboost')}). "
+            f"[EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md)."
         )
     if nonlinear:
         v = nonlinear["verdict"]
         lines.append(
             f"- **B3 nonlinear fusion**: logistic {v['mainline_logistic_test_pr_auc']:.4f} > "
-            f"best nonlinear {v['best_nonlinear_test_pr_auc']:.4f}. [NONLINEAR_FUSION.md](NONLINEAR_FUSION.md)."
+            f"best nonlinear {v['best_nonlinear_test_pr_auc']:.4f}. "
+            f"[EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md)."
         )
     if batch:
         e = batch["equality"]
@@ -62,7 +65,7 @@ def main() -> None:
         )
     lines.append(
         "- **B5 LLM probes**: Golden expanded to 34 cases; template hallucination intercept 1.0. "
-        "[LLM_GUARDRAILS_SUMMARY.md](LLM_GUARDRAILS_SUMMARY.md)."
+        "[LLM_INVESTIGATION_SYSTEM.md](LLM_INVESTIGATION_SYSTEM.md)."
     )
     results = ROOT / "docs/RESULTS.md"
     text = results.read_text()

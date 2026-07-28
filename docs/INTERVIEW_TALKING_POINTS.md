@@ -22,7 +22,7 @@ Point-in-time：每笔交易特征只聚合 **[t−window, t)** 的历史；同�
 ### 为什么主线图是 GAT 不是 GraphSAGE / RGCN？
 
 同协议（同 PIT、同切分、同 hidden/层数/fanout/epoch）对比：GAT 0.948 > RGCN 0.903 > GraphSAGE 0.878 > PNA 0.705。选 GAT 是 bake-off 结果，不是调参作弊。  
-另做 **R=4 多关系 RGCN**（跨境×换汇关系 id）：测试 PR-AUC **0.887**，**低于**单关系 RGCN——异构消融是负向的，面试可以说「试过了、没抬升、所以不堆」。见 [RELATION_ABLATION.md](RELATION_ABLATION.md)。
+另做 **R=4 多关系 RGCN**（跨境×换汇关系 id）：测试 PR-AUC **0.887**，**低于**单关系 RGCN——异构消融是负向的，面试可以说「试过了、没抬升、所以不堆」。见 [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md)。
 
 ### 为什么还报融合？融合不是不如单 GAT 吗？
 
@@ -63,13 +63,13 @@ Point-in-time：每笔交易特征只聚合 **[t−window, t)** 的历史；同�
 
 ### 和信贷 / 广告反作弊岗怎么迁移讲？
 
-共性：极稀正例、对抗与漂移、规则+模型、关联风险、可解释与人工复核。差异：本项目是 **AML 交易边 + 离线合成基准**，没有在线特征存储 / A/B / Hive 仓；若对方强调平台能力，诚实说离线可复现 pipeline，并指向批式特征说明（[BATCH_FEATURE_NOTE.md](BATCH_FEATURE_NOTE.md)）。
+共性：极稀正例、对抗与漂移、规则+模型、关联风险、可解释与人工复核。差异：本项目是 **AML 交易边 + 离线合成基准**，没有在线特征存储 / A/B / Hive 仓；若对方强调平台能力，诚实说离线可复现 pipeline，并指向批式特征说明（[BATCH_FEATURE_REPLAY.md](BATCH_FEATURE_REPLAY.md)）。
 
 ## 3. 关联风险 / 案件流（补图方向话术）
 
 冻结融合分 → 账户风险表 → 时间递增资金路径 → 关联子图案件候选（`investigation_candidate`）。  
 主线产物：`artifacts/test_investigation_views_gat`（307k 账户 / 135 路径 / 212 案件）。  
-这是**后评分聚合**，不是异构 GNN 全量重训。已补：同构图社区 baseline（[COMMUNITY_BASELINE.md](COMMUNITY_BASELINE.md)）与多关系 RGCN 消融（负向，[RELATION_ABLATION.md](RELATION_ABLATION.md)）。详见 [ASSOCIATION_CASE_WORKFLOW.md](ASSOCIATION_CASE_WORKFLOW.md)。
+这是**后评分聚合**，不是异构 GNN 全量重训。已补同构图社区 baseline 与多关系 RGCN 负向消融，见 [EXPERIMENT_APPENDIX.md](EXPERIMENT_APPENDIX.md)。详见 [ASSOCIATION_CASE_WORKFLOW.md](ASSOCIATION_CASE_WORKFLOW.md)。
 
 ## 4. 算力附录一句话（可选加分）
 

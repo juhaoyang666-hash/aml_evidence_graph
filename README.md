@@ -38,22 +38,15 @@
 | [INTERVIEW_TALKING_POINTS.md](docs/INTERVIEW_TALKING_POINTS.md) | **面试自答要点** |
 | [CATBOOST_GAP_DIAGNOSIS.md](docs/CATBOOST_GAP_DIAGNOSIS.md) | CatBoost vs GAT 差距诊断 |
 | [ASSOCIATION_CASE_WORKFLOW.md](docs/ASSOCIATION_CASE_WORKFLOW.md) | 关联风险 / 案件视图工作流 |
-| [BATCH_FEATURE_NOTE.md](docs/BATCH_FEATURE_NOTE.md) | 批式特征与大数据话术 |
-| [BATCH_FEATURE_REPLAY.md](docs/BATCH_FEATURE_REPLAY.md) | DuckDB/Polars PIT 特征重放验算 |
+| [BATCH_FEATURE_REPLAY.md](docs/BATCH_FEATURE_REPLAY.md) | DuckDB/Polars PIT 特征重放与大数据迁移边界 |
 | [DRIFT_MONITORING.md](docs/DRIFT_MONITORING.md) | 时间切片漂移 / 阈值重校准 |
-| [COMMUNITY_BASELINE.md](docs/COMMUNITY_BASELINE.md) | 高分账户子图社区 baseline |
-| [RELATION_ABLATION.md](docs/RELATION_ABLATION.md) | 多关系 RGCN / 关系 embedding 消融 |
-| [UNSUPERVISED_BASELINE.md](docs/UNSUPERVISED_BASELINE.md) | 无监督异常检测对照 |
-| [SEQUENCE_BASELINE.md](docs/SEQUENCE_BASELINE.md) | 账户序列 GRU baseline |
-| [GAT_DISTILL.md](docs/GAT_DISTILL.md) | GAT→CatBoost 特征蒸馏 |
-| [NONLINEAR_FUSION.md](docs/NONLINEAR_FUSION.md) | 非线性 OOF 融合消融 |
+| [EXPERIMENT_APPENDIX.md](docs/EXPERIMENT_APPENDIX.md) | 社区、无监督、关系、序列、两阶段与融合消融汇总 |
 | [FULL_RUN_AFTER_PIT.md](docs/FULL_RUN_AFTER_PIT.md) | **Linux 全量复现命令**（主线 GAT） |
 | [FE_V2_EXPERIMENT_PLAN.md](docs/FE_V2_EXPERIMENT_PLAN.md) | **FE v2 待补实验、判定标准与 Windows 单卡可恢复运行链** |
 | [RISK_ALGORITHM_INTERNSHIP_PROJECT_IMPROVEMENT_2026.md](docs/RISK_ALGORITHM_INTERNSHIP_PROJECT_IMPROVEMENT_2026.md) | **2026 风控算法/大模型实习岗位调研与求职导向改进建议** |
 | [ENVIRONMENT.md](docs/ENVIRONMENT.md) | conda `risk`、GPU、ECNU LLM |
 | [RULE_BASELINE.md](docs/RULE_BASELINE.md) | 规则 v2026.2 定阈说明 |
-| [LLM_PLAN.md](docs/LLM_PLAN.md) | LLM 职责边界与评测 |
-| [LLM_GUARDRAILS_SUMMARY.md](docs/LLM_GUARDRAILS_SUMMARY.md) | LLM 护栏与 Golden 摘要（投大模型风控向） |
+| [LLM_INVESTIGATION_SYSTEM.md](docs/LLM_INVESTIGATION_SYSTEM.md) | LLM 调查边界、实现、Golden 与后续缺口 |
 | [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | 工程完成度 |
 
 ## 环境（Linux，全量实验）
@@ -110,7 +103,7 @@ $PY -m aml_evidence_graph.investigation.golden \
 ```
 
 当前模板路径回归为 **34** 案（原 30 + 4 对抗扩容）；幻觉拦截 / 无证据拒答仍为 1.0，见
-[LLM_GUARDRAILS_SUMMARY.md](docs/LLM_GUARDRAILS_SUMMARY.md)。
+[LLM_INVESTIGATION_SYSTEM.md](docs/LLM_INVESTIGATION_SYSTEM.md)。
 ## 本地验收
 
 ```bash
