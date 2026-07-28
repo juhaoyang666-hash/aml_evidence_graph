@@ -23,6 +23,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--path", default="/demo/cases/mock-alert-0001/draft")
     parser.add_argument("--method", choices=("GET", "POST"), default="POST")
+    parser.add_argument(
+        "--json-body",
+        help="Optional JSON object sent with every request; use only non-sensitive references.",
+    )
+    parser.add_argument(
+        "--json-body-file",
+        type=Path,
+        help="UTF-8 JSON object file; preferred on shells that rewrite nested quotes.",
+    )
     parser.add_argument("--requests", type=int, default=100)
     parser.add_argument("--concurrency", type=int, default=5)
     parser.add_argument("--timeout", type=float, default=30.0)
@@ -38,6 +47,16 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
     errors = 0
     token = os.environ.get("AML_INTERNAL_API_TOKEN")
     headers = {"X-AML-Internal-Token": token} if token else {}
+    if args.json_body and args.json_body_file:
+        raise ValueError("Use only one of json-body and json-body-file.")
+    raw_json_body = (
+        args.json_body_file.read_text(encoding="utf-8")
+        if args.json_body_file
+        else args.json_body
+    )
+    json_body = json.loads(raw_json_body) if raw_json_body else None
+    if json_body is not None and not isinstance(json_body, dict):
+        raise ValueError("json-body must decode to a JSON object.")
 
     async with httpx.AsyncClient(
         base_url=args.base_url,
@@ -50,7 +69,9 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             async with semaphore:
                 started = time.perf_counter()
                 try:
-                    response = await client.request(args.method, args.path)
+                    response = await client.request(
+                        args.method, args.path, json=json_body
+                    )
                     response.raise_for_status()
                 except (httpx.HTTPError, ValueError):
                     errors += 1

@@ -1,5 +1,8 @@
 schema_version: "1.0"
 hardware_disclosure: "Windows local development host, 16 logical CPUs; no production traffic."
+boundary_notes:
+  - "冻结评分使用 v1 CatBoost 与 2023-07-01 完整 PIT 日期分区，不含 GAT 或融合；吞吐单位是分区/秒，不是交易/秒。"
+  - "受控 Agent 指标是一个启动、查询、审批恢复周期的端到端延迟。"
 sources:
   - source_id: "mock_health"
     display_name: "Mock 健康检查"
@@ -10,7 +13,7 @@ sources:
     artifact_dir: "artifacts/serving_benchmark_mock_draft_p0"
     required: true
   - source_id: "frozen_scoring"
-    display_name: "冻结模型评分"
+    display_name: "冻结 CatBoost v1 分区评分"
     artifact_dir: "artifacts/serving_benchmark_frozen_scoring"
     required: true
   - source_id: "controlled_agent"

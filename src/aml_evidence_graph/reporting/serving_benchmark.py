@@ -23,6 +23,7 @@ class ServingBenchmarkSpec(BaseModel):
     schema_version: str = "1.0"
     hardware_disclosure: str
     sources: list[ServingBenchmarkSource]
+    boundary_notes: list[str] = Field(default_factory=list)
 
 
 class ServingBenchmarkEvidence(BaseModel):
@@ -50,6 +51,7 @@ class ServingBenchmarkReport(BaseModel):
     hardware_disclosure: str
     evidence: list[ServingBenchmarkEvidence]
     incomplete_sources: list[str]
+    boundary_notes: list[str] = Field(default_factory=list)
 
 
 def _load_object(path: Path) -> dict[str, object]:
@@ -103,6 +105,7 @@ def build_serving_benchmark_report(
         hardware_disclosure=spec.hardware_disclosure,
         evidence=evidence,
         incomplete_sources=incomplete,
+        boundary_notes=spec.boundary_notes,
     )
 
 
@@ -128,14 +131,20 @@ def render_serving_benchmark_markdown(report: ServingBenchmarkReport) -> str:
     if report.incomplete_sources:
         lines.extend(["", "## 尚缺基准", ""])
         lines.extend(f"- `{item}`" for item in report.incomplete_sources)
+    completion_note = (
+        "- 所有配置的本机基准来源已齐全；这仍不代表生产 SLA。"
+        if report.complete
+        else "- 当前不得声明完整服务性能；未完成来源以上方清单为准。"
+    )
     lines.extend(
         [
             "",
             "## 解读边界",
             "",
             "- Mock 路径不加载冻结模型，不能代表模型推理延迟。",
-            "- `完整状态=false` 时不得声明完整服务性能；未完成来源以上方清单为准。",
+            completion_note,
             "- 报告不包含真实交易、账户标识、Token 或外部服务密钥。",
         ]
     )
+    lines.extend(f"- {note}" for note in report.boundary_notes)
     return "\n".join(lines) + "\n"

@@ -47,3 +47,4 @@ def test_serving_report_uses_only_aggregate_metrics(tmp_path: Path) -> None:
     assert report.complete
     assert report.evidence[0].latency_p95_ms == 8.0
     assert "不是生产 SLA" in markdown
+    assert "所有配置的本机基准来源已齐全" in markdown
