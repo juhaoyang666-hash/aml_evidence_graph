@@ -48,6 +48,7 @@
 | [GAT_DISTILL.md](docs/GAT_DISTILL.md) | GAT→CatBoost 特征蒸馏 |
 | [NONLINEAR_FUSION.md](docs/NONLINEAR_FUSION.md) | 非线性 OOF 融合消融 |
 | [FULL_RUN_AFTER_PIT.md](docs/FULL_RUN_AFTER_PIT.md) | **Linux 全量复现命令**（主线 GAT） |
+| [FE_V2_EXPERIMENT_PLAN.md](docs/FE_V2_EXPERIMENT_PLAN.md) | **FE v2 待补实验、判定标准与 Windows 单卡可恢复运行链** |
 | [ENVIRONMENT.md](docs/ENVIRONMENT.md) | conda `risk`、GPU、ECNU LLM |
 | [RULE_BASELINE.md](docs/RULE_BASELINE.md) | 规则 v2026.2 定阈说明 |
 | [LLM_PLAN.md](docs/LLM_PLAN.md) | LLM 职责边界与评测 |
