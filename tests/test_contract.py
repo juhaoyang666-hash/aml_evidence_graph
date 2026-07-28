@@ -26,7 +26,10 @@ def raw_frame() -> pl.DataFrame:
 def test_normalize_transaction_chunk_creates_canonical_schema() -> None:
     normalized = normalize_transaction_chunk(raw_frame(), source_row_start=17)
 
-    assert normalized["transaction_id"].to_list() == ["txn-row-000000000017", "txn-row-000000000018"]
+    assert normalized["transaction_id"].to_list() == [
+        "txn-row-000000000017",
+        "txn-row-000000000018",
+    ]
     assert normalized["is_laundering"].to_list() == [0, 1]
     assert normalized["event_ts"].dtype.time_zone == "UTC"
 

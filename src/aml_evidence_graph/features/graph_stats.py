@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import polars as pl
 
@@ -14,8 +14,8 @@ from aml_evidence_graph.data.contract import CANONICAL
 def _as_utc_datetime(value: object) -> datetime:
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
     parsed = pl.Series([value]).cast(pl.Datetime(time_zone="UTC"), strict=True)[0]
     assert isinstance(parsed, datetime)
     return parsed

@@ -27,7 +27,9 @@ def _is_missing(value: object) -> bool:
     return False
 
 
-def _as_row_mapping(scored_transaction: Mapping[str, object] | pl.Series | object) -> Mapping[str, object]:
+def _as_row_mapping(
+    scored_transaction: Mapping[str, object] | pl.Series | object,
+) -> Mapping[str, object]:
     if isinstance(scored_transaction, Mapping):
         return scored_transaction
     if isinstance(scored_transaction, pl.Series):
