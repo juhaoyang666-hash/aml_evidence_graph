@@ -134,7 +134,7 @@ def render_serving_benchmark_markdown(report: ServingBenchmarkReport) -> str:
             "## 解读边界",
             "",
             "- Mock 路径不加载冻结模型，不能代表模型推理延迟。",
-            "- 冻结评分与受控 Agent 路径完成前，不声明完整服务性能。",
+            "- `完整状态=false` 时不得声明完整服务性能；未完成来源以上方清单为准。",
             "- 报告不包含真实交易、账户标识、Token 或外部服务密钥。",
         ]
     )

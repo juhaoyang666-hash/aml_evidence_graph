@@ -97,7 +97,7 @@ $PY -m aml_evidence_graph.features.build \
 
 ```bash
 # Mock Demo（无完整交易）
-$PY -m aml_evidence_graph.api.app   # 或安装后的 aml-api；浏览器 http://127.0.0.1:8000/demo
+aml-api   # 安装后的入口；浏览器 http://127.0.0.1:8000/demo
 
 # Golden（30 案裁定集 + B5 扩容对抗探针；默认不调外部 LLM）
 $PY -m aml_evidence_graph.investigation.golden \
