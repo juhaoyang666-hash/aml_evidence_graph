@@ -6,6 +6,7 @@ rrf_constant: 60
 bm25:
   minimum_score: 0.0
 dense:
+  encoder: "sentence-transformers"
   # Fixed before the semantic Golden run; do not tune this value on v2 test judgments.
   minimum_score: 0.35
 hybrid:

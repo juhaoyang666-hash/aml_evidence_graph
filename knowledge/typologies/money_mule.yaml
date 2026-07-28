@@ -1,0 +1,10 @@
+typology_id: "TYPOLOGY-MONEY-MULE"
+version: "2026.1"
+title: "Money Mule / 跑分过渡账户"
+source: "FinCEN FIN-2020-A003 https://www.fincen.gov/resources/advisories/fincen-advisory-fin-2020-a003"
+body: >
+  A money-mule account receives funds for other parties and rapidly forwards, withdraws,
+  or converts most of them while retaining little balance or a fee. Indicators can include
+  unrelated senders, sudden pass-through activity, a new or previously quiet account, and
+  transfers inconsistent with the customer's profile. 跑分卡、过渡账户、多人转入后快速转出
+  are investigation leads only; recruitment context and legitimate explanations must be checked.

@@ -1,0 +1,10 @@
+typology_id: "TYPOLOGY-TRADE-BASED"
+version: "2026.1"
+title: "Trade-Based Money Laundering / 贸易型洗钱"
+source: "FATF-Egmont 2020 https://www.fatf-gafi.org/en/publications/Methodsandtrends/Trade-based-money-laundering-trends-and-developments.html"
+body: >
+  Trade-based money laundering moves value through apparently legitimate trade activity.
+  Investigation may be warranted when payments, counterparties, routes, invoices, goods,
+  pricing, quantities, or customer business profiles are inconsistent, or when unexplained
+  third parties settle trade obligations. 贸易背景、货物、发票、价格与资金流不一致是线索。
+  Transaction data alone is insufficient; trade and customs evidence must be obtained.

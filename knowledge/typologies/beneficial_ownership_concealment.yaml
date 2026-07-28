@@ -1,0 +1,10 @@
+typology_id: "TYPOLOGY-BENEFICIAL-OWNERSHIP"
+version: "2026.1"
+title: "Concealed Beneficial Ownership / 隐匿受益所有人"
+source: "FATF-Egmont 2018 https://www.fatf-gafi.org/en/publications/Methodsandtrends/Concealment-beneficial-ownership.html"
+body: >
+  Companies, partnerships, trusts, nominees, and professional intermediaries can be layered
+  to obscure who ultimately owns or controls assets. Clues include unexplained shell-company
+  chains, common controllers, nominee directors or shareholders, opaque legal arrangements,
+  and flows inconsistent with stated business. 空壳公司、代持、多层法人结构和受益所有人不透明
+  require corporate-registry and control evidence; transaction patterns alone do not establish ownership.

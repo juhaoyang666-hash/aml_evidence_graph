@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
-from aml_evidence_graph.evidence.typology import TypologyDocument
+from aml_evidence_graph.evidence.typology import (
+    TypologyDocument,
+    load_typology_documents,
+)
 from aml_evidence_graph.retrieval import (
     BM25TypologyRetriever,
     DenseTypologyRetriever,
@@ -14,6 +20,35 @@ from aml_evidence_graph.retrieval import (
     evaluate_retriever_cases,
     summarize_retrieval_results,
 )
+
+
+def test_versioned_typology_corpus_and_golden_references_are_consistent() -> None:
+    root = Path(__file__).resolve().parents[1]
+    documents = load_typology_documents(root / "knowledge" / "typologies")
+    document_ids = [document.typology_id for document in documents]
+    raw_cases: list[dict[str, object]] = []
+    for name in ("retrieval_queries_v2.json", "retrieval_queries_v3_additions.json"):
+        raw_cases.extend(
+            json.loads((root / "golden" / name).read_text(encoding="utf-8"))
+        )
+    cases = [RetrievalCase.model_validate(item) for item in raw_cases]
+
+    assert len(documents) == 11
+    assert len(cases) == 130
+    assert len(document_ids) == len(set(document_ids))
+    assert len({case.case_id for case in cases}) == len(cases)
+    assert {
+        typology_id
+        for case in cases
+        for typology_id in case.relevant_typology_ids
+    }.issubset(document_ids)
+    official_documents = [
+        document
+        for document in documents
+        if document.source.startswith(("FATF", "FinCEN"))
+    ]
+    assert len(official_documents) == 6
+    assert all("https://" in document.source for document in official_documents)
 
 
 def _documents() -> list[TypologyDocument]:

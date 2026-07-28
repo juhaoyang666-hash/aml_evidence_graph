@@ -1,0 +1,10 @@
+typology_id: "TYPOLOGY-PAYMENT-PROCESSOR"
+version: "2026.1"
+title: "Third-Party Payment Processor Abuse / 第三方支付处理商滥用"
+source: "FinCEN FIN-2012-A010 https://www.fincen.gov/resources/advisories/fincen-advisory-fin-2012-a010"
+body: >
+  A third-party payment processor may commingle transactions for merchants that have no direct
+  relationship with the processor's bank. Investigation clues include unexplained foreign ACH
+  credits, remotely created checks, merchant-level return or chargeback spikes, opaque originators,
+  and processing inconsistent with the declared customer base. 第三方支付、商户资金混同、异常退单
+  or chargebacks require merchant, authorization, complaint, licensing and due-diligence evidence.

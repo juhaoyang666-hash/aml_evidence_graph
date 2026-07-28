@@ -1,0 +1,11 @@
+typology_id: "TYPOLOGY-FUNNEL-ACCOUNT"
+version: "2026.1"
+title: "Funnel Account / 异地漏斗账户"
+source: "FinCEN FIN-2014-A005 https://www.fincen.gov/resources/advisories/fincen-advisory-fin-2014-a005"
+body: >
+  A funnel account receives deposits from multiple people or locations and moves or
+  withdraws the funds elsewhere after little elapsed time. Relevant clues include
+  geographically dispersed deposits, rapid consolidation, wire transfer or cash-out,
+  and activity inconsistent with the account holder's location or business. 异地多人入账、
+  快速归集并在另一地区转账或取现属于调查线索。No single clue proves laundering;
+  investigators must verify geography, customer profile, source and purpose.

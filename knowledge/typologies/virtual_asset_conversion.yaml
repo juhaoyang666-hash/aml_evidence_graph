@@ -1,0 +1,10 @@
+typology_id: "TYPOLOGY-VIRTUAL-ASSET"
+version: "2026.1"
+title: "Virtual-Asset Conversion and Mixing / 虚拟资产转换与混币"
+source: "FATF 2020 https://www.fatf-gafi.org/en/publications/Methodsandtrends/Virtual-assets-red-flag-indicators.html"
+body: >
+  Virtual-asset laundering indicators may involve rapid fiat-to-crypto conversion,
+  peer-to-peer exchange, mixing or tumbling services, anonymity-enhanced assets, unusual
+  cross-border patterns, or transaction size and frequency without a logical explanation.
+  法币快速兑换虚拟资产、混币器、P2P 场外交易和匿名增强资产属于调查线索。The asset type,
+  wallet attribution, source of funds and customer profile must be verified before any conclusion.
