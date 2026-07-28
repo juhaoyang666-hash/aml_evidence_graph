@@ -51,6 +51,11 @@ def test_controlled_agent_pauses_and_resumes_after_review() -> None:
     assert paused["report"]["status"] == "draft_requires_human_review"
     assert len(paused["audit_events"]) == len(paused["tool_results"])
     assert {event["status"] for event in paused["audit_events"]} == {"complete"}
+    assert [event["node"] for event in paused["node_timeline"]] == [
+        "route_tools",
+        "execute_tools",
+        "draft_report",
+    ]
 
     completed = resume_controlled_investigation(
         graph,
@@ -60,6 +65,10 @@ def test_controlled_agent_pauses_and_resumes_after_review() -> None:
 
     assert completed["review_decision"]["action"] == "approve"
     assert completed["final_status"] == "approved_for_downstream_human_process"
+    assert [event["node"] for event in completed["node_timeline"]][-2:] == [
+        "human_review",
+        "finalize",
+    ]
 
 
 def test_tool_and_review_inputs_reject_unsafe_shapes() -> None:
@@ -67,6 +76,8 @@ def test_tool_and_review_inputs_reject_unsafe_shapes() -> None:
         BoundedSubgraphInput(alert_id="alert", hops=3, max_edges=20)
     with pytest.raises(ValidationError):
         HumanReviewDecision(action="edit", reviewer_reference="reviewer", note=None)
+    with pytest.raises(ValidationError):
+        HumanReviewDecision(action="approve", reviewer_reference="")
 
 
 def test_tool_failure_returns_minimized_audit_event() -> None:

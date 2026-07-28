@@ -46,6 +46,7 @@
 | [风控算法实习项目改进建议_2026.md](docs/风控算法实习项目改进建议_2026.md) | **2026 风控算法/大模型实习岗位调研与求职导向改进建议** |
 | [P0框架状态.md](docs/P0框架状态.md) | 求职改进 P0 代码框架、环境和未完成验收项 |
 | [检索评估.md](docs/检索评估.md) | 80 条 Typology 检索 Golden、分组指标与 Bad Case 边界 |
+| [Agent调查评估.md](docs/Agent调查评估.md) | 60 案受控 Agent 路由、工具、审核、恢复与延迟评测 |
 | [服务性能基准.md](docs/服务性能基准.md) | 本机 API/Agent 聚合压测结果与未完成项（非生产 SLA） |
 | [环境配置.md](docs/环境配置.md) | conda `risk`、GPU、ECNU LLM |
 | [规则基线.md](docs/规则基线.md) | 规则 v2026.2 定阈说明 |
@@ -103,6 +104,9 @@ $PY -m aml_evidence_graph.investigation.golden \
   --cases golden/cases_v1.json --typologies knowledge/typologies \
   --output artifacts/golden_summary.json
 # 可选：--use-llm（需 AML_LLM_ENABLED 与 ECNU_API_KEY，见 环境配置.md）
+
+# 受控 Agent Golden（60 案，确定性无 LLM 基线）
+$PY scripts/evaluate_agent_golden.py --overwrite
 ```
 
 当前模板路径回归为 **34** 案（原 30 + 4 对抗扩容）；幻觉拦截 / 无证据拒答仍为 1.0，见

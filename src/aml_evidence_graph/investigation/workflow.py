@@ -27,6 +27,7 @@ class InvestigationState(TypedDict, total=False):
     retrieved_typologies: list[TypologyReference]
     annotation: InvestigationAnnotation | None
     annotation_error: str | None
+    retrieval_error: str | None
     fact_validation: FactValidationResult | None
     tool_call_count: int
     report: InvestigationReport
@@ -49,7 +50,14 @@ def _retrieve_typologies(
     if state.get("tool_call_count", 0) >= MAX_TOOL_CALLS:
         return {"retrieved_typologies": []}
     evidence = state["evidence"]
-    documents = retriever.retrieve(_query_from_evidence(evidence))
+    try:
+        documents = retriever.retrieve(_query_from_evidence(evidence))
+    except Exception:
+        return {
+            "retrieved_typologies": [],
+            "retrieval_error": "typology_retrieval_unavailable",
+            "tool_call_count": state.get("tool_call_count", 0) + 1,
+        }
     references = [
         TypologyReference(
             typology_id=document.typology_id,
@@ -119,9 +127,13 @@ def _draft_report(state: InvestigationState) -> InvestigationState:
     annotation = state.get("annotation")
     validation = state.get("fact_validation") or FactValidationResult(valid=True)
     uncertainty_notes = list(evidence.uncertainty_notes)
-    if state.get("annotation_error") is not None:
+    if state.get("annotation_error") == "external_annotation_unavailable":
         uncertainty_notes.append(
             "External LLM annotation was unavailable; deterministic evidence template used."
+        )
+    if state.get("retrieval_error") == "typology_retrieval_unavailable":
+        uncertainty_notes.append(
+            "Typology retrieval was unavailable; no retrieved typology lead was used."
         )
     score_items = [
         f"{name} probability: {value:.6f}"
