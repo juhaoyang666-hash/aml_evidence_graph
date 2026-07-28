@@ -47,13 +47,34 @@
 原型，不等于生产 WORM 审计系统；正式部署仍需组织确定访问控制、集中备份、法务保留期限、
 到期销毁与审计库自身监控。应用运行时不自动删除审计记录。
 
+## 审批幂等与并发探针
+
+`POST /v1/controlled-investigations/{thread_id}/review` 支持 `Idempotency-Key`。在单个 API
+进程内，同一 `thread_id` 的读取与变更由细粒度锁串行化；第一次请求执行恢复，随后相同键且
+相同正文的请求返回完成状态并标记 `idempotent_replay=true`。同一键配不同审批正文返回
+`409`；不带键的最终态重复审批仍返回 `409`。幂等键保存在 SQLite checkpoint 中，所以关闭
+连接、重建应用后仍可识别回放。
+
+2026-07-28 本机 HTTP 探针使用 50 个 Mock 案件线程、案件并发 5，每案并发提交 8 个相同
+审批，共 400 个 review 请求。50 个周期全部成功、错误率 `0%`，350 个请求标记为回放；审计库
+最终恰好有 50 条 `human_review_decision` 和 50 条 `finalize`。周期吞吐为
+`8.99 cycle/s`，p50/p95/p99 为 `526.97/668.67/849.61 ms`。该延迟包含每案 8 个审批 HTTP
+请求，不能与普通单审批周期直接比较。
+
+该互斥只对单 Uvicorn 进程成立。多个 worker 或多个实例必须使用共享锁、数据库条件更新/CAS
+或队列串行化后重新测试；当前不得宣称分布式 exactly-once。这里证明的是“本地单进程至多执行
+一次 + 可持久化回放”，不是生产 SLA。
+
 ## 复现
 
 ```powershell
 $env:PYTHONPATH = "src"
 D:\Miniconda3\envs\aml-evidence\python.exe scripts/evaluate_agent_golden.py --overwrite
+D:\Miniconda3\envs\aml-evidence\python.exe scripts/benchmark_controlled_agent.py `
+  --requests 50 --concurrency 5 --duplicate-reviews 8 `
+  --output artifacts/serving_benchmark_agent_idempotency
 ```
 
-权威输入为 `golden/agent_cases_v2.json`。后续需要补充 API 层并发恢复幂等压测和生产审计
-适配器，并在启用外部 LLM 后单独报告 provider token、配置价格下的成本和延迟，不能与本
-基线混算。
+权威输入为 `golden/agent_cases_v2.json`。后续需要补共享后端上的多 worker 并发正确性和生产
+审计适配器，并在启用外部 LLM 后单独报告 provider token、配置价格下的成本和延迟，不能与
+本基线混算。

@@ -48,6 +48,7 @@ class ControlledInvestigationState(TypedDict, total=False):
     audit_events: list[dict[str, object]]
     report: dict[str, object]
     review_decision: dict[str, object]
+    review_idempotency_key: str | None
     final_status: str
     node_timeline: Annotated[list[dict[str, object]], add]
 
@@ -132,9 +133,15 @@ def build_controlled_investigation_graph(
                 "message": "Review the evidence-bound draft before any case action.",
             }
         )
-        decision = HumanReviewDecision.model_validate(resumed)
+        if isinstance(resumed, dict) and "decision" in resumed:
+            decision = HumanReviewDecision.model_validate(resumed["decision"])
+            idempotency_key = resumed.get("idempotency_key")
+        else:
+            decision = HumanReviewDecision.model_validate(resumed)
+            idempotency_key = None
         return {
             "review_decision": decision.model_dump(mode="json"),
+            "review_idempotency_key": idempotency_key,
             "node_timeline": _timeline_event(
                 "human_review", started, state_change="review_decision_recorded"
             ),
@@ -190,10 +197,16 @@ def resume_controlled_investigation(
     decision: HumanReviewDecision,
     *,
     thread_id: str,
+    idempotency_key: str | None = None,
 ) -> dict[str, object]:
     """Resume the exact checkpoint with an approve/edit/reject decision."""
     return graph.invoke(
-        Command(resume=decision.model_dump(mode="json")),
+        Command(
+            resume={
+                "decision": decision.model_dump(mode="json"),
+                "idempotency_key": idempotency_key,
+            }
+        ),
         config={"configurable": {"thread_id": thread_id}},
     )
 

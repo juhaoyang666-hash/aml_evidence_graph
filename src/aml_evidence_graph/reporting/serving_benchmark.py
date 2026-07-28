@@ -40,6 +40,10 @@ class ServingBenchmarkEvidence(BaseModel):
     latency_p50_ms: float = Field(ge=0)
     latency_p95_ms: float = Field(ge=0)
     latency_p99_ms: float = Field(ge=0)
+    duplicate_reviews_per_thread: int | None = Field(default=None, ge=1)
+    review_request_count: int | None = Field(default=None, ge=1)
+    idempotent_replay_count: int | None = Field(default=None, ge=0)
+    review_execution_count: int | None = Field(default=None, ge=1)
 
 
 class ServingBenchmarkReport(BaseModel):
@@ -79,21 +83,33 @@ def build_serving_benchmark_report(
             incomplete.append(f"{source.source_id}:missing_summary")
             continue
         try:
-            evidence.append(
-                ServingBenchmarkEvidence(
-                    source_id=source.source_id,
-                    display_name=source.display_name,
-                    method=str(payload["method"]),
-                    path=str(payload["path"]),
-                    requests=int(summary["requests"]),
-                    concurrency=int(payload["concurrency"]),
-                    error_rate=float(summary["error_rate"]),
-                    throughput_per_second=float(summary["throughput_per_second"]),
-                    latency_p50_ms=float(summary["latency_p50_ms"]),
-                    latency_p95_ms=float(summary["latency_p95_ms"]),
-                    latency_p99_ms=float(summary["latency_p99_ms"]),
-                )
+            item = ServingBenchmarkEvidence(
+                source_id=source.source_id,
+                display_name=source.display_name,
+                method=str(payload["method"]),
+                path=str(payload["path"]),
+                requests=int(summary["requests"]),
+                concurrency=int(payload["concurrency"]),
+                error_rate=float(summary["error_rate"]),
+                throughput_per_second=float(summary["throughput_per_second"]),
+                latency_p50_ms=float(summary["latency_p50_ms"]),
+                latency_p95_ms=float(summary["latency_p95_ms"]),
+                latency_p99_ms=float(summary["latency_p99_ms"]),
+                duplicate_reviews_per_thread=payload.get("duplicate_reviews_per_thread"),
+                review_request_count=payload.get("review_request_count"),
+                idempotent_replay_count=payload.get("idempotent_replay_count"),
+                review_execution_count=payload.get("review_execution_count"),
             )
+            if source.source_id == "controlled_agent_idempotency":
+                expected_requests = item.requests * (item.duplicate_reviews_per_thread or 0)
+                expected_replays = expected_requests - item.requests
+                if (
+                    item.review_request_count != expected_requests
+                    or item.idempotent_replay_count != expected_replays
+                    or item.review_execution_count != item.requests
+                ):
+                    raise ValueError("inconsistent idempotency counters")
+            evidence.append(item)
         except (KeyError, TypeError, ValueError) as error:
             incomplete.append(f"{source.source_id}:invalid_metrics_{type(error).__name__}")
     required = {source.source_id for source in spec.sources if source.required}
@@ -118,7 +134,7 @@ def render_serving_benchmark_markdown(report: ServingBenchmarkReport) -> str:
         f"- 完整状态：**{str(report.complete).lower()}**",
         f"- 硬件边界：{report.hardware_disclosure}",
         "",
-        "| 路径 | 请求/并发 | 错误率 | 吞吐 req/s | p50 ms | p95 ms | p99 ms |",
+        "| 路径 | 请求或周期/并发 | 错误率 | 吞吐（路径单位/s） | p50 ms | p95 ms | p99 ms |",
         "|---|---:|---:|---:|---:|---:|---:|",
     ]
     for item in report.evidence:

@@ -25,6 +25,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--alert-id", default="mock-alert-0001")
     parser.add_argument("--requests", type=int, default=50)
     parser.add_argument("--concurrency", type=int, default=5)
+    parser.add_argument(
+        "--duplicate-reviews",
+        type=int,
+        default=1,
+        help="Concurrent review submissions per thread using one Idempotency-Key.",
+    )
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument(
         "--output", type=Path, default=Path("artifacts/serving_benchmark_controlled_agent")
@@ -33,11 +39,13 @@ def parse_args() -> argparse.Namespace:
 
 
 async def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
-    if args.requests < 1 or args.concurrency < 1:
-        raise ValueError("requests and concurrency must be positive.")
+    if args.requests < 1 or args.concurrency < 1 or args.duplicate_reviews < 1:
+        raise ValueError("requests, concurrency, and duplicate-reviews must be positive.")
     semaphore = asyncio.Semaphore(args.concurrency)
     latencies: list[float] = []
     errors = 0
+    idempotent_replays = 0
+    review_executions = 0
     token = os.environ.get("AML_INTERNAL_API_TOKEN")
     headers = {"X-AML-Internal-Token": token} if token else {}
     async with httpx.AsyncClient(
@@ -45,7 +53,7 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
     ) as client:
 
         async def one_cycle() -> None:
-            nonlocal errors
+            nonlocal errors, idempotent_replays, review_executions
             thread_id = f"benchmark-{uuid.uuid4().hex}"
             async with semaphore:
                 started = time.perf_counter()
@@ -59,16 +67,32 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                         f"/v1/controlled-investigations/{thread_id}"
                     )
                     queried.raise_for_status()
-                    reviewed = await client.post(
-                        f"/v1/controlled-investigations/{thread_id}/review",
-                        json={
-                            "action": "approve",
-                            "reviewer_reference": "local-benchmark",
-                        },
+                    review_responses = await asyncio.gather(
+                        *(
+                            client.post(
+                                f"/v1/controlled-investigations/{thread_id}/review",
+                                json={
+                                    "action": "approve",
+                                    "reviewer_reference": "local-benchmark",
+                                },
+                                headers={"Idempotency-Key": f"review-{thread_id}"},
+                            )
+                            for _ in range(args.duplicate_reviews)
+                        )
                     )
-                    reviewed.raise_for_status()
-                    if reviewed.json().get("status") != "completed":
+                    for reviewed in review_responses:
+                        reviewed.raise_for_status()
+                    review_payloads = [response.json() for response in review_responses]
+                    if any(payload.get("status") != "completed" for payload in review_payloads):
                         raise ValueError("Controlled investigation did not complete.")
+                    replay_count = sum(
+                        bool(payload.get("idempotent_replay"))
+                        for payload in review_payloads
+                    )
+                    if replay_count != args.duplicate_reviews - 1:
+                        raise ValueError("Idempotent review execution count was not exactly one.")
+                    idempotent_replays += replay_count
+                    review_executions += len(review_payloads) - replay_count
                 except (httpx.HTTPError, ValueError, json.JSONDecodeError):
                     errors += 1
                 else:
@@ -88,6 +112,10 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "path": "/v1/controlled-investigations/{alert_id} -> status -> review",
         "method": "POST+GET+POST",
         "concurrency": args.concurrency,
+        "duplicate_reviews_per_thread": args.duplicate_reviews,
+        "review_request_count": args.requests * args.duplicate_reviews,
+        "idempotent_replay_count": idempotent_replays,
+        "review_execution_count": review_executions,
         "timeout_seconds": args.timeout,
         "summary": asdict(summary),
         "client_environment": {

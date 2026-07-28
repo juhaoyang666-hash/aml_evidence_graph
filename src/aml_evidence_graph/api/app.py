@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hmac
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from threading import Lock
 from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -161,6 +164,31 @@ class ControlledInvestigationStartRequest(BaseModel):
     thread_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
+class _ThreadLockRegistry:
+    """Serialize one thread's mutations inside a single API process."""
+
+    def __init__(self) -> None:
+        self._guard = Lock()
+        self._entries: dict[str, tuple[Lock, int]] = {}
+
+    @contextmanager
+    def hold(self, thread_id: str) -> Iterator[None]:
+        with self._guard:
+            lock, references = self._entries.get(thread_id, (Lock(), 0))
+            self._entries[thread_id] = (lock, references + 1)
+        lock.acquire()
+        try:
+            yield
+        finally:
+            lock.release()
+            with self._guard:
+                current_lock, references = self._entries[thread_id]
+                if references == 1:
+                    del self._entries[thread_id]
+                else:
+                    self._entries[thread_id] = (current_lock, references - 1)
+
+
 def _thread_config(thread_id: str) -> dict[str, dict[str, str]]:
     return {"configurable": {"thread_id": thread_id}}
 
@@ -186,6 +214,7 @@ def _controlled_api_response(
     state: dict[str, object],
     *,
     interrupts: list[object],
+    idempotent_replay: bool = False,
 ) -> dict[str, object]:
     final_status = state.get("final_status")
     status = "completed" if final_status else "awaiting_human_review" if interrupts else "running"
@@ -197,6 +226,7 @@ def _controlled_api_response(
         "tool_calls": state.get("tool_calls", []),
         "audit_events": state.get("audit_events", []),
         "review_prompt": interrupts[0] if interrupts else None,
+        "idempotent_replay": idempotent_replay,
     }
 
 
@@ -228,6 +258,7 @@ def create_app(
     reviews = review_store or InMemoryReviewStore()
     checkpointer = controlled_checkpointer or InMemorySaver()
     investigation_audits = controlled_audit_store or InMemoryInvestigationAuditStore()
+    thread_locks = _ThreadLockRegistry()
     controlled_graph = build_controlled_investigation_graph(
         InvestigationToolRegistry(retriever),
         retriever=retriever,
@@ -352,15 +383,16 @@ def create_app(
         if evidence is None:
             raise HTTPException(status_code=404, detail="Unknown alert reference.")
         thread_id = request.thread_id or f"investigation-{uuid.uuid4().hex}"
-        snapshot = controlled_graph.get_state(_thread_config(thread_id))
-        if snapshot.values:
-            raise HTTPException(status_code=409, detail="Investigation thread already exists.")
-        state = start_controlled_investigation(
-            controlled_graph,
-            evidence,
-            thread_id=thread_id,
-        )
-        persist_state_audit(investigation_audits, thread_id=thread_id, state=state)
+        with thread_locks.hold(thread_id):
+            snapshot = controlled_graph.get_state(_thread_config(thread_id))
+            if snapshot.values:
+                raise HTTPException(status_code=409, detail="Investigation thread already exists.")
+            state = start_controlled_investigation(
+                controlled_graph,
+                evidence,
+                thread_id=thread_id,
+            )
+            persist_state_audit(investigation_audits, thread_id=thread_id, state=state)
         return _controlled_api_response(
             thread_id,
             state,
@@ -372,14 +404,16 @@ def create_app(
         dependencies=[Depends(require_internal_token)],
     )
     def get_controlled_case(thread_id: str) -> dict[str, object]:
-        snapshot = controlled_graph.get_state(_thread_config(thread_id))
-        if not snapshot.values:
-            raise HTTPException(status_code=404, detail="Unknown investigation thread.")
-        state = dict(snapshot.values)
+        with thread_locks.hold(thread_id):
+            snapshot = controlled_graph.get_state(_thread_config(thread_id))
+            if not snapshot.values:
+                raise HTTPException(status_code=404, detail="Unknown investigation thread.")
+            state = dict(snapshot.values)
+            interrupts = _interrupt_values(snapshot=snapshot)
         return _controlled_api_response(
             thread_id,
             state,
-            interrupts=_interrupt_values(snapshot=snapshot),
+            interrupts=interrupts,
         )
 
     @app.post(
@@ -389,24 +423,56 @@ def create_app(
     def review_controlled_case(
         thread_id: str,
         decision: HumanReviewDecision,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> dict[str, object]:
-        snapshot = controlled_graph.get_state(_thread_config(thread_id))
-        if not snapshot.values:
-            raise HTTPException(status_code=404, detail="Unknown investigation thread.")
-        if snapshot.values.get("final_status") is not None:
-            raise HTTPException(status_code=409, detail="Investigation thread is already final.")
-        if not _interrupt_values(snapshot=snapshot):
-            raise HTTPException(status_code=409, detail="Investigation is not awaiting review.")
-        state = resume_controlled_investigation(
-            controlled_graph,
-            decision,
-            thread_id=thread_id,
-        )
-        persist_state_audit(investigation_audits, thread_id=thread_id, state=state)
+        if idempotency_key is not None:
+            idempotency_key = idempotency_key.strip()
+            if not idempotency_key or len(idempotency_key) > 128:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Idempotency-Key must contain 1 to 128 characters.",
+                )
+        replayed = False
+        with thread_locks.hold(thread_id):
+            snapshot = controlled_graph.get_state(_thread_config(thread_id))
+            if not snapshot.values:
+                raise HTTPException(status_code=404, detail="Unknown investigation thread.")
+            if snapshot.values.get("final_status") is not None:
+                if (
+                    idempotency_key is not None
+                    and snapshot.values.get("review_idempotency_key") == idempotency_key
+                ):
+                    stored = snapshot.values.get("review_decision")
+                    if stored != decision.model_dump(mode="json"):
+                        raise HTTPException(
+                            status_code=409,
+                            detail="Idempotency-Key was reused with a different review request.",
+                        )
+                    state = dict(snapshot.values)
+                    replayed = True
+                else:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Investigation thread is already final.",
+                    )
+            else:
+                if not _interrupt_values(snapshot=snapshot):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Investigation is not awaiting review.",
+                    )
+                state = resume_controlled_investigation(
+                    controlled_graph,
+                    decision,
+                    thread_id=thread_id,
+                    idempotency_key=idempotency_key,
+                )
+                persist_state_audit(investigation_audits, thread_id=thread_id, state=state)
         return _controlled_api_response(
             thread_id,
             state,
             interrupts=_interrupt_values(state=state),
+            idempotent_replay=replayed,
         )
 
     return app

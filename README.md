@@ -121,6 +121,9 @@ export AML_AGENT_AUDIT_PATH=artifacts/audit/investigation_events.sqlite
 审计表只追加工具、节点和人工动作元数据，不保存证据正文、特征值、图边或复核备注正文；
 SQLite 是本地原型，不应表述为生产 WORM 审计系统。
 
+审批恢复支持 `Idempotency-Key`：相同键与相同请求可跨 checkpoint 重启回放，冲突正文返回
+`409`。当前线程锁只覆盖单 API 进程，多 worker 部署仍需共享锁/CAS 后端。
+
 当前模板路径回归为 **34** 案（原 30 + 4 对抗扩容）；幻觉拦截 / 无证据拒答仍为 1.0，见
 [大模型调查系统.md](docs/大模型调查系统.md)。
 ## 本地验收

@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -257,3 +258,118 @@ body: "Transaction risk investigation."
     assert next(record for record in records if record.category == "review").note_present
     assert "SENSITIVE REVIEW NOTE" not in serialized
     assert "feature_values" not in serialized
+
+
+def test_concurrent_review_replays_execute_once_and_audit_once(tmp_path: Path) -> None:
+    typology_root = tmp_path / "typologies"
+    typology_root.mkdir()
+    (typology_root / "test.yaml").write_text(
+        """
+typology_id: "TYPOLOGY-TEST"
+version: "1"
+title: "Test Typology"
+source: "Test"
+body: "Transaction risk investigation."
+""".strip(),
+        encoding="utf-8",
+    )
+    retriever = LocalBM25TypologyRetriever(load_typology_documents(typology_root))
+    saver = create_sqlite_checkpointer(tmp_path / "checkpoint.sqlite")
+    audit_store = SQLiteInvestigationAuditStore(tmp_path / "audit.sqlite")
+    client = TestClient(
+        create_app(
+            retriever,
+            controlled_checkpointer=saver,
+            controlled_audit_store=audit_store,
+        )
+    )
+    thread_id = "concurrent-idempotent-thread"
+    started = client.post(
+        "/v1/controlled-investigations/mock-alert-0001",
+        json={"thread_id": thread_id},
+    )
+    request = {"action": "approve", "reviewer_reference": "reviewer-concurrent"}
+    headers = {"Idempotency-Key": "review-request-0001"}
+
+    try:
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            responses = list(
+                executor.map(
+                    lambda _: client.post(
+                        f"/v1/controlled-investigations/{thread_id}/review",
+                        json=request,
+                        headers=headers,
+                    ),
+                    range(16),
+                )
+            )
+    finally:
+        saver.conn.close()
+
+    records = audit_store.list_by_thread(thread_id)
+    assert started.status_code == 200
+    assert {response.status_code for response in responses} == {200}
+    assert sum(response.json()["idempotent_replay"] for response in responses) == 15
+    assert {response.json()["final_status"] for response in responses} == {
+        "approved_for_downstream_human_process"
+    }
+    assert len([record for record in records if record.category == "review"]) == 1
+    assert len([record for record in records if record.name == "finalize"]) == 1
+
+
+def test_review_idempotency_survives_restart_and_rejects_key_reuse(
+    tmp_path: Path,
+) -> None:
+    typology_root = tmp_path / "typologies"
+    typology_root.mkdir()
+    (typology_root / "test.yaml").write_text(
+        """
+typology_id: "TYPOLOGY-TEST"
+version: "1"
+title: "Test Typology"
+source: "Test"
+body: "Transaction risk investigation."
+""".strip(),
+        encoding="utf-8",
+    )
+    retriever = LocalBM25TypologyRetriever(load_typology_documents(typology_root))
+    checkpoint_path = tmp_path / "checkpoint.sqlite"
+    thread_id = "restart-idempotent-thread"
+    headers = {"Idempotency-Key": "durable-review-request"}
+    request = {"action": "reject", "reviewer_reference": "reviewer-restart"}
+
+    first_saver = create_sqlite_checkpointer(checkpoint_path)
+    first_client = TestClient(create_app(retriever, controlled_checkpointer=first_saver))
+    first_client.post(
+        "/v1/controlled-investigations/mock-alert-0001",
+        json={"thread_id": thread_id},
+    )
+    completed = first_client.post(
+        f"/v1/controlled-investigations/{thread_id}/review",
+        json=request,
+        headers=headers,
+    )
+    first_saver.conn.close()
+
+    second_saver = create_sqlite_checkpointer(checkpoint_path)
+    try:
+        second_client = TestClient(create_app(retriever, controlled_checkpointer=second_saver))
+        replayed = second_client.post(
+            f"/v1/controlled-investigations/{thread_id}/review",
+            json=request,
+            headers=headers,
+        )
+        conflicting = second_client.post(
+            f"/v1/controlled-investigations/{thread_id}/review",
+            json={"action": "approve", "reviewer_reference": "reviewer-restart"},
+            headers=headers,
+        )
+    finally:
+        second_saver.conn.close()
+
+    assert completed.status_code == 200
+    assert not completed.json()["idempotent_replay"]
+    assert replayed.status_code == 200
+    assert replayed.json()["idempotent_replay"]
+    assert conflicting.status_code == 409
+    assert "different review request" in conflicting.json()["detail"]
