@@ -113,8 +113,17 @@ function Invoke-ExperimentStep {
     $startedAt = Get-UtcTimestamp
     Set-StepState -Name $Name -State "running" -Detail ($Arguments -join " ") -StartedAt $startedAt
     Write-ChainLog "START $Name"
-    & $PythonExecutable @Arguments 2>&1 | Tee-Object -FilePath $chainLog -Append
-    $exitCode = $LASTEXITCODE
+    # Windows PowerShell 5.1 wraps native stderr records as non-terminating
+    # NativeCommandError objects. Structured Python logging uses stderr even for INFO,
+    # so keep streaming both channels without letting those records abort model saving.
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $PythonExecutable @Arguments 2>&1 | Tee-Object -FilePath $chainLog -Append
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     $finishedAt = Get-UtcTimestamp
     if ($exitCode -ne 0) {
         Set-StepState -Name $Name -State "failed" -Detail "exit=$exitCode" -StartedAt $startedAt -FinishedAt $finishedAt
