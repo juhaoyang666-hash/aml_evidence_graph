@@ -39,6 +39,7 @@
 | [CatBoost差距诊断.md](docs/CatBoost差距诊断.md) | CatBoost vs GAT 差距诊断 |
 | [关联案件工作流.md](docs/关联案件工作流.md) | 关联风险 / 案件视图工作流 |
 | [批量特征重放.md](docs/批量特征重放.md) | DuckDB/Polars PIT 特征重放与大数据迁移边界 |
+| [Spark特征等价评估.md](docs/Spark特征等价评估.md) | 5 个 Spark PIT 特征的全量/增量逐行等价与资源报告 |
 | [漂移监控.md](docs/漂移监控.md) | 时间切片漂移 / 阈值重校准 |
 | [实验附录.md](docs/实验附录.md) | 社区、无监督、关系、序列、两阶段与融合消融汇总 |
 | [PIT后全量复现.md](docs/PIT后全量复现.md) | **Linux 全量复现命令**（主线 GAT） |
