@@ -1,4 +1,4 @@
-﻿"""Resumable fe_v2 pipeline: PIT features -> table CatBoost only (no GraphSAGE).
+"""Resumable fe_v2 pipeline: PIT features -> table CatBoost only (no GraphSAGE).
 
 Writes status to artifacts/logs/fe_v2_pipeline_status.json and logs under artifacts/logs/.
 PIT resume: if output exists without a complete summary, replay all dates through the
@@ -237,7 +237,7 @@ def main() -> int:
     status: dict = {
         "pipeline": "fe_v2_pit_table",
         "baseline_reference_pr_auc": 0.8092,
-        "baseline_note": "docs/RESULTS.md CatBoost primary test PR-AUC",
+        "baseline_note": "docs/实验结果.md CatBoost primary test PR-AUC",
         "steps": {},
     }
     if args.status.is_file():

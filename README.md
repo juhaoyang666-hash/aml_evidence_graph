@@ -8,8 +8,8 @@
   风险分数、阈值或案件结论
 - **边界**：固定时间外切分；特征与图邻居只读预测时点之前的历史
 
-完整指标、run_id 与复现说明见 **[docs/RESULTS.md](docs/RESULTS.md)** ·
-**[docs/MODEL_CARD.md](docs/MODEL_CARD.md)**。
+完整指标、run_id 与复现说明见 **[docs/实验结果.md](docs/实验结果.md)** ·
+**[docs/模型卡.md](docs/模型卡.md)**。
 
 ## 全量主线结果（公开合成 SAML-D，时间外测试）
 
@@ -32,23 +32,23 @@
 
 | 文档 | 内容 |
 |---|---|
-| [RESULTS.md](docs/RESULTS.md) | 全量指标表、融合对比、架构对比、Bootstrap CI、Golden、调查视图、算力附录 |
-| [MODEL_CARD.md](docs/MODEL_CARD.md) | 模型边界、评价协议、限制 |
-| [RESUME_BLURB.md](docs/RESUME_BLURB.md) | **简历项目描述（可粘贴）** |
-| [INTERVIEW_TALKING_POINTS.md](docs/INTERVIEW_TALKING_POINTS.md) | **面试自答要点** |
-| [CATBOOST_GAP_DIAGNOSIS.md](docs/CATBOOST_GAP_DIAGNOSIS.md) | CatBoost vs GAT 差距诊断 |
-| [ASSOCIATION_CASE_WORKFLOW.md](docs/ASSOCIATION_CASE_WORKFLOW.md) | 关联风险 / 案件视图工作流 |
-| [BATCH_FEATURE_REPLAY.md](docs/BATCH_FEATURE_REPLAY.md) | DuckDB/Polars PIT 特征重放与大数据迁移边界 |
-| [DRIFT_MONITORING.md](docs/DRIFT_MONITORING.md) | 时间切片漂移 / 阈值重校准 |
-| [EXPERIMENT_APPENDIX.md](docs/EXPERIMENT_APPENDIX.md) | 社区、无监督、关系、序列、两阶段与融合消融汇总 |
-| [FULL_RUN_AFTER_PIT.md](docs/FULL_RUN_AFTER_PIT.md) | **Linux 全量复现命令**（主线 GAT） |
-| [FE_V2_EXPERIMENT_PLAN.md](docs/FE_V2_EXPERIMENT_PLAN.md) | **FE v2 待补实验、判定标准与 Windows 单卡可恢复运行链** |
-| [RISK_ALGORITHM_INTERNSHIP_PROJECT_IMPROVEMENT_2026.md](docs/RISK_ALGORITHM_INTERNSHIP_PROJECT_IMPROVEMENT_2026.md) | **2026 风控算法/大模型实习岗位调研与求职导向改进建议** |
-| [P0_FRAMEWORK_STATUS.md](docs/P0_FRAMEWORK_STATUS.md) | 求职改进 P0 代码框架、环境和未完成验收项 |
-| [ENVIRONMENT.md](docs/ENVIRONMENT.md) | conda `risk`、GPU、ECNU LLM |
-| [RULE_BASELINE.md](docs/RULE_BASELINE.md) | 规则 v2026.2 定阈说明 |
-| [LLM_INVESTIGATION_SYSTEM.md](docs/LLM_INVESTIGATION_SYSTEM.md) | LLM 调查边界、实现、Golden 与后续缺口 |
-| [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | 工程完成度 |
+| [实验结果.md](docs/实验结果.md) | 全量指标表、融合对比、架构对比、Bootstrap CI、Golden、调查视图、算力附录 |
+| [模型卡.md](docs/模型卡.md) | 模型边界、评价协议、限制 |
+| [简历项目描述.md](docs/简历项目描述.md) | **简历项目描述（可粘贴）** |
+| [面试要点.md](docs/面试要点.md) | **面试自答要点** |
+| [CatBoost差距诊断.md](docs/CatBoost差距诊断.md) | CatBoost vs GAT 差距诊断 |
+| [关联案件工作流.md](docs/关联案件工作流.md) | 关联风险 / 案件视图工作流 |
+| [批量特征重放.md](docs/批量特征重放.md) | DuckDB/Polars PIT 特征重放与大数据迁移边界 |
+| [漂移监控.md](docs/漂移监控.md) | 时间切片漂移 / 阈值重校准 |
+| [实验附录.md](docs/实验附录.md) | 社区、无监督、关系、序列、两阶段与融合消融汇总 |
+| [PIT后全量复现.md](docs/PIT后全量复现.md) | **Linux 全量复现命令**（主线 GAT） |
+| [特征工程V2实验计划.md](docs/特征工程V2实验计划.md) | **FE v2 待补实验、判定标准与 Windows 单卡可恢复运行链** |
+| [风控算法实习项目改进建议_2026.md](docs/风控算法实习项目改进建议_2026.md) | **2026 风控算法/大模型实习岗位调研与求职导向改进建议** |
+| [P0框架状态.md](docs/P0框架状态.md) | 求职改进 P0 代码框架、环境和未完成验收项 |
+| [环境配置.md](docs/环境配置.md) | conda `risk`、GPU、ECNU LLM |
+| [规则基线.md](docs/规则基线.md) | 规则 v2026.2 定阈说明 |
+| [大模型调查系统.md](docs/大模型调查系统.md) | LLM 调查边界、实现、Golden 与后续缺口 |
+| [实施状态.md](docs/实施状态.md) | 工程完成度 |
 
 ## 环境（Linux，全量实验）
 
@@ -60,7 +60,7 @@ export PYTHONPATH=src
 
 - GPU：最多 4× RTX 3090（`--max-gpus` / `CUDA_VISIBLE_DEVICES`）
 - 长任务请放在 **tmux** 中
-- 详细约定：[docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)
+- 详细约定：[docs/环境配置.md](docs/环境配置.md)
 
 ## 安全与数据边界
 
@@ -76,12 +76,12 @@ $PY -m aml_evidence_graph.ingestion.smoke_subset \
   --input artifacts/prepared_transactions --output artifacts/prepared_smoke --overwrite
 $PY -m aml_evidence_graph.features.build \
   --input artifacts/prepared_smoke --output artifacts/pit_features_smoke --overwrite
-# 后续 table / graphsage / OOF / fusion 见 docs/FULL_RUN_AFTER_PIT.md 烟雾对照表
+# 后续 table / graphsage / OOF / fusion 见 docs/PIT后全量复现.md 烟雾对照表
 # 或沿用 configs/models.smoke.yaml + artifacts/models_smoke/
 ```
 
 全量 OOF 使用默认 `--splits 3 --minimum-training-months 2`。  
-**主线全量复现（GAT + catboost+GAT）**：[docs/FULL_RUN_AFTER_PIT.md](docs/FULL_RUN_AFTER_PIT.md)。
+**主线全量复现（GAT + catboost+GAT）**：[docs/PIT后全量复现.md](docs/PIT后全量复现.md)。
 
 辅助脚本：`scripts/run_full_train_chain.sh`、`scripts/run_remaining_gpu.sh`、
 `scripts/run_arch_comparison.sh`、`scripts/backfill_rule_hits.py`、
@@ -100,11 +100,11 @@ $PY -m aml_evidence_graph.api.app   # 或安装后的 aml-api；浏览器 http:/
 $PY -m aml_evidence_graph.investigation.golden \
   --cases golden/cases_v1.json --typologies knowledge/typologies \
   --output artifacts/golden_summary.json
-# 可选：--use-llm（需 AML_LLM_ENABLED 与 ECNU_API_KEY，见 ENVIRONMENT.md）
+# 可选：--use-llm（需 AML_LLM_ENABLED 与 ECNU_API_KEY，见 环境配置.md）
 ```
 
 当前模板路径回归为 **34** 案（原 30 + 4 对抗扩容）；幻觉拦截 / 无证据拒答仍为 1.0，见
-[LLM_INVESTIGATION_SYSTEM.md](docs/LLM_INVESTIGATION_SYSTEM.md)。
+[大模型调查系统.md](docs/大模型调查系统.md)。
 ## 本地验收
 
 ```bash

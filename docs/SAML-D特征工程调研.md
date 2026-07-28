@@ -1,7 +1,7 @@
 # SAML-D 特征工程调研与本项目改进建议
 
 > 对照公开合成数据集 SAML-D（Oztas et al., IEEE ICEBE 2023）上社区常见做法，
-> 与本仓库当前 PIT 特征（见 [PIT_FEATURE_LIST.md](PIT_FEATURE_LIST.md)）的差距与可落地建议。  
+> 与本仓库当前 PIT 特征（见 [PIT特征清单.md](PIT特征清单.md)）的差距与可落地建议。  
 > **口径**：建议仅在严格 PIT / 时间外切分下试验；不自动改变主线数字。
 
 ## 1. 数据集本身在“暗示”什么特征
@@ -66,7 +66,7 @@
 
 ## 3. 本项目现状（相对优势）
 
-已有且协议更严（见 `features/pit.py`、`graph_stats.py`、`PIT_FEATURE_LIST.md`）：
+已有且协议更严（见 `features/pit.py`、`graph_stats.py`、`PIT特征清单.md`）：
 
 | 能力 | 本项目 | 多数公开 notebook |
 |---|---|---|
@@ -80,7 +80,7 @@
 **结论**：你们在「泄漏控制 + 窗口完备性 + 图学习」上已领先多数开源 SAML-D 流水线；社区多出的是
 **业务语义代理特征**和**金额/地理形态特征**，而不是更复杂的滚动窗口。
 
-`CATBOOST_GAP_DIAGNOSIS.md` 也表明：CatBoost 已吃到 `relationship_*`，与 GAT 的差距主要来自
+`CatBoost差距诊断.md` 也表明：CatBoost 已吃到 `relationship_*`，与 GAT 的差距主要来自
 **多跳结构**，不宜指望再堆窗口统计就追上 GAT。
 
 ## 4. 改进建议（按优先级）

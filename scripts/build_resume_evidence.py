@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--root", type=Path, default=Path("."))
     parser.add_argument("--spec", type=Path, default=Path("configs/resume_evidence.yaml"))
     parser.add_argument("--output", type=Path, default=Path("artifacts/resume_evidence"))
-    parser.add_argument("--markdown", type=Path, default=Path("docs/RESUME_EVIDENCE.md"))
+    parser.add_argument("--markdown", type=Path, default=Path("docs/简历证据.md"))
     parser.add_argument("--allow-incomplete", action="store_true")
     return parser.parse_args()
 

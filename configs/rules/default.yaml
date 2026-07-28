@@ -1,7 +1,7 @@
 version: "2026.2"
 # Thresholds were selected on the TRAINING period only (2022-10-07..2023-04-30) of the
 # public synthetic SAML-D dataset. Validation and test partitions were never inspected.
-# Calibration evidence: docs/RULE_BASELINE.md
+# Calibration evidence: docs/规则基线.md
 rules:
   - rule_id: R-HIGH-AMOUNT-001
     status: approved
@@ -48,7 +48,7 @@ rules:
     backtest_summary: >-
       Training-period 99.0th percentile of distinct 7-day incoming counterparties
       (20). Retained as a typology-motivated fan-in control; low standalone recall
-      on this synthetic benchmark is documented in docs/RULE_BASELINE.md.
+      on this synthetic benchmark is documented in docs/规则基线.md.
     required_features:
       - receiver_incoming_unique_counterparties_7d
     kind: numeric_threshold

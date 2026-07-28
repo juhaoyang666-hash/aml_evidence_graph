@@ -4,9 +4,9 @@
 > **不要**沿用烟雾路径的 `--splits 1 --minimum-training-months 1` 或 `models.smoke.yaml`。  
 > 下列指标可写入模型卡；烟雾指标不可引用。
 >
-> **环境**：Linux + conda `risk`。详见 [ENVIRONMENT.md](ENVIRONMENT.md)。  
+> **环境**：Linux + conda `risk`。详见 [环境配置.md](环境配置.md)。  
 > **主线报告**：`catboost` + **GAT**（`catboost + GAT` 融合）；`graph_stats` 与原
-> GraphSAGE 融合仅作对照。数字见 [RESULTS.md](RESULTS.md)。
+> GraphSAGE 融合仅作对照。数字见 [实验结果.md](实验结果.md)。
 
 ```bash
 export PY=/data1/yangjuhao/envs/risk/bin/python
@@ -119,8 +119,8 @@ $PY -m aml_evidence_graph.aggregation.views \
 
 全量跑完后更新（必须带 run_id，并声明数据为公开合成 SAML-D）：
 
-1. `docs/RESULTS.md` / `docs/MODEL_CARD.md`
-2. `docs/IMPLEMENTATION_STATUS.md`
+1. `docs/实验结果.md` / `docs/模型卡.md`
+2. `docs/实施状态.md`
 
 ## 与烟雾路径对照
 
