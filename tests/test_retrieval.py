@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from aml_evidence_graph.evidence.typology import TypologyDocument
 from aml_evidence_graph.retrieval import (
     BM25TypologyRetriever,
@@ -9,6 +11,8 @@ from aml_evidence_graph.retrieval import (
     RetrievalCase,
     TfidfDenseEncoder,
     evaluate_retriever,
+    evaluate_retriever_cases,
+    summarize_retrieval_results,
 )
 
 
@@ -57,3 +61,55 @@ def test_retrieval_evaluation_separates_no_answer_false_positives() -> None:
     assert summary.recall_at_1 == 1.0
     assert summary.mean_reciprocal_rank == 1.0
     assert summary.no_answer_false_positive_rate == 0.0
+
+
+def test_retrieval_case_results_support_tag_slices_and_bad_cases() -> None:
+    retriever = BM25TypologyRetriever(_documents())
+    cases = [
+        RetrievalCase(
+            case_id="direct",
+            query="circular closed flow",
+            relevant_typology_ids=["cycle"],
+            tags=["direct"],
+        ),
+        RetrievalCase(
+            case_id="hard-negative",
+            query="cash flow statement tutorial",
+            expect_no_answer=True,
+            tags=["hard-negative", "no-answer"],
+        ),
+    ]
+
+    results = evaluate_retriever_cases(retriever, cases)
+    hard_negative = [result for result in results if "hard-negative" in result.tags]
+    sliced = summarize_retrieval_results(retriever.name, hard_negative)
+
+    assert results[0].passed
+    assert not results[1].passed
+    assert sliced.cases == 1
+    assert sliced.no_answer_false_positive_rate == 1.0
+
+
+def test_sentence_transformer_requires_exact_revision() -> None:
+    from aml_evidence_graph.retrieval import SentenceTransformerEncoder
+
+    with pytest.raises(ValueError, match="revision"):
+        SentenceTransformerEncoder("unused-in-this-test", revision="")
+
+
+def test_hybrid_can_require_dense_evidence_before_rrf() -> None:
+    documents = _documents()
+    corpus = [f"{document.title} {document.body}" for document in documents]
+    bm25 = BM25TypologyRetriever(documents)
+    dense = DenseTypologyRetriever(
+        documents,
+        TfidfDenseEncoder(corpus),
+        minimum_score=0.9,
+    )
+    hybrid = HybridTypologyRetriever(
+        [bm25, dense],
+        required_source_prefixes=("dense:",),
+    )
+
+    assert bm25.search("cash flow statement", limit=3)
+    assert not hybrid.search("cash flow statement", limit=3)

@@ -7,6 +7,11 @@
 | `mock_cases.json` | 虚构 smoke 种子 | 6 | CI / 本地快速回归 |
 | `cases_v1.json` | **项目裁定** Golden | **34** | 分层 typology + 低证据 + 对抗（含 B5 扩容） |
 | `adjudication_v1.json` | 逐案裁定记录 | **34** | 裁定决策 / 期望结果 / 备注 / 时间戳 |
+| `retrieval_queries_v2.json` | **项目作者裁定**检索 Golden | **80** | 中英文、改写、多标签、hard negative 与拒答 |
+
+检索 Golden 含 65 条可回答与 15 条拒答，和生成侧 `cases_v1.json` 分开评估；检索命中
+不会改变风险分数或案件结论。聚合结果见 `docs/检索评估.md`，逐案 Bad Case 位于被 Git
+排除的本地评测产物。该裁定仍不代表独立合规专家生产验收。
 
 ## 裁定状态（2026-07-26）
 

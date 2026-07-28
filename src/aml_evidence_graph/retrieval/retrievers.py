@@ -92,15 +92,17 @@ class TfidfDenseEncoder:
 class SentenceTransformerEncoder:
     """Optional local sentence-transformers adapter loaded only when requested."""
 
-    def __init__(self, model_name: str) -> None:
+    def __init__(self, model_name: str, *, revision: str) -> None:
+        if not revision.strip():
+            raise ValueError("SentenceTransformer revision must be an exact non-empty revision.")
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as error:
             raise RuntimeError(
                 "Install the 'retrieval' extra before using sentence-transformers."
             ) from error
-        self.name = f"sentence-transformers:{model_name}"
-        self._model = SentenceTransformer(model_name)
+        self.name = f"sentence-transformers:{model_name}@{revision}"
+        self._model = SentenceTransformer(model_name, revision=revision)
 
     def encode(self, texts: list[str]) -> np.ndarray:
         vectors = self._model.encode(
@@ -207,6 +209,7 @@ class HybridTypologyRetriever:
         reranker: TypologyReranker | None = None,
         rrf_constant: int = 60,
         fetch_limit: int = 20,
+        required_source_prefixes: Sequence[str] = (),
     ) -> None:
         if not retrievers:
             raise ValueError("Hybrid retrieval requires at least one component.")
@@ -217,6 +220,7 @@ class HybridTypologyRetriever:
         self.name = f"hybrid-rrf+{reranker.name}" if reranker is not None else "hybrid-rrf"
         self.rrf_constant = rrf_constant
         self.fetch_limit = fetch_limit
+        self.required_source_prefixes = tuple(required_source_prefixes)
 
     def search(self, query: str, *, limit: int = 3) -> list[ScoredTypologyDocument]:
         _validate_limit(limit)
@@ -232,7 +236,16 @@ class HybridTypologyRetriever:
                     score + 1.0 / (self.rrf_constant + item.rank),
                     [*sources, item.retriever],
                 )
-        ordered = sorted(fused.values(), key=lambda item: (-item[1], item[0].typology_id))
+        eligible = [
+            item
+            for item in fused.values()
+            if not self.required_source_prefixes
+            or all(
+                any(source.startswith(prefix) for source in item[2])
+                for prefix in self.required_source_prefixes
+            )
+        ]
+        ordered = sorted(eligible, key=lambda item: (-item[1], item[0].typology_id))
         candidates = [
             ScoredTypologyDocument(
                 document=document,

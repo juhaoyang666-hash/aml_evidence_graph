@@ -1,0 +1,19 @@
+version: "hybrid-semantic-v1"
+corpus: "knowledge/typologies"
+candidate_limit: 20
+result_limit: 3
+rrf_constant: 60
+bm25:
+  minimum_score: 0.0
+dense:
+  # Fixed before the semantic Golden run; do not tune this value on v2 test judgments.
+  minimum_score: 0.35
+hybrid:
+  # Lexical-only hits cannot bypass the semantic abstention threshold.
+  required_source_prefixes: ["dense:"]
+reranker:
+  type: "lexical_overlap"
+notes:
+  - "Dense encoder is a local multilingual SentenceTransformer pinned by commit."
+  - "Cosine rejection threshold 0.35 was fixed before the semantic v2 evaluation."
+  - "Retrieval is an investigation lead and never changes the risk score."

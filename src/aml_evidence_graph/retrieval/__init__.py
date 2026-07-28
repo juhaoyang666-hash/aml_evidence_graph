@@ -2,8 +2,11 @@
 
 from aml_evidence_graph.retrieval.evaluation import (
     RetrievalCase,
+    RetrievalCaseResult,
     RetrievalEvaluationSummary,
     evaluate_retriever,
+    evaluate_retriever_cases,
+    summarize_retrieval_results,
 )
 from aml_evidence_graph.retrieval.retrievers import (
     BM25TypologyRetriever,
@@ -20,8 +23,11 @@ __all__ = [
     "HybridTypologyRetriever",
     "LexicalOverlapReranker",
     "RetrievalCase",
+    "RetrievalCaseResult",
     "RetrievalEvaluationSummary",
     "SentenceTransformerEncoder",
     "TfidfDenseEncoder",
     "evaluate_retriever",
+    "evaluate_retriever_cases",
+    "summarize_retrieval_results",
 ]
