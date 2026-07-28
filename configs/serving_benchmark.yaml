@@ -1,0 +1,19 @@
+schema_version: "1.0"
+hardware_disclosure: "Windows local development host, 16 logical CPUs; no production traffic."
+sources:
+  - source_id: "mock_health"
+    display_name: "Mock 健康检查"
+    artifact_dir: "artifacts/serving_benchmark_p0_success"
+    required: true
+  - source_id: "mock_draft"
+    display_name: "Mock 调查草稿"
+    artifact_dir: "artifacts/serving_benchmark_mock_draft_p0"
+    required: true
+  - source_id: "frozen_scoring"
+    display_name: "冻结模型评分"
+    artifact_dir: "artifacts/serving_benchmark_frozen_scoring"
+    required: true
+  - source_id: "controlled_agent"
+    display_name: "受控 Agent 查询/恢复"
+    artifact_dir: "artifacts/serving_benchmark_controlled_agent"
+    required: true

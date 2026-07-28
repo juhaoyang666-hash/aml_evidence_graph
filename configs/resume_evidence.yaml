@@ -7,28 +7,34 @@ sources:
     artifact_dir: "artifacts/table_baseline_rules"
     component: "catboost"
     required: true
+    legacy_minimum_test_rows: 1000000
   - source_id: "main_gat"
     display_name: "GAT main line"
     artifact_dir: "artifacts/gat"
     required: true
+    legacy_minimum_test_rows: 1000000
   - source_id: "main_fusion"
     display_name: "CatBoost + GAT OOF fusion"
     artifact_dir: "artifacts/fusion_test_cb_gat"
     required: true
+    legacy_minimum_test_rows: 1000000
   - source_id: "fe_v2_catboost"
     display_name: "FE v2 CatBoost sidecar"
     artifact_dir: "artifacts/table_baseline_fe_v2"
     component: "catboost"
     required: false
+    legacy_minimum_test_rows: 1000000
   - source_id: "fe_v2_gat"
     display_name: "FE v2 GAT sidecar"
     artifact_dir: "artifacts/gat_fe_v2"
     required: false
     pipeline_status: "artifacts/logs/fe_v2_gat_oof_fusion_status.json"
     required_pipeline_state: "complete"
+    legacy_minimum_test_rows: 1000000
   - source_id: "fe_v2_fusion"
     display_name: "FE v2 CatBoost + GAT fusion sidecar"
     artifact_dir: "artifacts/fusion_test_fe_v2"
     required: false
     pipeline_status: "artifacts/logs/fe_v2_gat_oof_fusion_status.json"
     required_pipeline_state: "complete"
+    legacy_minimum_test_rows: 1000000

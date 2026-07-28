@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,6 +19,8 @@ class ResumeEvidenceSourceSpec(BaseModel):
     required: bool = True
     pipeline_status: Path | None = None
     required_pipeline_state: str = "complete"
+    expected_run_purpose: Literal["full"] = "full"
+    legacy_minimum_test_rows: int | None = Field(default=None, ge=1)
 
 
 class ResumeEvidenceSpec(BaseModel):
@@ -36,6 +39,7 @@ class ResumeMetricEvidence(BaseModel):
     display_name: str
     artifact_dir: str
     run_id: str
+    run_purpose: str
     test_pr_auc: float
     test_roc_auc: float | None = None
     alert_budget_metrics: dict[str, object] = Field(default_factory=dict)
@@ -104,6 +108,22 @@ def build_resume_evidence(
         metrics = _load_json(metrics_path)
         manifest = _load_json(manifest_path)
         selected = _selected_test_metrics(metrics, source.component)
+        manifest_purpose = manifest.get("run_purpose")
+        if manifest_purpose is None:
+            sample_count = metrics.get("test_rows") or selected.get("sample_count")
+            if (
+                source.legacy_minimum_test_rows is None
+                or not isinstance(sample_count, int | float)
+                or int(sample_count) < source.legacy_minimum_test_rows
+            ):
+                incomplete.append(f"{source.source_id}:missing_run_purpose")
+                continue
+            run_purpose = "legacy_full_by_row_gate"
+        elif manifest_purpose != source.expected_run_purpose:
+            incomplete.append(f"{source.source_id}:run_purpose_{manifest_purpose}")
+            continue
+        else:
+            run_purpose = str(manifest_purpose)
         pr_auc = selected.get("pr_auc")
         if not isinstance(pr_auc, int | float):
             incomplete.append(f"{source.source_id}:missing_test_pr_auc")
@@ -120,6 +140,7 @@ def build_resume_evidence(
                 display_name=source.display_name,
                 artifact_dir=source.artifact_dir.as_posix(),
                 run_id=run_id,
+                run_purpose=run_purpose,
                 test_pr_auc=float(pr_auc),
                 test_roc_auc=float(roc_auc) if isinstance(roc_auc, int | float) else None,
                 alert_budget_metrics=(
@@ -155,13 +176,14 @@ def render_resume_evidence_markdown(report: ResumeEvidenceReport) -> str:
         "",
         "## Verified model evidence",
         "",
-        "| Model/run | Test PR-AUC | Test ROC-AUC | run_id | Artifact |",
-        "|---|---:|---:|---|---|",
+        "| Model/run | Purpose | Test PR-AUC | Test ROC-AUC | run_id | Artifact |",
+        "|---|---|---:|---:|---|---|",
     ]
     for item in report.evidence:
         roc_auc = f"{item.test_roc_auc:.6f}" if item.test_roc_auc is not None else "—"
         lines.append(
-            f"| {item.display_name} | {item.test_pr_auc:.6f} | {roc_auc} | "
+            f"| {item.display_name} | {item.run_purpose} | {item.test_pr_auc:.6f} | "
+            f"{roc_auc} | "
             f"`{item.run_id}` | `{item.artifact_dir}` |"
         )
     if report.incomplete_sources:

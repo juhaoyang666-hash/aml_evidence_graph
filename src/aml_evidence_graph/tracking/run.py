@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -116,6 +116,7 @@ class RunManifest:
     run_id: str
     created_at_utc: str
     command: str
+    run_purpose: Literal["full", "smoke", "development"]
     random_seed: int
     inputs: dict[str, dict[str, Any]]
     config_fingerprints: dict[str, dict[str, Any]]
@@ -133,18 +134,36 @@ def create_run_manifest(
     input_paths: dict[str, Path],
     config_paths: dict[str, Path] | None = None,
     metadata: dict[str, Any] | None = None,
+    run_purpose: Literal["full", "smoke", "development"] | None = None,
     filename: str = "run_manifest.json",
 ) -> RunManifest:
     """Write an atomic reproducibility manifest beside private run artifacts."""
     if Path(filename).name != filename or not filename.endswith(".json"):
         raise ValueError("Manifest filename must be a JSON basename.")
     now = datetime.now(UTC)
+    if run_purpose is None:
+        inspected_paths = [
+            output_dir,
+            *input_paths.values(),
+            *(config_paths or {}).values(),
+        ]
+        run_purpose = (
+            "smoke"
+            if "smoke" in command.lower()
+            or any(
+                "smoke" in part.lower()
+                for path in inspected_paths
+                for part in path.parts
+            )
+            else "full"
+        )
     run_id = f"{now:%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:10]}"
     manifest = RunManifest(
         schema_version="1.0",
         run_id=run_id,
         created_at_utc=now.isoformat(),
         command=command,
+        run_purpose=run_purpose,
         random_seed=random_seed,
         inputs={name: fingerprint_path(path) for name, path in input_paths.items()},
         config_fingerprints={

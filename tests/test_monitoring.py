@@ -101,7 +101,41 @@ def test_bootstrap_and_manifest_are_aggregate_only(tmp_path: Path) -> None:
 
     assert intervals["pr_auc"]["lower"] <= intervals["pr_auc"]["upper"]
     assert manifest.run_id in rendered
+    assert manifest.run_purpose == "full"
+    assert '"run_purpose": "full"' in rendered
     assert "safe aggregate fixture" not in rendered
+
+
+def test_manifest_infers_smoke_from_scoped_paths(tmp_path: Path) -> None:
+    source = tmp_path / "smoke-input.txt"
+    source.write_text("fixture", encoding="utf-8")
+    output = tmp_path / "smoke-run"
+    output.mkdir()
+
+    manifest = create_run_manifest(
+        output_dir=output,
+        command="test-smoke",
+        random_seed=1,
+        input_paths={"fixture": source},
+    )
+
+    assert manifest.run_purpose == "smoke"
+
+
+def test_manifest_infers_smoke_from_command(tmp_path: Path) -> None:
+    source = tmp_path / "input.txt"
+    source.write_text("fixture", encoding="utf-8")
+    output = tmp_path / "generic-run"
+    output.mkdir()
+
+    manifest = create_run_manifest(
+        output_dir=output,
+        command="aml-train-table --smoke-limit 1000",
+        random_seed=1,
+        input_paths={"fixture": source},
+    )
+
+    assert manifest.run_purpose == "smoke"
 
 
 def test_runtime_measurement_records_process_memory_without_payloads() -> None:

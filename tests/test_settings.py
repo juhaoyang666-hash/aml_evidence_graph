@@ -25,6 +25,7 @@ def test_blank_optional_environment_values_do_not_enable_private_mode() -> None:
         AML_TABLE_MODEL_DIR="",
         AML_GRAPHSAGE_MODEL_PATH="",
         AML_FUSION_DIR="",
+        AML_AGENT_CHECKPOINT_PATH="",
         AML_INTERNAL_API_TOKEN="",
         ECNU_API_KEY="",
     )
@@ -33,6 +34,7 @@ def test_blank_optional_environment_values_do_not_enable_private_mode() -> None:
     assert settings.table_model_dir is None
     assert settings.graphsage_model_path is None
     assert settings.fusion_dir is None
+    assert settings.agent_checkpoint_path is None
     assert settings.internal_api_token is None
     assert settings.ecnu_api_key is None
 
@@ -53,3 +55,4 @@ def test_env_example_loads_with_blank_optional_values() -> None:
     assert settings.feature_root is None
     assert settings.internal_api_token is None
     assert settings.llm_input_cost_per_million_tokens_usd is None
+    assert settings.agent_checkpoint_path is None

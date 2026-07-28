@@ -33,6 +33,10 @@ class Settings(BaseSettings):
         validation_alias="AML_GRAPHSAGE_MODEL_PATH",
     )
     fusion_dir: Path | None = Field(default=None, validation_alias="AML_FUSION_DIR")
+    agent_checkpoint_path: Path | None = Field(
+        default=None,
+        validation_alias="AML_AGENT_CHECKPOINT_PATH",
+    )
     graphsage_device: str = Field(default="auto", validation_alias="AML_GRAPHSAGE_DEVICE")
     alert_threshold: float = Field(default=0.5, validation_alias="AML_ALERT_THRESHOLD")
     model_version: str = Field(default="unconfigured", validation_alias="AML_MODEL_VERSION")
@@ -73,6 +77,7 @@ class Settings(BaseSettings):
         "table_model_dir",
         "graphsage_model_path",
         "fusion_dir",
+        "agent_checkpoint_path",
         "internal_api_token",
         "llm_api_key",
         "ecnu_api_key",

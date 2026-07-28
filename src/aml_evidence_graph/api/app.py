@@ -9,7 +9,8 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, ConfigDict
+from langgraph.checkpoint.memory import InMemorySaver
+from pydantic import BaseModel, ConfigDict, Field
 
 from aml_evidence_graph.api.private_scoring import PrivateFeaturePartitionScoringService
 from aml_evidence_graph.api.services import (
@@ -28,7 +29,15 @@ from aml_evidence_graph.evidence.typology import (
     load_typology_documents,
 )
 from aml_evidence_graph.investigation.llm import ECNUAnnotationClient, EvidenceAnnotationClient
+from aml_evidence_graph.investigation.tools import InvestigationToolRegistry
 from aml_evidence_graph.investigation.workflow import run_investigation
+from aml_evidence_graph.investigation.workflow_v2 import (
+    HumanReviewDecision,
+    build_controlled_investigation_graph,
+    create_sqlite_checkpointer,
+    resume_controlled_investigation,
+    start_controlled_investigation,
+)
 from aml_evidence_graph.settings import Settings
 
 DEMO_HTML = """
@@ -138,6 +147,53 @@ class ReviewRequest(BaseModel):
     note: str | None = None
 
 
+class ControlledInvestigationStartRequest(BaseModel):
+    """Optional caller-supplied thread id for a resumable controlled investigation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    thread_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+def _thread_config(thread_id: str) -> dict[str, dict[str, str]]:
+    return {"configurable": {"thread_id": thread_id}}
+
+
+def _interrupt_values(
+    *,
+    state: dict[str, object] | None = None,
+    snapshot: object = None,
+) -> list[object]:
+    values: list[object] = []
+    if state is not None:
+        for item in state.get("__interrupt__", []):
+            values.append(getattr(item, "value", item))
+    if snapshot is not None:
+        for task in getattr(snapshot, "tasks", ()):
+            for item in getattr(task, "interrupts", ()):
+                values.append(getattr(item, "value", item))
+    return values
+
+
+def _controlled_api_response(
+    thread_id: str,
+    state: dict[str, object],
+    *,
+    interrupts: list[object],
+) -> dict[str, object]:
+    final_status = state.get("final_status")
+    status = "completed" if final_status else "awaiting_human_review" if interrupts else "running"
+    return {
+        "thread_id": thread_id,
+        "status": status,
+        "final_status": final_status,
+        "report": state.get("report"),
+        "tool_calls": state.get("tool_calls", []),
+        "audit_events": state.get("audit_events", []),
+        "review_prompt": interrupts[0] if interrupts else None,
+    }
+
+
 def create_app(
     retriever: LocalBM25TypologyRetriever,
     *,
@@ -146,6 +202,7 @@ def create_app(
     scoring_service: PartitionScoringService | None = None,
     review_store: ReviewStore | None = None,
     internal_api_token: str | None = None,
+    controlled_checkpointer: object | None = None,
 ) -> FastAPI:
     """Create an API bound to a local corpus; LLM use is annotation-only."""
     app = FastAPI(
@@ -162,6 +219,13 @@ def create_app(
     store.put(mock_evidence)
     scorer = scoring_service or MockPartitionScoringService(store, mock_evidence)
     reviews = review_store or InMemoryReviewStore()
+    checkpointer = controlled_checkpointer or InMemorySaver()
+    controlled_graph = build_controlled_investigation_graph(
+        InvestigationToolRegistry(retriever),
+        retriever=retriever,
+        annotator=annotator,
+        checkpointer=checkpointer,
+    )
     if isinstance(scorer, PrivateFeaturePartitionScoringService) and internal_api_token is None:
         raise ValueError("Private feature scoring requires an internal API token.")
 
@@ -268,6 +332,73 @@ def create_app(
             "model_update": "not_triggered",
         }
 
+    @app.post(
+        "/v1/controlled-investigations/{alert_id}",
+        dependencies=[Depends(require_internal_token)],
+    )
+    def start_controlled_case(
+        alert_id: str,
+        request: ControlledInvestigationStartRequest,
+    ) -> dict[str, object]:
+        evidence = store.get(alert_id)
+        if evidence is None:
+            raise HTTPException(status_code=404, detail="Unknown alert reference.")
+        thread_id = request.thread_id or f"investigation-{uuid.uuid4().hex}"
+        snapshot = controlled_graph.get_state(_thread_config(thread_id))
+        if snapshot.values:
+            raise HTTPException(status_code=409, detail="Investigation thread already exists.")
+        state = start_controlled_investigation(
+            controlled_graph,
+            evidence,
+            thread_id=thread_id,
+        )
+        return _controlled_api_response(
+            thread_id,
+            state,
+            interrupts=_interrupt_values(state=state),
+        )
+
+    @app.get(
+        "/v1/controlled-investigations/{thread_id}",
+        dependencies=[Depends(require_internal_token)],
+    )
+    def get_controlled_case(thread_id: str) -> dict[str, object]:
+        snapshot = controlled_graph.get_state(_thread_config(thread_id))
+        if not snapshot.values:
+            raise HTTPException(status_code=404, detail="Unknown investigation thread.")
+        state = dict(snapshot.values)
+        return _controlled_api_response(
+            thread_id,
+            state,
+            interrupts=_interrupt_values(snapshot=snapshot),
+        )
+
+    @app.post(
+        "/v1/controlled-investigations/{thread_id}/review",
+        dependencies=[Depends(require_internal_token)],
+    )
+    def review_controlled_case(
+        thread_id: str,
+        decision: HumanReviewDecision,
+    ) -> dict[str, object]:
+        snapshot = controlled_graph.get_state(_thread_config(thread_id))
+        if not snapshot.values:
+            raise HTTPException(status_code=404, detail="Unknown investigation thread.")
+        if snapshot.values.get("final_status") is not None:
+            raise HTTPException(status_code=409, detail="Investigation thread is already final.")
+        if not _interrupt_values(snapshot=snapshot):
+            raise HTTPException(status_code=409, detail="Investigation is not awaiting review.")
+        state = resume_controlled_investigation(
+            controlled_graph,
+            decision,
+            thread_id=thread_id,
+        )
+        return _controlled_api_response(
+            thread_id,
+            state,
+            interrupts=_interrupt_values(state=state),
+        )
+
     return app
 
 
@@ -278,6 +409,11 @@ def create_default_app() -> FastAPI:
         load_typology_documents(settings.typology_root)
     )
     annotator = ECNUAnnotationClient.from_settings(settings) if settings.llm_enabled else None
+    controlled_checkpointer = (
+        create_sqlite_checkpointer(settings.agent_checkpoint_path)
+        if settings.agent_checkpoint_path is not None
+        else None
+    )
     if (settings.feature_root is None) != (settings.table_model_dir is None):
         raise RuntimeError(
             "AML_FEATURE_ROOT and AML_TABLE_MODEL_DIR must be configured together."
@@ -291,6 +427,7 @@ def create_default_app() -> FastAPI:
                 if settings.internal_api_token is not None
                 else None
             ),
+            controlled_checkpointer=controlled_checkpointer,
         )
     internal_api_token = settings.require_internal_api_token()
     model_version = settings.require_model_version()
@@ -311,6 +448,7 @@ def create_default_app() -> FastAPI:
         evidence_store=store,
         scoring_service=scorer,
         internal_api_token=internal_api_token,
+        controlled_checkpointer=controlled_checkpointer,
     )
 
 
