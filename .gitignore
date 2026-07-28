@@ -25,4 +25,5 @@ coverage.xml
 .pip_target/
 .pip_wheels/
 /logs/
+/mlruns/
 scripts_local_env.sh

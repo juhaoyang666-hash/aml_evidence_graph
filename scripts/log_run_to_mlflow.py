@@ -13,11 +13,17 @@ def main() -> int:
     parser.add_argument("artifact_dir", type=Path)
     parser.add_argument("--experiment", default="aml-evidence-graph")
     parser.add_argument("--tracking-uri", default="sqlite:///artifacts/mlflow.db")
+    parser.add_argument(
+        "--pipeline-status",
+        type=Path,
+        help="Required for completed legacy manifests without run_purpose=full.",
+    )
     args = parser.parse_args()
     run_id = log_completed_run(
         args.artifact_dir,
         experiment_name=args.experiment,
         tracking_uri=args.tracking_uri,
+        pipeline_status=args.pipeline_status,
     )
     print(f"MLflow run: {run_id}")
     return 0

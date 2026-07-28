@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any
+
+
+def _safe_metric_name(name: str) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9_.\-/ ]", "_", name.replace("%", "pct"))
+    if len(sanitized) <= 240:
+        return sanitized
+    digest = hashlib.sha256(sanitized.encode("utf-8")).hexdigest()[:12]
+    return f"{sanitized[:227]}_{digest}"
 
 
 def flatten_numeric_metrics(
@@ -20,7 +30,7 @@ def flatten_numeric_metrics(
         elif isinstance(value, int | float) and not isinstance(value, bool):
             number = float(value)
             if number == number and abs(number) != float("inf"):
-                flattened[name] = number
+                flattened[_safe_metric_name(name)] = number
     return flattened
 
 
@@ -36,6 +46,8 @@ def log_completed_run(
     *,
     experiment_name: str,
     tracking_uri: str,
+    pipeline_status: Path | None = None,
+    required_pipeline_state: str = "complete",
 ) -> str:
     """Mirror a completed run into MLflow without logging private input rows."""
     manifest_path = artifact_dir / "run_manifest.json"
@@ -44,6 +56,19 @@ def log_completed_run(
         raise FileNotFoundError("Both run_manifest.json and metrics.json are required.")
     manifest = _load_object(manifest_path)
     metrics = _load_object(metrics_path)
+    if pipeline_status is not None:
+        if not pipeline_status.is_file():
+            raise FileNotFoundError(f"Pipeline status does not exist: {pipeline_status}")
+        status = _load_object(pipeline_status)
+        if status.get("current_state") != required_pipeline_state:
+            raise ValueError(
+                "Pipeline is not complete: "
+                f"expected {required_pipeline_state!r}, got {status.get('current_state')!r}."
+            )
+    elif manifest.get("run_purpose") != "full":
+        raise ValueError(
+            "A full run_purpose or an explicit completed pipeline status is required."
+        )
     run_id = manifest.get("run_id")
     if not isinstance(run_id, str) or not run_id:
         raise ValueError("run_manifest.json has no valid run_id.")
@@ -54,6 +79,22 @@ def log_completed_run(
 
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(experiment_name)
+    experiment = mlflow.get_experiment_by_name(experiment_name)
+    if experiment is None:
+        raise RuntimeError("MLflow experiment creation failed.")
+    existing = mlflow.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        filter_string=(
+            f"tags.source_run_id = '{run_id}' AND attributes.status = 'FINISHED'"
+        ),
+        max_results=1,
+    )
+    if not existing.empty:
+        existing_run_id = str(existing.iloc[0]["run_id"])
+        mlflow.MlflowClient().set_tag(
+            existing_run_id, "source_artifact_name", artifact_dir.name
+        )
+        return existing_run_id
     with mlflow.start_run(run_name=run_id) as active_run:
         mlflow.log_params(
             {
@@ -61,6 +102,16 @@ def log_completed_run(
                 "source_revision": manifest.get("source_revision") or "unknown",
                 "random_seed": manifest.get("random_seed", "unknown"),
                 "schema_version": manifest.get("schema_version", "unknown"),
+            }
+        )
+        mlflow.set_tags(
+            {
+                "source_run_id": run_id,
+                "source_artifact_kind": "aggregate_only",
+                "source_artifact_name": artifact_dir.name,
+                "source_revision": manifest.get("source_revision") or "unknown",
+                "pipeline_state": required_pipeline_state,
+                "candidate_selection_scope": "validation_only",
             }
         )
         numeric = flatten_numeric_metrics(metrics)
@@ -79,7 +130,7 @@ def candidate_gate(
     minimum_relative_gain: float = 0.0,
 ) -> tuple[bool, str]:
     """Gate only on caller-supplied validation metrics; test metrics are not accepted."""
-    if metric.startswith("test"):
+    if "test" in metric.lower():
         raise ValueError("Candidate selection must not use test metrics.")
     candidate_value: Any = candidate.get(metric)
     incumbent_value: Any = incumbent.get(metric)

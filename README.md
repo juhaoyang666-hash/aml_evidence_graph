@@ -48,6 +48,7 @@
 | [检索评估.md](docs/检索评估.md) | 80 条 Typology 检索 Golden、分组指标与 Bad Case 边界 |
 | [Agent调查评估.md](docs/Agent调查评估.md) | 60 案受控 Agent 路由、工具、审核、恢复与延迟评测 |
 | [服务性能基准.md](docs/服务性能基准.md) | 本机 API/Agent 聚合压测结果与未完成项（非生产 SLA） |
+| [实验追踪.md](docs/实验追踪.md) | FE v2 本地 MLflow 聚合追踪、失败 run 与 candidate 边界 |
 | [环境配置.md](docs/环境配置.md) | conda `risk`、GPU、ECNU LLM |
 | [规则基线.md](docs/规则基线.md) | 规则 v2026.2 定阈说明 |
 | [大模型调查系统.md](docs/大模型调查系统.md) | LLM 调查边界、实现、Golden 与后续缺口 |
