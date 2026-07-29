@@ -35,6 +35,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--requests", type=int, default=100)
     parser.add_argument("--concurrency", type=int, default=5)
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument(
+        "--trust-env",
+        action="store_true",
+        help="Honor HTTP(S)_PROXY and related environment settings (disabled by default).",
+    )
     parser.add_argument("--output", type=Path, default=Path("artifacts/serving_benchmark"))
     return parser.parse_args()
 
@@ -62,6 +67,7 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         base_url=args.base_url,
         timeout=args.timeout,
         headers=headers,
+        trust_env=args.trust_env,
     ) as client:
 
         async def one_request() -> None:
@@ -96,6 +102,7 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "method": args.method,
         "concurrency": args.concurrency,
         "timeout_seconds": args.timeout,
+        "trust_env": args.trust_env,
         "summary": asdict(summary),
         "client_environment": {
             "platform": platform.platform(),

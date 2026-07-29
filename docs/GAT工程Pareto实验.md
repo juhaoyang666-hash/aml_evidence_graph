@@ -42,15 +42,55 @@ test metric。
 
 ## 冻结测试
 
-最终 `window_60d` checkpoint 的唯一一次冻结测试结果待本机回放完成后写入。回放直接加载
-验证期保存的 checkpoint，不重新训练、不比较其他候选测试指标。
+最终 `window_60d` checkpoint 直接加载验证期保存的权重，不重新训练；其他候选没有读取
+test。冻结测试共 `1,558,821` 行、`1,813` 个正例：
+
+| 模型 | Test PR-AUC | ROC-AUC | 0.1% budget Precision / Recall |
+|---|---:|---:|---:|
+| 30d 历史 GAT v1 | 0.948333 | 0.999777 | 0.9743 / 0.8378 |
+| **60d 验证优选 GAT** | **0.952060** | **0.999778** | **0.9808 / 0.8434** |
+
+60d 的测试 PR-AUC 点差为 `+0.003727`。200 次同交易配对分层 Bootstrap 的 95% CI 为
+`[-0.001470, +0.009151]`，跨 0，不支持显著提升。60d 模型继续作为 sidecar，不替换
+已发布的 30d GAT v1 主排序器。
+
+端到端冻结回放耗时 `1812.35 s`：其中必要历史和测试快照物化 `1750.67 s`，测试推理
+`47.03 s`；进程 RSS 峰值约 `10.32 GiB`，GPU allocated 峰值 `227.3 MiB`。瓶颈是逐日
+物化 60 天历史边数组，不是 GAT forward；这是后续流式快照优化项。
+
+## 风险切片
+
+度数阈值只用训练期、无标签的非零历史度数 q25=`21`、q75=`42` 确定；切片不参与选模。
+
+| 测试切片 | 样本 / 正例 | PR-AUC |
+|---|---:|---:|
+| 任一端点为训练期新账户 | 773,154 / 138 | 0.7915 |
+| 两端点均在训练期出现 | 785,667 / 1,675 | 0.9863 |
+| 低度非零（≤21） | 110,345 / 89 | 0.6070 |
+| 中度（22–42） | 430,316 / 886 | 0.9470 |
+| 高度（>42） | 1,017,564 / 838 | 0.9936 |
+| 跨境 | 152,783 / 592 | 0.9757 |
+| 换汇 | 177,547 / 706 | 0.9756 |
+
+测试期完全零历史度数只有 596 行且无正例，不能计算 PR-AUC。主要弱点集中在低度和新账户，
+而不是跨境/换汇交易。Typology 中 Smurfing (`0.6627`) 和 Behavioural Change 1
+(`0.6474`) 也明显弱于总体，需在后续特征族消融和新账户建模中重点检查。
+
+## 运行中的特征族消融
+
+60d 固定配置正在做四个 leave-one-family-out 验证集实验：金额、sender/receiver 时间窗口
+行为、relationship 和 graph 节点统计。金额特征与时间窗口行为中的 amount sum 存在语义
+重叠，因此结果是工程敏感性分析，不解释为互斥贡献或 Shapley 归因。四个候选均不读取 test。
 
 ## 产物与复现
 
 - 候选入口：`scripts/run_gat_validation_candidate.py`
 - 两路调度：`scripts/run_gat_pareto.sh`
+- 特征族调度：`scripts/run_gat_feature_ablation.sh`
 - 验证汇总：`scripts/summarize_gat_pareto.py`
 - 冻结测试：`scripts/evaluate_frozen_graph_checkpoint.py`
+- 风险切片：`scripts/evaluate_gat_risk_slices.py`
 - 私有聚合产物：`artifacts/gat_pareto_summary.json`
+- 冻结测试私有聚合：`artifacts/gat_pareto_selected_test/{metrics.json,paired_vs_gat30d.json,risk_slices.json}`
 
 这些指标是本机离线实验，不是生产在线 SLA；模型未接触真实金融数据。

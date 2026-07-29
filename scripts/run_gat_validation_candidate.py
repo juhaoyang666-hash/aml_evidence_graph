@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.data.splits import TimeSplit
 from aml_evidence_graph.evaluation.metrics import evaluate_binary_risk_scores
 from aml_evidence_graph.evaluation.monitoring import measure_runtime
@@ -51,8 +52,40 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--num-neighbors", type=int, nargs="+", required=True)
     parser.add_argument("--history-window-days", type=int, required=True)
+    parser.add_argument(
+        "--exclude-feature-family",
+        action="append",
+        choices=("amount", "temporal_behavior", "relationship", "node_stats"),
+        default=[],
+        help="Repeat to remove pre-declared feature families before fitting.",
+    )
     parser.add_argument("--random-seed", type=int, default=20260722)
     return parser.parse_args()
+
+
+def _exclude_feature_families(
+    columns: tuple[str, ...], families: list[str]
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    predicates = {
+        "amount": lambda column: column == CANONICAL.amount or "_amount_" in column,
+        "temporal_behavior": lambda column: column.startswith(
+            ("sender_outgoing_", "receiver_incoming_")
+        ),
+        "relationship": lambda column: column.startswith("relationship_"),
+        "node_stats": lambda column: column.startswith("graph_"),
+    }
+    excluded = tuple(
+        column
+        for column in columns
+        if any(predicates[family](column) for family in families)
+    )
+    for family in families:
+        if not any(predicates[family](column) for column in columns):
+            raise ValueError(f"Feature family has no matching columns: {family}")
+    retained = tuple(column for column in columns if column not in set(excluded))
+    if not retained:
+        raise ValueError("Feature-family exclusions removed every graph edge feature.")
+    return retained, excluded
 
 
 def main() -> None:
@@ -84,7 +117,10 @@ def main() -> None:
             load_feature_split(args.features, TimeSplit.VALIDATION),
         )
     )
-    edge_feature_columns = select_graph_edge_features(training)
+    all_edge_feature_columns = select_graph_edge_features(training)
+    edge_feature_columns, excluded_feature_columns = _exclude_feature_families(
+        all_edge_feature_columns, args.exclude_feature_family
+    )
     node_indexer = TemporalNodeIndexer().fit(training)
 
     def build_snapshots() -> tuple[object, object, object]:
@@ -153,6 +189,8 @@ def main() -> None:
         "model_config": str(args.model_config),
         "configuration": asdict(configuration),
         "edge_feature_columns": list(edge_feature_columns),
+        "excluded_feature_families": args.exclude_feature_family,
+        "excluded_feature_columns": list(excluded_feature_columns),
         "num_nodes": node_indexer.num_nodes,
         "training_snapshot_count": len(training_snapshots),
         "validation_snapshot_count": len(validation_snapshots),
