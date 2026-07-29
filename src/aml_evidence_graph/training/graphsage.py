@@ -259,30 +259,45 @@ def predict_graphsage(
     num_nodes: int,
 ) -> np.ndarray:
     """Score every supplied edge exactly once; no test-period edge is resampled."""
-    inference_model = _wrap_for_devices(trained.model, trained.device_ids)
-    inference_model.eval()
-    probabilities: list[np.ndarray] = []
-    for snapshot in snapshots:
-        loader = _make_loader(
-            snapshot,
-            num_nodes=num_nodes,
-            config=trained.config,
-            shuffle=False,
-            batch_size=_effective_batch_size(trained.config, trained.device_ids),
-        )
-        snapshot_scores = np.empty(len(snapshot.labels), dtype=np.float64)
-        edge_features = torch.from_numpy(snapshot.edge_features).float()
-        for batch in loader:
-            input_ids = batch.input_id.detach().cpu().numpy()
-            logits, _ = _batch_logits(
-                inference_model,
-                batch,
-                edge_features,
-                device=trained.device,
+    rng_devices = list(trained.device_ids)
+    if trained.device.type == "cuda" and not rng_devices:
+        rng_devices = [
+            trained.device.index
+            if trained.device.index is not None
+            else torch.cuda.current_device()
+        ]
+    with torch.random.fork_rng(devices=rng_devices):
+        torch.manual_seed(trained.config.random_seed)
+        if trained.device.type == "cuda":
+            torch.cuda.manual_seed_all(trained.config.random_seed)
+        inference_model = _wrap_for_devices(trained.model, trained.device_ids)
+        inference_model.eval()
+        probabilities: list[np.ndarray] = []
+        for snapshot in snapshots:
+            loader = _make_loader(
+                snapshot,
+                num_nodes=num_nodes,
+                config=trained.config,
+                shuffle=False,
+                batch_size=_effective_batch_size(trained.config, trained.device_ids),
             )
-            snapshot_scores[input_ids] = torch.sigmoid(logits).detach().cpu().numpy()
-        probabilities.append(snapshot_scores)
-    return np.concatenate(probabilities) if probabilities else np.empty(0, dtype=np.float64)
+            snapshot_scores = np.empty(len(snapshot.labels), dtype=np.float64)
+            edge_features = torch.from_numpy(snapshot.edge_features).float()
+            for batch in loader:
+                input_ids = batch.input_id.detach().cpu().numpy()
+                logits, _ = _batch_logits(
+                    inference_model,
+                    batch,
+                    edge_features,
+                    device=trained.device,
+                )
+                snapshot_scores[input_ids] = torch.sigmoid(logits).detach().cpu().numpy()
+            probabilities.append(snapshot_scores)
+        return (
+            np.concatenate(probabilities)
+            if probabilities
+            else np.empty(0, dtype=np.float64)
+        )
 
 
 def fit_graphsage(

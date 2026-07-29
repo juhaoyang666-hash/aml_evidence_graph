@@ -53,7 +53,7 @@ sources:
     component: "catboost"
     required: true
     pipeline_status: "artifacts/logs/fe_v2_gat_oof_fusion_status.json"
-    required_pipeline_state: "complete"
+    required_pipeline_state: "ok"
     legacy_minimum_test_rows: 1000000
     score_path: "artifacts/table_baseline_fe_v2/scores/table_test_scores.parquet"
     score_column: "catboost"
@@ -66,7 +66,7 @@ sources:
     artifact_dir: "artifacts/gat_fe_v2"
     required: true
     pipeline_status: "artifacts/logs/fe_v2_gat_oof_fusion_status.json"
-    required_pipeline_state: "complete"
+    required_pipeline_state: "ok"
     legacy_minimum_test_rows: 1000000
     score_path: "artifacts/gat_fe_v2/scores/graphsage_test_scores.parquet"
     score_column: "graphsage"
@@ -79,7 +79,7 @@ sources:
     artifact_dir: "artifacts/fusion_test_fe_v2"
     required: true
     pipeline_status: "artifacts/logs/fe_v2_gat_oof_fusion_status.json"
-    required_pipeline_state: "complete"
+    required_pipeline_state: "ok"
     legacy_minimum_test_rows: 1000000
     score_path: "artifacts/fusion_test_fe_v2/test_fusion_scores.parquet"
     score_column: "fusion_calibrated_probability"

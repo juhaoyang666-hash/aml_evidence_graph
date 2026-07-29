@@ -295,6 +295,80 @@ def bootstrap_ranking_intervals(
     return {"pr_auc": interval(pr_auc_values), "roc_auc": interval(roc_auc_values)}
 
 
+def paired_bootstrap_ranking_differences(
+    y_true: Iterable[int],
+    candidate_probabilities: Iterable[float],
+    baseline_probabilities: Iterable[float],
+    *,
+    iterations: int = 200,
+    random_seed: int = 20260722,
+    confidence: float = 0.95,
+) -> dict[str, dict[str, float | int]]:
+    """Paired stratified bootstrap intervals for candidate-minus-baseline metrics."""
+    labels = np.asarray(list(y_true), dtype=int)
+    candidate = np.asarray(list(candidate_probabilities), dtype=float)
+    baseline = np.asarray(list(baseline_probabilities), dtype=float)
+    if len(labels) == 0 or len(candidate) != len(labels) or len(baseline) != len(labels):
+        raise ValueError("Labels and both score arrays must be non-empty and aligned.")
+    if not np.isfinite(candidate).all() or not np.isfinite(baseline).all():
+        raise ValueError("Candidate and baseline scores must be finite.")
+    positive_indices = np.flatnonzero(labels == 1)
+    negative_indices = np.flatnonzero(labels == 0)
+    if not len(positive_indices) or not len(negative_indices):
+        raise ValueError("Bootstrap requires both label classes.")
+    if iterations < 20:
+        raise ValueError("Use at least 20 bootstrap iterations.")
+    if not 0 < confidence < 1:
+        raise ValueError("confidence must be in (0, 1).")
+    generator = np.random.default_rng(random_seed)
+    pr_auc_differences: list[float] = []
+    roc_auc_differences: list[float] = []
+    for _ in range(iterations):
+        sampled = np.concatenate(
+            [
+                generator.choice(positive_indices, size=len(positive_indices), replace=True),
+                generator.choice(negative_indices, size=len(negative_indices), replace=True),
+            ]
+        )
+        sampled_labels = labels[sampled]
+        pr_auc_differences.append(
+            float(
+                average_precision_score(sampled_labels, candidate[sampled])
+                - average_precision_score(sampled_labels, baseline[sampled])
+            )
+        )
+        roc_auc_differences.append(
+            float(
+                roc_auc_score(sampled_labels, candidate[sampled])
+                - roc_auc_score(sampled_labels, baseline[sampled])
+            )
+        )
+    alpha = (1 - confidence) / 2
+
+    def interval(values: list[float], point_estimate: float) -> dict[str, float | int]:
+        return {
+            "iterations": iterations,
+            "point_estimate": point_estimate,
+            "bootstrap_mean": float(np.mean(values)),
+            "lower": float(np.quantile(values, alpha)),
+            "upper": float(np.quantile(values, 1 - alpha)),
+        }
+
+    return {
+        "pr_auc_difference": interval(
+            pr_auc_differences,
+            float(
+                average_precision_score(labels, candidate)
+                - average_precision_score(labels, baseline)
+            ),
+        ),
+        "roc_auc_difference": interval(
+            roc_auc_differences,
+            float(roc_auc_score(labels, candidate) - roc_auc_score(labels, baseline)),
+        ),
+    }
+
+
 def measure_runtime(function: Callable[[], T]) -> tuple[T, dict[str, float]]:
     """Measure wall time, Python heap, and sampled process RSS for an operation."""
     tracemalloc.start()

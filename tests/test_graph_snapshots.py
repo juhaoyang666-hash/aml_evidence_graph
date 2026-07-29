@@ -3,7 +3,10 @@ import polars as pl
 import torch
 
 from aml_evidence_graph.data.contract import CANONICAL
-from aml_evidence_graph.graph.explain import extract_graph_edge_evidence
+from aml_evidence_graph.graph.explain import (
+    build_historical_evidence_index,
+    extract_graph_edge_evidence,
+)
 from aml_evidence_graph.graph.snapshots import (
     DailyGraphSnapshotBuilder,
     TemporalNodeIndexer,
@@ -70,8 +73,14 @@ def test_daily_graph_snapshots_use_only_prior_days_and_score_edges() -> None:
 
     assert logits.shape == (1,)
     evidence = extract_graph_edge_evidence(snapshots[1], scoring_edge_position=0)
+    indexed_evidence = extract_graph_edge_evidence(
+        snapshots[1],
+        scoring_edge_position=0,
+        history_index=build_historical_evidence_index(snapshots[1]),
+    )
     assert evidence.historical_source_out_degree == 1
     assert evidence.prior_directed_edge_count == 1
+    assert indexed_evidence == evidence
 
 
 def test_scoring_snapshots_do_not_require_labels() -> None:
@@ -175,6 +184,12 @@ def test_graphsage_training_uses_neighbor_loader_and_scores_all_validation_edges
         validation_snapshots,
         num_nodes=indexer.num_nodes,
     )
+    repeated_scores = predict_graphsage(
+        trained,
+        validation_snapshots,
+        num_nodes=indexer.num_nodes,
+    )
 
     assert len(scores) == 2
     assert np.isfinite(scores).all()
+    np.testing.assert_array_equal(repeated_scores, scores)

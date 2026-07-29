@@ -4,6 +4,30 @@
 > 状态：sidecar 对照实验，不替换主线
 > 标签：`Is_laundering` / `FXQBS` 为已确认案件标签
 
+## Linux 权威历史产物补充（2026-07-28）
+
+Linux 机器保留了历史 v1 GAT checkpoint、验证/测试逐交易分数和 3 折 OOF，
+因此另外完成了 `CatBoost FE v2 + 历史 GAT v1` 的同样本融合。该结果比本文
+后续的 Windows 本地重训版更接近项目原主线产物，但两组结果都必须披露。
+
+| 模型 | 测试 PR-AUC | 0.1% 预算找到正例 |
+|---|---:|---:|
+| 历史 GAT v1 | 0.94833 | 1,519 |
+| **CatBoost FE v2 + 历史 GAT v1** | **0.95761** | **1,536** |
+
+融合相对历史 GAT 的 PR-AUC 差值为 `+0.00928`；200 次同样本、分层、配对
+Bootstrap 的 95% 区间为 `[+0.00357, +0.01621]`，本次区间不跨 0。融合自身
+PR-AUC 的 95% 区间为 `[0.95047, 0.96412]`。0.5% / 1% 预算下融合也分别
+多找到 10 / 7 个正例。
+
+本结果支持将该融合作为新的主线候选，但在第二随机种子完成、自动证据
+门禁和文档一致性校验之前，仍保持 sidecar，不直接覆盖 README 主线数字。
+权威补充产物为：
+
+- `artifacts/fusion_catboost_fe_v2_gat_v1`
+- `artifacts/fusion_test_catboost_fe_v2_gat_v1`
+- `artifacts/fusion_test_catboost_fe_v2_gat_v1_bootstrap/paired_vs_gat.json`
+
 ## 结论
 
 `CatBoost FE v2 + GAT v1` 的冻结测试 PR-AUC 为 **0.95048**。它明显高于

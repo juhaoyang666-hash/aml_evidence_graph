@@ -9,6 +9,7 @@ from aml_evidence_graph.evaluation.monitoring import (
     measure_runtime,
     monthly_stability_report,
     new_account_slice_report,
+    paired_bootstrap_ranking_differences,
     paired_categorical_slice_report,
     typology_slice_report,
 )
@@ -104,6 +105,18 @@ def test_bootstrap_and_manifest_are_aggregate_only(tmp_path: Path) -> None:
     assert manifest.run_purpose == "full"
     assert '"run_purpose": "full"' in rendered
     assert "safe aggregate fixture" not in rendered
+
+
+def test_paired_bootstrap_reports_candidate_minus_baseline() -> None:
+    report = paired_bootstrap_ranking_differences(
+        [0, 0, 0, 1, 1, 1],
+        [0.1, 0.2, 0.3, 0.7, 0.8, 0.9],
+        [0.1, 0.5, 0.4, 0.3, 0.8, 0.7],
+        iterations=20,
+    )
+
+    assert report["pr_auc_difference"]["point_estimate"] > 0
+    assert report["pr_auc_difference"]["iterations"] == 20
 
 
 def test_manifest_infers_smoke_from_scoped_paths(tmp_path: Path) -> None:

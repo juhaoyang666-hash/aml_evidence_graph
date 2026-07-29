@@ -8,6 +8,7 @@ import torch
 from aml_evidence_graph.api.private_scoring import PrivateFeaturePartitionScoringService
 from aml_evidence_graph.api.services import InMemoryEvidenceStore
 from aml_evidence_graph.graph.snapshots import DailyGraphSnapshotBuilder, TemporalNodeIndexer
+from aml_evidence_graph.models.edge_classifiers import GATEdgeClassifier, build_edge_classifier
 from aml_evidence_graph.models.graph_loading import load_graphsage_artifact
 from aml_evidence_graph.models.graphsage import GraphSAGEEdgeClassifier
 from aml_evidence_graph.models.loading import load_table_model_artifacts
@@ -188,6 +189,78 @@ def test_persisted_graphsage_artifact_can_score_label_free_snapshots(tmp_path: P
     assert len(scores) == 2
     assert np.isfinite(scores).all()
     assert ((scores >= 0) & (scores <= 1)).all()
+
+
+def test_persisted_gat_artifact_loads_saved_architecture(tmp_path: Path) -> None:
+    frame = pl.DataFrame(
+        {
+            "transaction_id": ["one", "two"],
+            "event_ts": pl.Series(
+                ["2023-07-01T00:00:00Z", "2023-07-02T00:00:00Z"]
+            ).str.to_datetime(time_zone="UTC"),
+            "sender_account_id": ["a", "b"],
+            "receiver_account_id": ["b", "a"],
+            "source_row_number": [1, 2],
+            "amount": [10.0, 20.0],
+        }
+    )
+    indexer = TemporalNodeIndexer(unknown_hash_buckets=8).fit(frame)
+    config = GraphSAGETrainingConfig(
+        architecture="gat",
+        hidden_dim=8,
+        num_layers=1,
+        num_neighbors=(2,),
+        batch_size=2,
+        device="cpu",
+    )
+    model = build_edge_classifier(
+        config.architecture,
+        num_nodes=indexer.num_nodes,
+        edge_feature_dim=1,
+        hidden_dim=config.hidden_dim,
+        num_layers=config.num_layers,
+        dropout=config.dropout,
+    )
+    artifact_path = tmp_path / "gat.pt"
+    torch.save(
+        {
+            "state_dict": model.state_dict(),
+            "config": {
+                "architecture": config.architecture,
+                "hidden_dim": config.hidden_dim,
+                "num_layers": config.num_layers,
+                "num_neighbors": config.num_neighbors,
+                "batch_size": config.batch_size,
+                "epochs": config.epochs,
+                "learning_rate": config.learning_rate,
+                "dropout": config.dropout,
+                "patience": config.patience,
+                "history_window_days": config.history_window_days,
+                "device": config.device,
+                "max_gpus": config.max_gpus,
+                "random_seed": config.random_seed,
+                "num_relations": config.num_relations,
+            },
+            "edge_feature_columns": ("amount",),
+            "scaler_mean": np.array([0.0]),
+            "scaler_scale": np.array([1.0]),
+            "known_node_index": indexer._known_nodes,
+            "unknown_hash_buckets": indexer.unknown_hash_buckets,
+        },
+        artifact_path,
+    )
+    snapshots = DailyGraphSnapshotBuilder(
+        indexer,
+        edge_feature_columns=("amount",),
+    ).build(frame, include_labels=False)
+
+    loaded = load_graphsage_artifact(artifact_path, device="cpu")
+    scores = loaded.predict(snapshots)
+
+    assert isinstance(loaded.model, GATEdgeClassifier)
+    assert loaded.config.architecture == "gat"
+    assert len(scores) == 2
+    assert np.isfinite(scores).all()
 
 
 def test_private_scorer_can_apply_frozen_graph_and_fusion_without_labels(

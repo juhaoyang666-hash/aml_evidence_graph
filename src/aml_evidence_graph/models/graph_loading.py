@@ -1,4 +1,4 @@
-"""Optional trusted local loading for persisted GraphSAGE scoring artifacts."""
+"""Optional trusted local loading for persisted graph edge-model artifacts."""
 
 from __future__ import annotations
 
@@ -7,9 +7,10 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from torch import nn
 
 from aml_evidence_graph.graph.snapshots import TemporalGraphSnapshot, TemporalNodeIndexer
-from aml_evidence_graph.models.graphsage import GraphSAGEEdgeClassifier
+from aml_evidence_graph.models.edge_classifiers import build_edge_classifier
 from aml_evidence_graph.training.graphsage import (
     GraphSAGETrainingConfig,
     TrainedGraphSAGE,
@@ -20,9 +21,13 @@ from aml_evidence_graph.training.graphsage import (
 
 @dataclass
 class LoadedGraphSAGEArtifact:
-    """Trusted local GraphSAGE artifact with its frozen node map and edge scaler."""
+    """Trusted local graph artifact with its frozen node map and edge scaler.
 
-    model: GraphSAGEEdgeClassifier
+    The historical public name is retained for API compatibility; ``model`` may
+    be GraphSAGE, GAT, RGCN, or PNA according to the persisted configuration.
+    """
+
+    model: nn.Module
     config: GraphSAGETrainingConfig
     device: torch.device
     edge_feature_columns: tuple[str, ...]
@@ -46,6 +51,7 @@ class LoadedGraphSAGEArtifact:
                 ).astype(np.float32),
                 labels=snapshot.labels,
                 transaction_ids=snapshot.transaction_ids,
+                history_edge_type=snapshot.history_edge_type,
             )
             for snapshot in snapshots
         ]
@@ -109,12 +115,14 @@ def load_graphsage_artifact(
     indexer = TemporalNodeIndexer(unknown_hash_buckets=unknown_hash_buckets)
     indexer._known_nodes = known_nodes
     resolved_device = resolve_device(device)
-    model = GraphSAGEEdgeClassifier(
+    model = build_edge_classifier(
+        config.architecture,
         num_nodes=indexer.num_nodes,
         edge_feature_dim=len(edge_feature_columns),
         hidden_dim=config.hidden_dim,
         num_layers=config.num_layers,
         dropout=config.dropout,
+        num_relations=config.num_relations,
     ).to(resolved_device)
     model.load_state_dict(payload["state_dict"])
     model.eval()

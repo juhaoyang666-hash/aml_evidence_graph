@@ -16,14 +16,20 @@ import pyarrow.dataset as ds
 from aml_evidence_graph.api.services import EvidenceStore, ScoreBatchResult
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.evidence.builder import build_risk_evidence_package
-from aml_evidence_graph.graph.explain import GraphEdgeEvidence, extract_graph_edge_evidence
-from aml_evidence_graph.graph.snapshots import DailyGraphSnapshotBuilder
+from aml_evidence_graph.graph.explain import (
+    HistoricalGraphEvidenceIndex,
+    build_historical_evidence_index,
+    extract_graph_edge_evidence,
+)
+from aml_evidence_graph.graph.snapshots import DailyGraphSnapshotBuilder, TemporalGraphSnapshot
 from aml_evidence_graph.models.loading import load_table_model_artifacts
 from aml_evidence_graph.rules.engine import RuleHit
 from aml_evidence_graph.training.fusion import load_persisted_fusion_artifacts
 
 if TYPE_CHECKING:
     from aml_evidence_graph.models.graph_loading import LoadedGraphSAGEArtifact
+
+GraphEvidenceContext = tuple[TemporalGraphSnapshot, int, HistoricalGraphEvidenceIndex]
 
 
 @dataclass
@@ -128,7 +134,7 @@ class PrivateFeaturePartitionScoringService:
         dataset: ds.Dataset,
         *,
         event_day: date,
-    ) -> tuple[dict[str, float], dict[str, GraphEdgeEvidence], datetime] | None:
+    ) -> tuple[dict[str, float], dict[str, GraphEvidenceContext], datetime] | None:
         if self._graphsage is None:
             return None
         event_date = event_day.isoformat()
@@ -159,27 +165,26 @@ class PrivateFeaturePartitionScoringService:
             self._graphsage.node_indexer,
             edge_feature_columns=self._graphsage.edge_feature_columns,
             history_window=timedelta(days=self._graphsage.config.history_window_days),
+            store_relation_types=self._graphsage.config.architecture == "rgcn",
         )
         if not history.is_empty():
             builder.build(history, include_labels=False)
         current_snapshots = builder.build(current, include_labels=False)
         scores = self._graphsage.predict(current_snapshots)
         score_by_transaction: dict[str, float] = {}
-        evidence_by_transaction: dict[str, GraphEdgeEvidence] = {}
+        context_by_transaction: dict[str, GraphEvidenceContext] = {}
         offset = 0
         for snapshot in current_snapshots:
+            history_index = build_historical_evidence_index(snapshot)
             for position, transaction_id in enumerate(snapshot.transaction_ids):
                 score_by_transaction[transaction_id] = float(scores[offset + position])
-                evidence_by_transaction[transaction_id] = extract_graph_edge_evidence(
-                    snapshot,
-                    scoring_edge_position=position,
-                )
+                context_by_transaction[transaction_id] = (snapshot, position, history_index)
             offset += len(snapshot.transaction_ids)
         if offset != len(scores):
             raise AssertionError("GraphSAGE score count does not match scoring snapshots.")
         return (
             score_by_transaction,
-            evidence_by_transaction,
+            context_by_transaction,
             datetime.combine(event_day, datetime.min.time(), tzinfo=UTC),
         )
 
@@ -208,10 +213,10 @@ class PrivateFeaturePartitionScoringService:
             raise ValueError("Private feature partition has duplicate transaction IDs.")
         component_scores = self._models.predict_proba(frame)
         graph_result = self._score_graphsage(dataset, event_day=event_day)
-        graph_evidence: dict[str, GraphEdgeEvidence] = {}
+        graph_context: dict[str, GraphEvidenceContext] = {}
         graph_snapshot_as_of: datetime | None = None
         if graph_result is not None:
-            graph_scores, graph_evidence, graph_snapshot_as_of = graph_result
+            graph_scores, graph_context, graph_snapshot_as_of = graph_result
             component_scores["graphsage"] = np.asarray(
                 [
                     graph_scores[str(transaction_id)]
@@ -266,6 +271,16 @@ class PrivateFeaturePartitionScoringService:
                 missing_evidence.append(
                     "Batch scoring did not attach a GraphSAGE local path explanation."
                 )
+            context = graph_context.get(transaction_id)
+            graph_edge_evidence = (
+                extract_graph_edge_evidence(
+                    context[0],
+                    scoring_edge_position=context[1],
+                    history_index=context[2],
+                )
+                if context is not None
+                else None
+            )
             evidence = build_risk_evidence_package(
                 transaction,
                 alert_id=alert_id,
@@ -279,7 +294,7 @@ class PrivateFeaturePartitionScoringService:
                 source_versions=source_versions,
                 selected_feature_names=selected_features,
                 rule_hits=rule_hits_by_transaction.get(transaction_id, []),
-                graph_edge_evidence=graph_evidence.get(transaction_id),
+                graph_edge_evidence=graph_edge_evidence,
                 graph_snapshot_as_of=graph_snapshot_as_of,
                 missing_evidence=missing_evidence,
                 uncertainty_notes=[

@@ -34,6 +34,8 @@
 |---|---|
 | [实验结果.md](docs/实验结果.md) | 全量指标表、融合对比、架构对比、Bootstrap CI、Golden、调查视图、算力附录 |
 | [模型卡.md](docs/模型卡.md) | 模型边界、评价协议、限制 |
+| [主架构图.md](docs/主架构图.md) | 风险评分、后评分聚合、受控 Agent 与人工审批边界 |
+| [简历证据.md](docs/简历证据.md) | 产物自动门禁生成的唯一公开指标证据页 |
 | [简历项目描述.md](docs/简历项目描述.md) | **简历项目描述（可粘贴）** |
 | [面试要点.md](docs/面试要点.md) | **面试自答要点** |
 | [CatBoost差距诊断.md](docs/CatBoost差距诊断.md) | CatBoost vs GAT 差距诊断 |
@@ -47,6 +49,8 @@
 | [风控算法实习项目改进建议_2026.md](docs/风控算法实习项目改进建议_2026.md) | **2026 风控算法/大模型实习岗位调研与求职导向改进建议** |
 | [P0框架状态.md](docs/P0框架状态.md) | 求职改进 P0 代码框架、环境和未完成验收项 |
 | [检索评估.md](docs/检索评估.md) | 11 篇 Typology、130 条检索 Golden、来源/分组指标与 Bad Case 边界 |
+| [检索拒答校准.md](docs/检索拒答校准.md) | v2 校准 / v3 冻结测试的独立拒答门禁与负结果 |
+| [GAT工程Pareto实验.md](docs/GAT工程Pareto实验.md) | batch、fanout、历史窗口的验证集精度—资源前沿 |
 | [Agent调查评估.md](docs/Agent调查评估.md) | 60 案受控 Agent 路由、工具、审核、恢复与延迟评测 |
 | [服务性能基准.md](docs/服务性能基准.md) | 本机 API/Agent 聚合压测结果与未完成项（非生产 SLA） |
 | [实验追踪.md](docs/实验追踪.md) | FE v2 本地 MLflow 聚合追踪、失败 run 与 candidate 边界 |
