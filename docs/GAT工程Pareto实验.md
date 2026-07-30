@@ -1,6 +1,6 @@
 # GAT 工程型 Pareto 实验
 
-> 日期：2026-07-28—2026-07-29  
+> 日期：2026-07-28—2026-07-30
 > 数据：公开合成 SAML-D；固定时间切分。  
 > 选择边界：六个候选只读取 train/validation；test 只允许最终候选读取一次。
 
@@ -74,13 +74,26 @@ test。冻结测试共 `1,558,821` 行、`1,813` 个正例：
 
 测试期完全零历史度数只有 596 行且无正例，不能计算 PR-AUC。主要弱点集中在低度和新账户，
 而不是跨境/换汇交易。Typology 中 Smurfing (`0.6627`) 和 Behavioural Change 1
-(`0.6474`) 也明显弱于总体，需在后续特征族消融和新账户建模中重点检查。
+(`0.6474`) 也明显弱于总体，需在后续新账户建模中重点检查。
 
-## 运行中的特征族消融
+## 特征族消融
 
-60d 固定配置正在做四个 leave-one-family-out 验证集实验：金额、sender/receiver 时间窗口
-行为、relationship 和 graph 节点统计。金额特征与时间窗口行为中的 amount sum 存在语义
-重叠，因此结果是工程敏感性分析，不解释为互斥贡献或 Shapley 归因。四个候选均不读取 test。
+在 60d 固定配置、同一 seed 下完成四个 leave-one-family-out 实验；所有候选只读取
+train/validation，未读取 test。
+
+| 移除特征族 | 移除列数 | Validation PR-AUC | 相对完整 60d |
+|---|---:|---:|---:|
+| 不移除（完整 60d） | 0 | 0.924227 | — |
+| 金额 | 16 | **0.931150** | +0.006923 |
+| 节点统计 | 7 | 0.202032 | -0.722195 |
+| 关系 | 20 | 0.866127 | -0.058100 |
+| 时间窗口行为 | 40 | 0.829127 | -0.095100 |
+
+节点历史度数、先验边计数和互惠关系组成的节点统计是当前最关键特征族；移除时间窗口行为
+或关系特征也造成明显退化。移除金额族后单次验证反而提高，提示金额与其他窗口汇总可能存在
+冗余或噪声，但这不是独立重复实验的稳定结论。金额特征与时间窗口行为中的 amount sum 存在
+语义重叠，因此该 leave-one-family-out 结果只解释为工程敏感性分析，不解释为互斥贡献、
+Shapley 归因或因果效应，也不据此重新选择或读取测试集。
 
 ## 产物与复现
 
@@ -91,6 +104,7 @@ test。冻结测试共 `1,558,821` 行、`1,813` 个正例：
 - 冻结测试：`scripts/evaluate_frozen_graph_checkpoint.py`
 - 风险切片：`scripts/evaluate_gat_risk_slices.py`
 - 私有聚合产物：`artifacts/gat_pareto_summary.json`
+- 特征族消融私有产物：`artifacts/gat_feature_ablation/*/metrics.json`
 - 冻结测试私有聚合：`artifacts/gat_pareto_selected_test/{metrics.json,paired_vs_gat30d.json,risk_slices.json}`
 
 这些指标是本机离线实验，不是生产在线 SLA；模型未接触真实金融数据。
