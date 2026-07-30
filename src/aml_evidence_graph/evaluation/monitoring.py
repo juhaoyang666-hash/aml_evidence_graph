@@ -386,3 +386,21 @@ def measure_runtime(function: Callable[[], T]) -> tuple[T, dict[str, float]]:
         "python_heap_peak_mb": peak / 1024 / 1024,
         **process_metrics,
     }
+
+
+def measure_runtime_rss_only(function: Callable[[], T]) -> tuple[T, dict[str, float]]:
+    """Measure runtime and RSS without tracing every Python allocation.
+
+    This is intended for graph snapshot construction, where temporary Python
+    edge tuples make ``tracemalloc`` materially alter the workload being
+    measured.  Python heap metrics are deliberately omitted rather than
+    reported as zero.
+    """
+    start = time.perf_counter()
+    with ProcessResourceMonitor() as process_monitor:
+        value = function()
+        process_metrics = process_monitor.metrics()
+    return value, {
+        "wall_time_ms": (time.perf_counter() - start) * 1_000,
+        **process_metrics,
+    }

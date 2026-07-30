@@ -52,7 +52,11 @@ def parse_args() -> argparse.Namespace:
         default="e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
     )
     parser.add_argument("--output", type=Path, default=Path("artifacts/retrieval_abstention"))
-    parser.add_argument("--markdown", type=Path, default=Path("docs/检索拒答校准.md"))
+    parser.add_argument(
+        "--markdown",
+        type=Path,
+        default=Path("artifacts/retrieval_abstention/abstention_report.md"),
+    )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 

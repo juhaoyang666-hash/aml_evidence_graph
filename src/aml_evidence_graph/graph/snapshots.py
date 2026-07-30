@@ -94,9 +94,7 @@ def relation_id_from_frame(frame: pl.DataFrame) -> np.ndarray:
         if "is_currency_conversion" in frame.columns
         else np.zeros(height, dtype=np.float32)
     )
-    return (2 * (cross > 0.5).astype(np.int64) + (convert > 0.5).astype(np.int64)).astype(
-        np.int64
-    )
+    return (2 * (cross > 0.5).astype(np.int64) + (convert > 0.5).astype(np.int64)).astype(np.int64)
 
 
 class TemporalNodeIndexer:
@@ -208,15 +206,11 @@ class DailyGraphSnapshotBuilder:
             .dt.truncate("1d")
             .alias("_graph_event_date"),
         )
-        event_days = (
-            ordered.select("_graph_event_date")
-            .unique(maintain_order=True)
-            .to_series()
-            .to_list()
-        )
+        daily_frames = ordered.partition_by("_graph_event_date", maintain_order=True)
 
         snapshots: list[TemporalGraphSnapshot] = []
-        for event_day in event_days:
+        for current in daily_frames:
+            event_day = current["_graph_event_date"][0]
             if self._last_processed_date is not None and event_day <= self._last_processed_date:
                 raise ValueError(
                     "Graph snapshots must be built in strictly increasing event dates."
@@ -225,7 +219,6 @@ class DailyGraphSnapshotBuilder:
             while self._history_edges and self._history_edges[0][0] < cutoff:
                 self._history_edges.popleft()
 
-            current = ordered.filter(pl.col("_graph_event_date") == event_day)
             sender_nodes = self.node_indexer.transform(
                 current[CANONICAL.sender_account_id].cast(pl.Utf8).to_list()
             )
@@ -256,13 +249,9 @@ class DailyGraphSnapshotBuilder:
                     history_types = None
             else:
                 history_edges = np.empty((2, 0), dtype=np.int64)
-                history_types = (
-                    np.empty(0, dtype=np.int64) if self.store_relation_types else None
-                )
+                history_types = np.empty(0, dtype=np.int64) if self.store_relation_types else None
             edge_features = (
-                current.select(self.edge_feature_columns)
-                .cast(pl.Float32, strict=True)
-                .to_numpy()
+                current.select(self.edge_feature_columns).cast(pl.Float32, strict=True).to_numpy()
             )
             snapshots.append(
                 TemporalGraphSnapshot(
@@ -330,9 +319,7 @@ def transform_edge_features(
                 event_date=snapshot.event_date,
                 history_edge_index=snapshot.history_edge_index,
                 scoring_edge_index=snapshot.scoring_edge_index,
-                edge_features=scaler.transform(snapshot.edge_features).astype(
-                    np.float32
-                ),
+                edge_features=scaler.transform(snapshot.edge_features).astype(np.float32),
                 labels=snapshot.labels,
                 transaction_ids=snapshot.transaction_ids,
                 history_edge_type=snapshot.history_edge_type,

@@ -24,6 +24,10 @@ DEGREE_COLUMNS = (
     "graph_receiver_historical_out_degree",
     "graph_receiver_historical_in_degree",
 )
+EVENT_TIME_NOVELTY_COLUMNS = (
+    "graph_either_endpoint_unseen_before",
+    "graph_both_endpoints_unseen_before",
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,16 +35,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--features", type=Path, required=True)
     parser.add_argument("--scores", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--split", choices=("validation", "test"), default="test")
     return parser.parse_args()
 
 
 def _without_curves(value: Any) -> Any:
     if isinstance(value, dict):
-        return {
-            key: _without_curves(item)
-            for key, item in value.items()
-            if key != "curves"
-        }
+        return {key: _without_curves(item) for key, item in value.items() if key != "curves"}
     if isinstance(value, list):
         return [_without_curves(item) for item in value]
     return value
@@ -49,7 +50,7 @@ def _without_curves(value: Any) -> Any:
 def main() -> None:
     args = parse_args()
     dataset = ds.dataset(args.features, format="parquet", partitioning="hive")
-    test_columns = [
+    scored_columns = [
         CANONICAL.transaction_id,
         CANONICAL.is_laundering,
         CANONICAL.sender_account_id,
@@ -59,8 +60,11 @@ def main() -> None:
         "is_currency_conversion",
         *DEGREE_COLUMNS,
     ]
-    test = pl.from_arrow(
-        dataset.to_table(filter=ds.field("split") == "test", columns=test_columns)
+    scored_columns.extend(
+        column for column in EVENT_TIME_NOVELTY_COLUMNS if column in dataset.schema.names
+    )
+    scored = pl.from_arrow(
+        dataset.to_table(filter=ds.field("split") == args.split, columns=scored_columns)
     )
     account_columns = [
         CANONICAL.sender_account_id,
@@ -94,13 +98,13 @@ def main() -> None:
     scores = pl.read_parquet(args.scores).select(
         [CANONICAL.transaction_id, CANONICAL.is_laundering, "graphsage"]
     )
-    joined = test.join(
+    joined = scored.join(
         scores,
         on=[CANONICAL.transaction_id, CANONICAL.is_laundering],
         how="inner",
         validate="1:1",
     )
-    if joined.height != test.height or joined.height != scores.height:
+    if joined.height != scored.height or joined.height != scores.height:
         raise ValueError("Frozen scores and test features do not align one-to-one.")
     joined = joined.with_columns(
         pl.sum_horizontal(DEGREE_COLUMNS).alias("endpoint_historical_degree")
@@ -119,25 +123,26 @@ def main() -> None:
         "schema_version": "1.0",
         "protocol": {
             "score_artifact": str(args.scores),
-            "test_rows": joined.height,
+            "split": args.split,
+            "scored_rows": joined.height,
             "training_account_membership_only": True,
             "degree_bands": {
                 "cold_zero": "sum of four endpoint historical degrees = 0",
                 "low_nonzero": f"0 < degree <= training q25 ({low_cutoff:g})",
                 "medium": (
-                    f"training q25 ({low_cutoff:g}) < degree <= "
-                    f"training q75 ({high_cutoff:g})"
+                    f"training q25 ({low_cutoff:g}) < degree <= training q75 ({high_cutoff:g})"
                 ),
                 "high": f"degree > training q75 ({high_cutoff:g})",
             },
-            "selection_note": "Slices are descriptive and were not used to select the model.",
+            "selection_note": (
+                "Validation slices may inform candidate selection; test slices are descriptive "
+                "and must only be generated after model selection is frozen."
+            ),
         },
         "new_account": new_account_slice_report(
             joined, probabilities, training_accounts=training_accounts
         ),
-        "degree_band": categorical_slice_report(
-            joined, probabilities, column="degree_band"
-        ),
+        "degree_band": categorical_slice_report(joined, probabilities, column="degree_band"),
         "cross_border": categorical_slice_report(
             joined, probabilities, column="is_cross_border_current_transaction"
         ),
@@ -146,12 +151,31 @@ def main() -> None:
         ),
         "positive_typology": typology_slice_report(joined, probabilities),
     }
+    if set(EVENT_TIME_NOVELTY_COLUMNS).issubset(joined.columns):
+        payload["event_time_novelty"] = {
+            "definition": (
+                "Endpoint history is evaluated strictly before each transaction time; "
+                "unlike training-membership slices, an account can become seen later."
+            ),
+            "either_endpoint_unseen_before": categorical_slice_report(
+                joined,
+                probabilities,
+                column="graph_either_endpoint_unseen_before",
+            ),
+            "both_endpoints_unseen_before": categorical_slice_report(
+                joined,
+                probabilities,
+                column="graph_both_endpoints_unseen_before",
+            ),
+        }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(_without_curves(payload), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    print(json.dumps({"output": str(args.output), "test_rows": joined.height}))
+    print(
+        json.dumps({"output": str(args.output), "split": args.split, "scored_rows": joined.height})
+    )
 
 
 if __name__ == "__main__":

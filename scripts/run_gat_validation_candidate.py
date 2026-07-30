@@ -20,7 +20,8 @@ import torch
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.data.splits import TimeSplit
 from aml_evidence_graph.evaluation.metrics import evaluate_binary_risk_scores
-from aml_evidence_graph.evaluation.monitoring import measure_runtime
+from aml_evidence_graph.evaluation.monitoring import measure_runtime, measure_runtime_rss_only
+from aml_evidence_graph.features.cold_start import COLD_START_FEATURE_FAMILIES
 from aml_evidence_graph.graph.snapshots import (
     DailyGraphSnapshotBuilder,
     TemporalNodeIndexer,
@@ -59,6 +60,19 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Repeat to remove pre-declared feature families before fitting.",
     )
+    parser.add_argument(
+        "--exclude-cold-start-family",
+        action="append",
+        choices=tuple(COLD_START_FEATURE_FAMILIES),
+        default=[],
+        help="Repeat to remove one registered cold-start-v3 candidate family.",
+    )
+    parser.add_argument(
+        "--exclude-feature-column",
+        action="append",
+        default=[],
+        help="Repeat to remove one exact edge-feature column for targeted ablation.",
+    )
     parser.add_argument("--random-seed", type=int, default=20260722)
     return parser.parse_args()
 
@@ -75,9 +89,7 @@ def _exclude_feature_families(
         "node_stats": lambda column: column.startswith("graph_"),
     }
     excluded = tuple(
-        column
-        for column in columns
-        if any(predicates[family](column) for family in families)
+        column for column in columns if any(predicates[family](column) for family in families)
     )
     for family in families:
         if not any(predicates[family](column) for column in columns):
@@ -85,6 +97,39 @@ def _exclude_feature_families(
     retained = tuple(column for column in columns if column not in set(excluded))
     if not retained:
         raise ValueError("Feature-family exclusions removed every graph edge feature.")
+    return retained, excluded
+
+
+def _exclude_cold_start_feature_families(
+    columns: tuple[str, ...], families: list[str]
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    requested_families = tuple(dict.fromkeys(families))
+    expected = {
+        column for family in requested_families for column in COLD_START_FEATURE_FAMILIES[family]
+    }
+    missing = sorted(expected.difference(columns))
+    if missing:
+        raise ValueError(
+            "Cold-start family exclusion requires missing feature columns: " + ", ".join(missing)
+        )
+    excluded = tuple(column for column in columns if column in expected)
+    retained = tuple(column for column in columns if column not in expected)
+    if not retained:
+        raise ValueError("Cold-start family exclusions removed every graph edge feature.")
+    return retained, excluded
+
+
+def _exclude_exact_feature_columns(
+    columns: tuple[str, ...], requested: list[str]
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    requested_columns = tuple(dict.fromkeys(requested))
+    missing = sorted(set(requested_columns).difference(columns))
+    if missing:
+        raise ValueError("Exact feature exclusions are missing: " + ", ".join(missing))
+    excluded = tuple(column for column in columns if column in requested_columns)
+    retained = tuple(column for column in columns if column not in requested_columns)
+    if not retained:
+        raise ValueError("Exact feature exclusions removed every graph edge feature.")
     return retained, excluded
 
 
@@ -121,6 +166,14 @@ def main() -> None:
     edge_feature_columns, excluded_feature_columns = _exclude_feature_families(
         all_edge_feature_columns, args.exclude_feature_family
     )
+    edge_feature_columns, excluded_cold_start_columns = _exclude_cold_start_feature_families(
+        edge_feature_columns,
+        args.exclude_cold_start_family,
+    )
+    edge_feature_columns, excluded_exact_columns = _exclude_exact_feature_columns(
+        edge_feature_columns,
+        args.exclude_feature_column,
+    )
     node_indexer = TemporalNodeIndexer().fit(training)
 
     def build_snapshots() -> tuple[object, object, object]:
@@ -139,9 +192,14 @@ def main() -> None:
             scaler,
         )
 
-    (training_snapshots, validation_snapshots, scaler), snapshot_resources = measure_runtime(
-        build_snapshots
-    )
+    (
+        (
+            training_snapshots,
+            validation_snapshots,
+            scaler,
+        ),
+        snapshot_resources,
+    ) = measure_runtime_rss_only(build_snapshots)
     trained, training_resources = measure_runtime(
         lambda: fit_graphsage(
             training_snapshots,
@@ -191,6 +249,9 @@ def main() -> None:
         "edge_feature_columns": list(edge_feature_columns),
         "excluded_feature_families": args.exclude_feature_family,
         "excluded_feature_columns": list(excluded_feature_columns),
+        "excluded_cold_start_feature_families": args.exclude_cold_start_family,
+        "excluded_cold_start_feature_columns": list(excluded_cold_start_columns),
+        "excluded_exact_feature_columns": list(excluded_exact_columns),
         "num_nodes": node_indexer.num_nodes,
         "training_snapshot_count": len(training_snapshots),
         "validation_snapshot_count": len(validation_snapshots),

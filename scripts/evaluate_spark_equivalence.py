@@ -53,7 +53,11 @@ def main() -> int:
     parser.add_argument(
         "--output", type=Path, default=Path("artifacts/spark_replay_evaluation/metrics.json")
     )
-    parser.add_argument("--markdown", type=Path, default=Path("docs/Spark特征等价评估.md"))
+    parser.add_argument(
+        "--markdown",
+        type=Path,
+        default=Path("artifacts/spark_replay_evaluation/equivalence_report.md"),
+    )
     args = parser.parse_args()
     columns = ["transaction_id", *REPRESENTATIVE_FEATURES]
     spark = pl.read_parquet(args.spark_output / "*.parquet").select(columns)

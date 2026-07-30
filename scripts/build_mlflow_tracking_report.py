@@ -26,7 +26,9 @@ def main() -> int:
     parser.add_argument(
         "--output", type=Path, default=Path("artifacts/mlflow_tracking_report.json")
     )
-    parser.add_argument("--markdown", type=Path, default=Path("docs/实验追踪.md"))
+    parser.add_argument(
+        "--markdown", type=Path, default=Path("artifacts/mlflow_tracking_report.md")
+    )
     args = parser.parse_args()
     try:
         import mlflow

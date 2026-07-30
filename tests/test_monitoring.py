@@ -7,6 +7,7 @@ from aml_evidence_graph.evaluation.monitoring import (
     bootstrap_ranking_intervals,
     categorical_slice_report,
     measure_runtime,
+    measure_runtime_rss_only,
     monthly_stability_report,
     new_account_slice_report,
     paired_bootstrap_ranking_differences,
@@ -157,3 +158,12 @@ def test_runtime_measurement_records_process_memory_without_payloads() -> None:
     assert value == 49_995_000
     assert metrics["wall_time_ms"] >= 0
     assert metrics["process_rss_peak_mb"] >= metrics["process_rss_start_mb"]
+
+
+def test_rss_only_runtime_measurement_omits_python_heap_metrics() -> None:
+    value, metrics = measure_runtime_rss_only(lambda: sum(range(10_000)))
+
+    assert value == 49_995_000
+    assert metrics["wall_time_ms"] >= 0
+    assert metrics["process_rss_peak_mb"] >= metrics["process_rss_start_mb"]
+    assert "python_heap_peak_mb" not in metrics
