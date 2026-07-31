@@ -42,6 +42,9 @@ retrieval = [
 benchmark = [
   "httpx>=0.27.0",
 ]
+batch = [
+  "duckdb>=1.0.0",
+]
 mlops = [
   "mlflow>=3.0.0",
 ]

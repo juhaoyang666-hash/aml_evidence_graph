@@ -29,7 +29,6 @@ from aml_evidence_graph.features.engineering_config import load_feature_engineer
 from aml_evidence_graph.features.graph_stats import CausalGraphStatisticsBuilder
 from aml_evidence_graph.features.pit import PITFeatureBuilder
 from aml_evidence_graph.features.registry import (
-    DEFAULT_FEATURE_REGISTRY_PATH,
     load_static_feature_metadata,
     rule_feature_metadata,
     validate_feature_metadata,
@@ -187,7 +186,9 @@ def build_pit_resumable(
         created_at_utc=_utc_now(),
         run_id=manifest.run_id,
     )
-    summary_path.write_text(json.dumps(asdict(summary), ensure_ascii=False, indent=2), encoding="utf-8")
+    summary_path.write_text(
+        json.dumps(asdict(summary), ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     write_feature_registry(output_root / "_feature_registry.json", feature_metadata)
     return summary
 
@@ -218,9 +219,15 @@ def run_table(features: Path, output: Path, model_config: Path, overwrite: bool)
 def main() -> int:
     parser = argparse.ArgumentParser(description="Resumable fe_v2 PIT + CatBoost pipeline")
     parser.add_argument("--status", type=Path, default=DEFAULT_STATUS)
-    parser.add_argument("--prepared", type=Path, default=REPO / "artifacts" / "prepared_transactions")
-    parser.add_argument("--pit-output", type=Path, default=REPO / "artifacts" / "pit_features_fe_v2")
-    parser.add_argument("--table-output", type=Path, default=REPO / "artifacts" / "table_baseline_fe_v2")
+    parser.add_argument(
+        "--prepared", type=Path, default=REPO / "artifacts" / "prepared_transactions"
+    )
+    parser.add_argument(
+        "--pit-output", type=Path, default=REPO / "artifacts" / "pit_features_fe_v2"
+    )
+    parser.add_argument(
+        "--table-output", type=Path, default=REPO / "artifacts" / "table_baseline_fe_v2"
+    )
     parser.add_argument("--rules", type=Path, default=REPO / "configs" / "rules" / "default.yaml")
     parser.add_argument("--feature-registry", type=Path, default=REPO / "configs" / "features.yaml")
     parser.add_argument(
@@ -312,7 +319,11 @@ def main() -> int:
             if isinstance(tm, dict):
                 cat = tm.get("catboost") if isinstance(tm.get("catboost"), dict) else tm
                 if isinstance(cat, dict):
-                    test_prauc = cat.get("pr_auc") or cat.get("average_precision") or cat.get("prauc")
+                    test_prauc = (
+                        cat.get("pr_auc")
+                        or cat.get("average_precision")
+                        or cat.get("prauc")
+                    )
                 # nested model map
                 for key, val in tm.items():
                     if isinstance(val, dict) and ("pr_auc" in val or "average_precision" in val):

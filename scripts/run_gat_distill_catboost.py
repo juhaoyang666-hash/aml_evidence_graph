@@ -43,7 +43,11 @@ def main() -> None:
         type=Path,
         default=Path("artifacts/gat/scores/graphsage_test_scores.parquet"),
     )
-    parser.add_argument("--output-dir", type=Path, default=Path("artifacts/table_baseline_gat_distill"))
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("artifacts/table_baseline_gat_distill"),
+    )
     parser.add_argument("--max-train-negatives", type=int, default=500_000)
     parser.add_argument("--seed", type=int, default=20260722)
     args = parser.parse_args()
@@ -100,10 +104,17 @@ def main() -> None:
         "beats_catboost": bool(metrics["pr_auc"] > 0.8092 + 1e-4),
         "beats_gat": bool(metrics["pr_auc"] > 0.9483),
     }
-    out_scores = test[[CANONICAL.transaction_id, CANONICAL.event_ts, CANONICAL.is_laundering]].copy()
+    output_columns = [
+        CANONICAL.transaction_id,
+        CANONICAL.event_ts,
+        CANONICAL.is_laundering,
+    ]
+    out_scores = test[output_columns].copy()
     out_scores["catboost_gat_distill"] = preds["catboost"]
     out_scores.to_parquet(args.output_dir / "scores" / "table_test_scores.parquet", index=False)
-    (args.output_dir / "metrics.json").write_text(json.dumps(summary, indent=2, default=float) + "\n")
+    (args.output_dir / "metrics.json").write_text(
+        json.dumps(summary, indent=2, default=float) + "\n"
+    )
     print(json.dumps({"test_pr_auc": metrics["pr_auc"], "output": str(args.output_dir)}, indent=2))
 
 

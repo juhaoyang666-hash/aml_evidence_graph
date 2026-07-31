@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.evaluation.metrics import evaluate_binary_risk_scores
 from aml_evidence_graph.evaluation.monitoring import monthly_stability_report
@@ -88,6 +89,37 @@ def _monthly_ops_table(
             }
         )
     return rows
+
+
+def _pack_recalibration_metrics(
+    scores: np.ndarray,
+    threshold: float,
+    policy: str,
+    *,
+    test_labels: np.ndarray,
+    test_frame: pd.DataFrame,
+) -> dict[str, Any]:
+    """Summarize one frozen policy without closing over a model-loop iteration."""
+    clipped_scores = np.clip(scores, 0.0, 1.0)
+    metrics = evaluate_binary_risk_scores(test_labels, clipped_scores)
+    alerts = scores >= threshold
+    return {
+        "policy": policy,
+        "threshold": threshold,
+        "test_pr_auc": metrics["pr_auc"],
+        "test_ece_10": metrics["expected_calibration_error_10_bins"],
+        "test_alert_rate": float(alerts.mean()),
+        "test_precision_at_threshold": (
+            float(test_labels[alerts].mean()) if alerts.any() else 0.0
+        ),
+        "test_recall_at_threshold": float(
+            test_labels[alerts].sum() / test_labels.sum()
+        ),
+        "monthly": monthly_stability_report(
+            test_frame.assign(**{CANONICAL.is_laundering: test_labels}),
+            clipped_scores,
+        ),
+    }
 
 
 def main() -> None:
@@ -216,31 +248,32 @@ def main() -> None:
         # Also: raw quantile threshold without recalibration (raw score space).
         raw_thr = _quantile_threshold(val_raw, alert_fraction)
 
-        def pack(scores: np.ndarray, thr: float, label: str) -> dict[str, Any]:
-            metrics = evaluate_binary_risk_scores(test_y, np.clip(scores, 0.0, 1.0))
-            alerts = scores >= thr
-            return {
-                "policy": label,
-                "threshold": thr,
-                "test_pr_auc": metrics["pr_auc"],
-                "test_ece_10": metrics["expected_calibration_error_10_bins"],
-                "test_alert_rate": float(alerts.mean()),
-                "test_precision_at_threshold": float(test_y[alerts].mean()) if alerts.any() else 0.0,
-                "test_recall_at_threshold": float(test_y[alerts].sum() / test_y.sum()),
-                "monthly": monthly_stability_report(
-                    test_frame.assign(**{CANONICAL.is_laundering: test_y}),
-                    np.clip(scores, 0.0, 1.0),
-                ),
-            }
-
         recalibration[name] = {
             "stale_threshold": stale.threshold,
             "fresh_threshold": fresh.threshold,
             "raw_quantile_threshold": raw_thr,
             "policies": [
-                pack(stale_test, stale.threshold, "stale_early_val_month"),
-                pack(fresh_test, fresh.threshold, "fresh_full_validation"),
-                pack(test_raw, raw_thr, "raw_quantile_no_isotonic"),
+                _pack_recalibration_metrics(
+                    stale_test,
+                    stale.threshold,
+                    "stale_early_val_month",
+                    test_labels=test_y,
+                    test_frame=test_frame,
+                ),
+                _pack_recalibration_metrics(
+                    fresh_test,
+                    fresh.threshold,
+                    "fresh_full_validation",
+                    test_labels=test_y,
+                    test_frame=test_frame,
+                ),
+                _pack_recalibration_metrics(
+                    test_raw,
+                    raw_thr,
+                    "raw_quantile_no_isotonic",
+                    test_labels=test_y,
+                    test_frame=test_frame,
+                ),
             ],
         }
         # Expanding-window: fit calibrator on validation months ≤ M, score the next month
@@ -329,7 +362,8 @@ def main() -> None:
             "models": ["catboost", "gat", "fusion_cb_gat"],
             "honest_boundary": (
                 "Frozen scores from existing main-line runs; no monthly retrain. "
-                "Recalibration uses validation labels only. Synthetic data; not production monitoring."
+                "Recalibration uses validation labels only. Synthetic data; "
+                "not production monitoring."
             ),
         },
         "monthly_curve_rows": len(monthly_df),
@@ -345,7 +379,12 @@ def main() -> None:
     for name in ("catboost", "gat"):
         expanding.extend(recalibration[name]["expanding_window"])
     pd.DataFrame(expanding).to_csv(args.output_dir / "drift_expanding_window.csv", index=False)
-    print(json.dumps({"output_dir": str(args.output_dir), "monthly_rows": len(monthly_df)}, indent=2))
+    print(
+        json.dumps(
+            {"output_dir": str(args.output_dir), "monthly_rows": len(monthly_df)},
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

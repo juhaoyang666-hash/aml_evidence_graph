@@ -265,7 +265,9 @@ def main() -> None:
         json.dumps(
             {
                 "isolation_forest_pr_auc": if_metrics["pr_auc"],
-                "autoencoder_pr_auc": results.get("autoencoder", {}).get("metrics", {}).get("pr_auc"),
+                "autoencoder_pr_auc": (
+                    results.get("autoencoder", {}).get("metrics", {}).get("pr_auc")
+                ),
                 "output_dir": str(args.output_dir),
             },
             indent=2,

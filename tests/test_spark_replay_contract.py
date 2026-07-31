@@ -18,6 +18,8 @@ def test_bundled_java_can_be_discovered(monkeypatch, tmp_path: Path) -> None:
     java.parent.mkdir(parents=True)
     java.touch()
     monkeypatch.delenv("JAVA_HOME", raising=False)
+    monkeypatch.delenv("PYSPARK_PYTHON", raising=False)
+    monkeypatch.delenv("PYSPARK_DRIVER_PYTHON", raising=False)
     monkeypatch.setattr(
         "aml_evidence_graph.features.spark_replay.sys.prefix", str(tmp_path)
     )
@@ -25,3 +27,5 @@ def test_bundled_java_can_be_discovered(monkeypatch, tmp_path: Path) -> None:
 
     java_home = Path(os.environ["JAVA_HOME"])
     assert (java_home / "bin" / "java.exe").is_file()
+    assert os.environ["PYSPARK_PYTHON"]
+    assert os.environ["PYSPARK_DRIVER_PYTHON"] == os.environ["PYSPARK_PYTHON"]

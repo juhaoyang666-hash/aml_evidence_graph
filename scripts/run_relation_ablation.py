@@ -21,8 +21,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import torch
-from torch import nn
 from sklearn.preprocessing import StandardScaler
+from torch import nn
 
 from aml_evidence_graph.data.contract import CANONICAL
 from aml_evidence_graph.data.splits import TimeSplit
@@ -51,7 +51,9 @@ def _pick_features(frame: pd.DataFrame) -> list[str]:
     return [c for c in EDGE_FEATURE_CANDIDATES if c in frame.columns]
 
 
-def _relation_slices(scores: pd.DataFrame, features: pd.DataFrame, score_col: str) -> dict[str, Any]:
+def _relation_slices(
+    scores: pd.DataFrame, features: pd.DataFrame, score_col: str
+) -> dict[str, Any]:
     merged = scores.merge(
         features[[CANONICAL.transaction_id, "relation_id"]],
         on=CANONICAL.transaction_id,
@@ -116,7 +118,6 @@ def _train_mlp(
     yt = torch.tensor(y_train, dtype=torch.float32, device=device)
     rt = torch.tensor(rel_train, dtype=torch.long, device=device)
     xv = torch.tensor(x_val, dtype=torch.float32, device=device)
-    yv = torch.tensor(y_val, dtype=torch.float32, device=device)
     rv = torch.tensor(rel_val, dtype=torch.long, device=device)
 
     best_state = None
@@ -148,8 +149,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/relation_ablation"))
     parser.add_argument("--features", type=Path, default=Path("artifacts/pit_features"))
-    parser.add_argument("--gat-test", type=Path, default=Path("artifacts/gat/scores/graphsage_test_scores.parquet"))
-    parser.add_argument("--rgcn-test", type=Path, default=Path("artifacts/rgcn/scores/graphsage_test_scores.parquet"))
+    parser.add_argument(
+        "--gat-test",
+        type=Path,
+        default=Path("artifacts/gat/scores/graphsage_test_scores.parquet"),
+    )
+    parser.add_argument(
+        "--rgcn-test",
+        type=Path,
+        default=Path("artifacts/rgcn/scores/graphsage_test_scores.parquet"),
+    )
     parser.add_argument("--max-train-negatives", type=int, default=300_000)
     parser.add_argument("--seed", type=int, default=20260722)
     args = parser.parse_args()

@@ -284,7 +284,9 @@ def main() -> None:
         return {
             "communities_with_any_case_account": hits,
             "mean_best_jaccard_to_case": float(np.mean(jaccards)) if jaccards else 0.0,
-            "case_account_coverage": float(len(covered) / len(case_accounts)) if case_accounts else 0.0,
+            "case_account_coverage": (
+                float(len(covered) / len(case_accounts)) if case_accounts else 0.0
+            ),
         }
 
     summary = {

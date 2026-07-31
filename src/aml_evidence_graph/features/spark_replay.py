@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import sys
 import threading
 import time
@@ -78,6 +79,8 @@ def build_representative_pit_features(transactions: Any) -> Any:
 
 
 def _configure_bundled_java() -> None:
+    os.environ.setdefault("PYSPARK_PYTHON", sys.executable)
+    os.environ.setdefault("PYSPARK_DRIVER_PYTHON", sys.executable)
     if os.environ.get("JAVA_HOME"):
         return
     candidate = Path(sys.prefix) / "Library"
@@ -86,25 +89,46 @@ def _configure_bundled_java() -> None:
         os.environ["PATH"] = f"{candidate / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}"
 
 
-def _start_resource_monitor() -> tuple[threading.Event, list[float], threading.Thread]:
+def _start_resource_monitor() -> tuple[
+    threading.Event,
+    list[float],
+    list[dict[str, float | int]],
+    threading.Thread,
+]:
     stop = threading.Event()
     peak_rss_mb = [0.0]
+    samples: list[dict[str, float | int]] = []
     process = psutil.Process()
+    started = time.perf_counter()
 
     def monitor() -> None:
-        while not stop.wait(0.05):
+        while not stop.wait(0.25):
             processes = [process, *process.children(recursive=True)]
             total = 0
+            cpu_time = 0.0
+            live_processes = 0
             for item in processes:
                 try:
                     total += item.memory_info().rss
+                    times = item.cpu_times()
+                    cpu_time += times.user + times.system
+                    live_processes += 1
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
-            peak_rss_mb[0] = max(peak_rss_mb[0], total / 1024 / 1024)
+            rss_mb = total / 1024 / 1024
+            peak_rss_mb[0] = max(peak_rss_mb[0], rss_mb)
+            samples.append(
+                {
+                    "elapsed_seconds": round(time.perf_counter() - started, 3),
+                    "process_tree_rss_mb": round(rss_mb, 3),
+                    "process_tree_cpu_time_seconds": round(cpu_time, 3),
+                    "process_count": live_processes,
+                }
+            )
 
     thread = threading.Thread(target=monitor, name="spark-resource-monitor", daemon=True)
     thread.start()
-    return stop, peak_rss_mb, thread
+    return stop, peak_rss_mb, samples, thread
 
 
 def replay_parquet(
@@ -131,7 +155,7 @@ def replay_parquet(
         .getOrCreate()
     )
     started = time.perf_counter()
-    stop_monitor, peak_rss_mb, monitor_thread = _start_resource_monitor()
+    stop_monitor, peak_rss_mb, resource_samples, monitor_thread = _start_resource_monitor()
     try:
         input_files = sorted(input_path.rglob("*.parquet"))
         if not input_files:
@@ -160,6 +184,9 @@ def replay_parquet(
         replayed = replayed.persist()
         output_rows = replayed.count()
         physical_plan = replayed._jdf.queryExecution().executedPlan().toString()
+        jvm_max_heap_mb = float(
+            spark._jvm.java.lang.Runtime.getRuntime().maxMemory() / 1024 / 1024
+        )
         write_mode = "spark_parquet"
         if os.name == "nt" and not os.environ.get("HADOOP_HOME"):
             import pyarrow as pa
@@ -183,19 +210,34 @@ def replay_parquet(
         frame.unpersist()
         stop_monitor.set()
         monitor_thread.join(timeout=2)
+        input_bytes = sum(path.stat().st_size for path in input_files)
+        output_bytes = sum(
+            path.stat().st_size for path in output_path.rglob("*") if path.is_file()
+        )
         return {
             "input_path": str(input_path),
             "output_path": str(output_path),
             "target_event_date": target_event_date,
             "input_file_count": len(input_files),
+            "input_bytes": input_bytes,
             "input_rows_scanned": input_rows_scanned,
             "output_rows": output_rows,
+            "output_bytes": output_bytes,
             "duration_seconds": time.perf_counter() - started,
             "master": master,
+            "spark_version": spark.version,
+            "python_version": platform.python_version(),
+            "platform": platform.platform(),
+            "jvm_max_heap_mb": jvm_max_heap_mb,
             "shuffle_partitions": shuffle_partitions,
             "exchange_count": physical_plan.count("Exchange"),
             "write_mode": write_mode,
             "peak_process_tree_rss_mb": peak_rss_mb[0],
+            "peak_process_count": max(
+                (int(sample["process_count"]) for sample in resource_samples), default=0
+            ),
+            "resource_sample_interval_seconds": 0.25,
+            "resource_samples": resource_samples,
         }
     finally:
         stop_monitor.set()

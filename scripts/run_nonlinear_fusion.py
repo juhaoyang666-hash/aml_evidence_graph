@@ -27,7 +27,6 @@ from aml_evidence_graph.models.fusion import (
     fit_validation_calibration_and_threshold,
 )
 
-
 MODEL_NAMES = ("catboost", "graphsage")
 
 
@@ -179,7 +178,10 @@ def main() -> None:
         },
         "models": {},
     }
-    score_cols = {CANONICAL.transaction_id: test[CANONICAL.transaction_id], CANONICAL.is_laundering: y_test}
+    score_cols = {
+        CANONICAL.transaction_id: test[CANONICAL.transaction_id],
+        CANONICAL.is_laundering: y_test,
+    }
 
     for name, model in models.items():
         if name == "logistic":

@@ -8,7 +8,6 @@ import json
 import time
 from pathlib import Path
 
-import duckdb
 import numpy as np
 import pandas as pd
 import polars as pl
@@ -28,6 +27,13 @@ def main() -> None:
     parser.add_argument("--max-days", type=int, default=5)
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        import duckdb
+    except ImportError as error:
+        raise RuntimeError(
+            "DuckDB replay requires the 'batch' optional dependency: pip install '.[batch]'"
+        ) from error
 
     day_dirs = sorted(args.pit_root.glob("event_date=*/split=*"))[-args.max_days :]
     official_parts = []
@@ -113,7 +119,7 @@ def main() -> None:
         .over(CANONICAL.sender_account_id)
         .alias("polars_value")
     )
-    # rolling count includes current row depending on closed=; closed=left excludes current if index aligns
+    # A left-closed window excludes the current row when the time index aligns.
     scored = pl.from_pandas(official).select(
         [
             pl.col(CANONICAL.transaction_id).cast(pl.Utf8),
