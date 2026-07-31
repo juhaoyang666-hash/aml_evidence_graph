@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Train one GAT engineering candidate using train/validation data only.
+"""Train one configured graph-model candidate using train/validation data only.
 
-This runner deliberately never reads the test split. It is intended for selecting
-batch size, neighbor fanout, and history-window candidates before one frozen test.
+The model configuration selects GraphSAGE, GAT, RGCN, or PNA. This runner deliberately
+never reads the test split and is intended for controlled candidate comparisons.
 """
 
 from __future__ import annotations

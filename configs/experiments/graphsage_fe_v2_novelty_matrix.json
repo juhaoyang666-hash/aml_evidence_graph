@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0",
+  "created_at": "2026-07-31",
+  "objective": "Separate architecture and event-time-novelty effects with a controlled GraphSAGE/GAT 2x2 validation matrix.",
+  "selection_scope": "train_validation_only",
+  "test_split_read": false,
+  "features": "artifacts/pit_features_cold_start_v3",
+  "model_config": "configs/models.yaml",
+  "controlled_configuration": {
+    "architecture": "graphsage",
+    "device": "cuda",
+    "batch_size": 2048,
+    "num_neighbors": [15, 10],
+    "history_window_days": 60
+  },
+  "jobs": [
+    {
+      "name": "graphsage_fe_v2_seed20260722",
+      "seed": 20260722,
+      "arm": "fe_v2",
+      "exclude_cold_start_families": ["event_time_novelty", "degree_interactions"],
+      "output": "artifacts/graphsage_fe_v2_60d_seed20260722_validation"
+    },
+    {
+      "name": "graphsage_fe_v2_novelty_seed20260722",
+      "seed": 20260722,
+      "arm": "fe_v2_event_time_novelty",
+      "exclude_cold_start_families": ["degree_interactions"],
+      "output": "artifacts/graphsage_cold_start_v3_novelty_only_60d_seed20260722"
+    },
+    {
+      "name": "graphsage_fe_v2_seed20260723",
+      "seed": 20260723,
+      "arm": "fe_v2",
+      "exclude_cold_start_families": ["event_time_novelty", "degree_interactions"],
+      "output": "artifacts/graphsage_fe_v2_60d_seed20260723_validation"
+    },
+    {
+      "name": "graphsage_fe_v2_novelty_seed20260723",
+      "seed": 20260723,
+      "arm": "fe_v2_event_time_novelty",
+      "exclude_cold_start_families": ["degree_interactions"],
+      "output": "artifacts/graphsage_cold_start_v3_novelty_only_60d_seed20260723"
+    }
+  ],
+  "paired_gates": [
+    {
+      "seed": 20260722,
+      "baseline": "graphsage_fe_v2_seed20260722",
+      "candidate": "graphsage_fe_v2_novelty_seed20260722"
+    },
+    {
+      "seed": 20260723,
+      "baseline": "graphsage_fe_v2_seed20260723",
+      "candidate": "graphsage_fe_v2_novelty_seed20260723"
+    }
+  ],
+  "existing_gat_cells": {
+    "gat_fe_v2_seed20260722": "artifacts/gat_fe_v2_60d_seed20260722_validation/metrics.json",
+    "gat_fe_v2_novelty_seed20260722": "artifacts/gat_cold_start_v3_novelty_only_60d_seed20260722/metrics.json",
+    "gat_fe_v2_seed20260723": "artifacts/gat_fe_v2_60d_seed20260723_validation/metrics.json",
+    "gat_fe_v2_novelty_seed20260723": "artifacts/gat_cold_start_v3_novelty_only_60d_seed20260723/metrics.json"
+  },
+  "gate_policy": {
+    "both_seed_pr_auc_delta_positive": true,
+    "recall_at_0_1_percent_max_drop": 0.01,
+    "event_time_unseen_not_worse": true,
+    "training_new_not_worse": true,
+    "low_degree_max_drop": 0.05,
+    "test_action": "Do not read test automatically. Review the completed validation matrix first."
+  },
+  "summary_output": "artifacts/graphsage_fe_v2_novelty_matrix_validation/summary.json"
+}

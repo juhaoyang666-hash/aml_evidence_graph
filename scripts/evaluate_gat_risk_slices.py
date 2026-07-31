@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate a frozen GAT score artifact on pre-declared operational slices."""
+"""Evaluate a frozen graph-model score artifact on pre-declared operational slices."""
 
 from __future__ import annotations
 
