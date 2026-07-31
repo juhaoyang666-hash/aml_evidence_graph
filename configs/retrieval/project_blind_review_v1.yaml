@@ -1,0 +1,55 @@
+schema_version: "1.0"
+protocol_id: "retrieval-project-blind-v1-20260731"
+status: "frozen_awaiting_project_adjudication"
+frozen_at: "2026-07-31"
+
+adjudication:
+  adjudicator_scope: "agent-authorized-by-user"
+  independent_from_system_development: false
+  blind_to_model_outputs: true
+
+frozen_system:
+  encoder_model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+  revision: "e8f8c211226b894fcb81acc59f3b34ba3efd5f42"
+  dense_threshold: 0.35
+  answerability_threshold: 0.9022769927978516
+  feature_contract: "normalized_embedding+dense_top+dense_margin+bm25_top+bm25_margin+query_length+non_ascii_ratio"
+  candidate_limit: 20
+  result_limit: 3
+  rrf_constant: 60
+  required_source_prefixes: ["dense:"]
+
+paths:
+  retrieval_config: "configs/retrieval/hybrid_semantic_v1.yaml"
+  calibration_cases: "golden/retrieval_queries_v2.json"
+  retrospective_cases: "golden/retrieval_queries_v3_additions.json"
+  prior_case_files:
+    - "golden/retrieval_queries_v1.json"
+    - "golden/retrieval_queries_v2.json"
+    - "golden/retrieval_queries_v3_additions.json"
+  typology_corpus: "knowledge/typologies"
+  gate_model: "artifacts/retrieval_answerability_gate_v1/answerability_gate.joblib"
+
+sha256:
+  retrieval_config: "ca23f32b80e3c25a3c239165cb6d33f4e6bd268a02fef07b7ffe7d01c306e1fd"
+  calibration_cases: "2ab82a8006af3dc486a7e88bd03aa93feebb9144b59bfe866a6a776ea5396137"
+  retrospective_cases: "c0501de3085449545cefb58095d184b5274acc02b1bb800a00116eaf261921ef"
+  typology_corpus: "fac712e9f2a10b493074fa2230ed6f4c705c9194db56d5d02cf364600fb6eec1"
+  gate_model: "a687cca030f6ac5b7b42c148ea6d295cd7eb18a70633e060a101e30a3c26dd36"
+
+evaluation:
+  canonical_output: "artifacts/retrieval_project_blind_v1_evaluation"
+  minimum_cases: 40
+  minimum_answerable_cases: 25
+  minimum_no_answer_cases: 10
+  result_limit: 3
+  promotion_criteria:
+    maximum_no_answer_fpr: 0.20
+    maximum_recall_at_3_drop: 0.05
+    maximum_mrr_drop: 0.05
+
+notes:
+  - "The user explicitly authorized the same Agent to adjudicate this project regression set."
+  - "This is model-output-blind but not independent from system development."
+  - "It must never be described as external expert or independent compliance validation."
+  - "System parameters and promotion criteria were frozen before v4 queries were authored."

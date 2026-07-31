@@ -25,6 +25,11 @@ from aml_evidence_graph.retrieval import (
     evaluate_retriever_cases,
     summarize_retrieval_results,
 )
+from aml_evidence_graph.retrieval.answerability import (
+    ANSWERABILITY_FEATURE_CONTRACT,
+    ProbabilityGatedRetriever,
+    build_answerability_features,
+)
 
 MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 REVISION = "e8f8c211226b894fcb81acc59f3b34ba3efd5f42"
@@ -56,33 +61,6 @@ def _load_cases(path: Path) -> list[RetrievalCase]:
     return [RetrievalCase.model_validate(item) for item in payload]
 
 
-def _retrieval_features(
-    cases: list[RetrievalCase],
-    encoder: SentenceTransformerEncoder,
-    dense: DenseTypologyRetriever,
-    bm25: BM25TypologyRetriever,
-) -> np.ndarray:
-    embeddings = encoder.encode([case.query for case in cases])
-    signals: list[list[float]] = []
-    for case in cases:
-        dense_hits = dense.search(case.query, limit=3)
-        bm25_hits = bm25.search(case.query, limit=3)
-        dense_scores = [hit.score for hit in dense_hits]
-        bm25_scores = [hit.score for hit in bm25_hits]
-        non_ascii = sum(ord(char) > 127 for char in case.query)
-        signals.append(
-            [
-                dense_scores[0] if dense_scores else 0.0,
-                dense_scores[0] - dense_scores[1] if len(dense_scores) > 1 else 0.0,
-                bm25_scores[0] if bm25_scores else 0.0,
-                bm25_scores[0] - bm25_scores[1] if len(bm25_scores) > 1 else 0.0,
-                float(len(case.query)),
-                non_ascii / max(len(case.query), 1),
-            ]
-        )
-    return np.column_stack([embeddings, np.asarray(signals, dtype=np.float32)])
-
-
 def _model() -> object:
     return make_pipeline(
         StandardScaler(),
@@ -93,24 +71,6 @@ def _model() -> object:
             random_state=20260722,
         ),
     )
-
-
-class _ProbabilityGatedRetriever:
-    def __init__(
-        self,
-        base: HybridTypologyRetriever,
-        probabilities: dict[str, float],
-        threshold: float,
-    ) -> None:
-        self.base = base
-        self.probabilities = probabilities
-        self.threshold = threshold
-        self.name = "hybrid-rrf+answerability-gate"
-
-    def search(self, query: str, *, limit: int = 3) -> list[object]:
-        if self.probabilities[query] < self.threshold:
-            return []
-        return self.base.search(query, limit=limit)
 
 
 def _select_threshold(
@@ -155,7 +115,7 @@ def _summary(
         case.query: float(probability)
         for case, probability in zip(cases, probabilities, strict=True)
     }
-    retriever = _ProbabilityGatedRetriever(base, probability_map, threshold)
+    retriever = ProbabilityGatedRetriever(base, probability_map, threshold)
     return asdict(
         summarize_retrieval_results(
             retriever.name,
@@ -188,7 +148,7 @@ def main() -> None:
         required_source_prefixes=("dense:",),
     )
 
-    x_calibration = _retrieval_features(calibration, encoder, dense, bm25)
+    x_calibration = build_answerability_features(calibration, encoder, dense, bm25)
     y_calibration = np.asarray(
         [not case.expect_no_answer for case in calibration], dtype=np.int64
     )
@@ -206,14 +166,12 @@ def main() -> None:
 
     final_model = _model()
     final_model.fit(x_calibration, y_calibration)
-    x_retrospective = _retrieval_features(retrospective, encoder, dense, bm25)
+    x_retrospective = build_answerability_features(retrospective, encoder, dense, bm25)
     retrospective_probabilities = final_model.predict_proba(x_retrospective)[:, 1]
     payload = {
         "schema_version": "1.0",
         "model": f"{MODEL}@{REVISION}",
-        "feature_contract": (
-            "normalized embedding + dense top/margin + BM25 top/margin + length/language"
-        ),
+        "feature_contract": ANSWERABILITY_FEATURE_CONTRACT,
         "protocol": {
             "calibration": str(args.calibration),
             "calibration_method": "5-fold stratified OOF",
