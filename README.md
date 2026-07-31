@@ -39,11 +39,9 @@
 | [简历证据.md](docs/简历证据.md) | 产物自动门禁生成的唯一公开指标证据页 |
 | [主架构图.md](docs/主架构图.md) | 风险评分、后评分聚合、受控 Agent 与人工审批边界 |
 | [项目改进进度.md](docs/项目改进进度.md) | 求职改进完成度、sidecar 边界与下一步 |
-| [PIT后全量复现.md](docs/PIT后全量复现.md) | Linux 全量复现命令（主线 GAT） |
 | [特征工程V2实验.md](docs/特征工程V2实验.md) | FE v2 sidecar 完成结果与判定 |
-| [简历项目描述.md](docs/简历项目描述.md) | 简历项目描述（可粘贴） |
-| [面试要点.md](docs/面试要点.md) | 面试自答要点 |
-| [环境配置.md](docs/环境配置.md) | conda `risk`、GPU、可选依赖与轻量验证 |
+| [面试要点.md](docs/面试要点.md) | 简历项目描述与面试自答要点 |
+| [环境配置.md](docs/环境配置.md) | conda `risk`、GPU、全量复现与轻量验证 |
 
 ## 环境（Linux，全量实验）
 
@@ -71,12 +69,12 @@ $PY -m aml_evidence_graph.ingestion.smoke_subset \
   --input artifacts/prepared_transactions --output artifacts/prepared_smoke --overwrite
 $PY -m aml_evidence_graph.features.build \
   --input artifacts/prepared_smoke --output artifacts/pit_features_smoke --overwrite
-# 后续 table / graphsage / OOF / fusion 见 docs/PIT后全量复现.md 烟雾对照表
+# 后续 table / GAT / OOF / fusion 见 docs/环境配置.md 的全量复现清单
 # 或沿用 configs/models.smoke.yaml + artifacts/models_smoke/
 ```
 
 全量 OOF 使用默认 `--splits 3 --minimum-training-months 2`。  
-**主线全量复现（GAT + catboost+GAT）**：[docs/PIT后全量复现.md](docs/PIT后全量复现.md)。
+**主线全量复现（GAT + catboost+GAT）**：[docs/环境配置.md](docs/环境配置.md)。
 
 辅助脚本：`scripts/run_full_train_chain.sh`、`scripts/run_remaining_gpu.sh`、
 `scripts/run_arch_comparison.sh`、`scripts/backfill_rule_hits.py`、

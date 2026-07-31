@@ -161,3 +161,60 @@ Shapley 归因或因果效应，也不据此重新选择或读取测试集。
 - `artifacts/gat_amount_recheck_60d_seed20260723/full`
 - `artifacts/gat_amount_recheck_60d_seed20260723/without_amount`
 - `artifacts/gat_amount_recheck_60d_seed20260723/paired_gate.json`
+
+## 时点新颖性与低度特征迭代
+
+在 60 天历史、同一 FE v2 和同一训练协议下，将新增特征拆成两个预注册特征族：
+
+- **时点新颖性**：端点是否首次出现、距首次/最近历史交易的时间等语义明确的 PIT 特征；
+- **度数交互**：两端点历史总度数、最小/最大度数及不平衡比。
+
+### Validation 消融与稳定性
+
+| 配置 | Seed | Validation PR-AUC | Recall@0.1% |
+|---|---:|---:|---:|
+| FE v2 60d 配对基线 | 20260722 | 0.89795 | 0.83175 |
+| 仅时点新颖性 | 20260722 | 0.94539 | 0.87672 |
+| 仅时点新颖性 | 20260723 | 0.94686 | 0.86561 |
+| 仅度数交互 | 20260722 | 0.99840 | 0.95661 |
+| 完整 13 项 | 20260722 | 0.99562 | 0.94180 |
+
+时点新颖性两 seed 的 PR-AUC 只差 `0.00146`，方向稳定。完整拼接反而比仅度数交互低
+`0.00278`，说明两族存在负交互，不能假设特征越多越好。严格交易时点切片中，任一端点此前
+未见从 `0.76140` 提升到约 `0.948`；低度非零切片提升明显但跨 seed 波动更大。
+
+### 度数捷径追溯与压力测试
+
+`graph_endpoint_min_historical_degree` 单变量 validation PR-AUC 为 `0.89352`，train 仅
+`0.64006`。正例最小历史度中位数从 2022-11 的 `2` 增至 2023-05/06 的 `12/11`，负例同期
+保持 `1`；月内/Typology 匹配负样本上该单变量 PR-AUC 仍为 `0.90251`，排除了“只识别月份”
+这一单一解释，但暴露了 SAML-D 生成机制的结构捷径。
+
+从度数族移除最小度数后，validation PR-AUC 仍为 `0.98425`（相对完整度数族下降
+`0.01415`）；月内/Typology 匹配压力集上完整度数族与去最小度数分别为 `0.99961 / 0.99922`。
+因此捷径并非由一个字段独占。度数族只作为合成基准上限和生成机制诊断，不外推为真实业务收益。
+
+### 冻结候选测试
+
+时点新颖性 seed `20260723` 通过预注册的配对 validation 门禁后，固定唯一 checkpoint，
+只读取一次冻结 test：
+
+| 指标 | 结果 |
+|---|---:|
+| Test PR-AUC | 0.97140 |
+| ROC-AUC | 0.99984 |
+| Precision@0.1% | 0.98140 |
+| Recall@0.1% | 0.84391 |
+
+相对本机 v1 replay（PR-AUC `0.95218`）点差为 `+0.01922`；200 次同交易分层配对
+Bootstrap 的 95% CI 为 `[+0.01152, +0.02798]`。但部分已见账户和 Smurfing 切片退化，
+且尚未在 Linux 权威环境或不同生成机制数据上复现，因此只晋升为本机验证 sidecar，不替换
+v1 GAT 主排序器。本机 GAT 特征迭代至此关闭，不再用 test 选择新特征。
+
+主要产物：
+
+- `artifacts/gat_cold_start_v3_novelty_only_60d_seed20260722`
+- `artifacts/gat_cold_start_v3_novelty_only_60d_seed20260723`
+- `artifacts/gat_cold_start_v3_degree_without_min_60d_seed20260722`
+- `artifacts/degree_matched_stress_v3_seed20260730.json`
+- `artifacts/gat_cold_start_v3_novelty_only_60d_seed20260723_frozen_test`
