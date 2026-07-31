@@ -443,9 +443,9 @@ def render_resume_evidence_markdown(report: ResumeEvidenceReport) -> str:
         lines.extend(
             [
                 "",
-                "## 主线与 FE v2 sidecar 对照",
+                "## 历史基准与当前主线对照",
                 "",
-                "| 模型组 | 主线 PR-AUC | FE v2 PR-AUC | Δ | 结论 |",
+                "| 模型组 | 历史基准 PR-AUC | 当前主线 PR-AUC | Δ | 结论 |",
                 "|---|---:|---:|---:|---|",
             ]
         )

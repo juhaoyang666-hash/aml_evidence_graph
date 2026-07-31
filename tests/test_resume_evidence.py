@@ -222,7 +222,7 @@ def test_resume_evidence_validates_protocol_and_compares_sidecar(tmp_path: Path)
     assert report.evidence[0].input_fingerprints == {"features": "sha-main"}
     assert report.comparisons[0].absolute_delta == pytest.approx(0.05)
     assert report.comparisons[0].outcome == "improved"
-    assert "主线与 FE v2 sidecar 对照" in markdown
+    assert "历史基准与当前主线对照" in markdown
 
 
 def test_resume_evidence_rejects_score_population_mismatch(tmp_path: Path) -> None:

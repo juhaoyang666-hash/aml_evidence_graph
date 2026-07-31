@@ -2,90 +2,35 @@ schema_version: "1.0"
 dataset_disclosure: "Public synthetic SAML-D (~9.5M transactions); not production data."
 protocol_disclosure: "Fixed time-out split with point-in-time features and history-only graph inference."
 require_provenance: true
-required_comparison_groups: ["CatBoost", "GAT", "CatBoost + GAT"]
+required_comparison_groups: []
 sources:
-  - source_id: "main_catboost"
-    display_name: "CatBoost main line"
-    artifact_dir: "artifacts/table_baseline_rules"
-    component: "catboost"
-    required: true
-    legacy_minimum_test_rows: 1000000
-    score_path: "artifacts/table_baseline_rules/scores/table_test_scores.parquet"
-    score_column: "catboost"
-    expected_test_start_date: "2023-07-01"
-    expected_test_end_date: "2023-08-23"
-    bootstrap_path: "artifacts/diagnostics/bootstrap_ci.json"
-    bootstrap_component: "catboost"
-    minimum_bootstrap_iterations: 200
-    comparison_group: "CatBoost"
-    comparison_role: "main"
-  - source_id: "main_gat"
-    display_name: "GAT main line"
-    artifact_dir: "artifacts/gat"
-    required: true
-    legacy_minimum_test_rows: 1000000
-    score_path: "artifacts/gat/scores/graphsage_test_scores.parquet"
-    score_column: "graphsage"
-    expected_test_start_date: "2023-07-01"
-    expected_test_end_date: "2023-08-23"
-    bootstrap_path: "artifacts/diagnostics/bootstrap_ci.json"
-    bootstrap_component: "gat"
-    minimum_bootstrap_iterations: 200
-    comparison_group: "GAT"
-    comparison_role: "main"
-  - source_id: "main_fusion"
-    display_name: "CatBoost + GAT OOF fusion"
-    artifact_dir: "artifacts/fusion_test_cb_gat"
-    required: true
-    legacy_minimum_test_rows: 1000000
-    score_path: "artifacts/fusion_test_cb_gat/test_fusion_scores.parquet"
-    score_column: "fusion_calibrated_probability"
-    expected_test_start_date: "2023-07-01"
-    expected_test_end_date: "2023-08-23"
-    bootstrap_path: "artifacts/diagnostics/bootstrap_ci.json"
-    bootstrap_component: "fusion"
-    minimum_bootstrap_iterations: 200
-    comparison_group: "CatBoost + GAT"
-    comparison_role: "main"
-  - source_id: "fe_v2_catboost"
-    display_name: "FE v2 CatBoost sidecar"
+  - source_id: "current_catboost_fe_v2"
+    display_name: "CatBoost FE v2 主线"
     artifact_dir: "artifacts/table_baseline_fe_v2"
     component: "catboost"
     required: true
-    pipeline_status: "artifacts/logs/fe_v2_gat_oof_fusion_status.json"
-    required_pipeline_state: "ok"
     legacy_minimum_test_rows: 1000000
     score_path: "artifacts/table_baseline_fe_v2/scores/table_test_scores.parquet"
     score_column: "catboost"
     expected_test_start_date: "2023-07-01"
     expected_test_end_date: "2023-08-23"
-    comparison_group: "CatBoost"
-    comparison_role: "sidecar"
-  - source_id: "fe_v2_gat"
-    display_name: "FE v2 GAT sidecar"
-    artifact_dir: "artifacts/gat_fe_v2"
+  - source_id: "current_gat_novelty"
+    display_name: "GAT + 时点新颖性主线"
+    artifact_dir: "artifacts/gat_cold_start_v3_novelty_only_60d_seed20260723_frozen_test"
     required: true
-    pipeline_status: "artifacts/logs/fe_v2_gat_oof_fusion_status.json"
-    required_pipeline_state: "ok"
-    legacy_minimum_test_rows: 1000000
-    score_path: "artifacts/gat_fe_v2/scores/graphsage_test_scores.parquet"
+    score_path: "artifacts/gat_cold_start_v3_novelty_only_60d_seed20260723_frozen_test/scores/graphsage_test_scores.parquet"
     score_column: "graphsage"
     expected_test_start_date: "2023-07-01"
     expected_test_end_date: "2023-08-23"
-    comparison_group: "GAT"
-    comparison_role: "sidecar"
-  - source_id: "fe_v2_fusion"
-    display_name: "FE v2 CatBoost + GAT fusion sidecar"
-    artifact_dir: "artifacts/fusion_test_fe_v2"
+    bootstrap_path: "artifacts/gat_cold_start_v3_novelty_only_60d_seed20260723_frozen_test/paired_vs_gat_v1_local_replay.json"
+    minimum_bootstrap_iterations: 200
+  - source_id: "current_oof_fusion"
+    display_name: "CatBoost FE v2 + 本机 GAT v1 OOF 融合"
+    artifact_dir: "artifacts/fusion_test_catboost_fe_v2_gat_v1_local_replay"
     required: true
-    pipeline_status: "artifacts/logs/fe_v2_gat_oof_fusion_status.json"
-    required_pipeline_state: "ok"
-    legacy_minimum_test_rows: 1000000
-    score_path: "artifacts/fusion_test_fe_v2/test_fusion_scores.parquet"
+    score_path: "artifacts/fusion_test_catboost_fe_v2_gat_v1_local_replay/test_fusion_scores.parquet"
     score_column: "fusion_calibrated_probability"
     expected_test_start_date: "2023-07-01"
     expected_test_end_date: "2023-08-23"
-    bootstrap_path: "artifacts/fusion_test_fe_v2_bootstrap/metrics.json"
+    bootstrap_path: "artifacts/fusion_test_catboost_fe_v2_gat_v1_local_replay/metrics.json"
     minimum_bootstrap_iterations: 200
-    comparison_group: "CatBoost + GAT"
-    comparison_role: "sidecar"

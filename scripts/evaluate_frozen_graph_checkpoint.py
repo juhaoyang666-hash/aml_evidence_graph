@@ -25,6 +25,7 @@ from aml_evidence_graph.graph.snapshots import (
     TemporalGraphSnapshot,
 )
 from aml_evidence_graph.models.graph_loading import load_graphsage_artifact
+from aml_evidence_graph.tracking.run import create_run_manifest
 from aml_evidence_graph.training.run_graphsage import _write_graph_scores
 from aml_evidence_graph.training.table_baseline import load_feature_split
 
@@ -127,8 +128,29 @@ def main() -> None:
         frame=test,
         scores=test_scores,
     )
+    manifest_inputs = {
+        "pit_feature_dataset": args.features,
+        "checkpoint": args.checkpoint,
+    }
+    if args.selection_evidence is not None:
+        manifest_inputs["selection_evidence"] = args.selection_evidence
+    manifest = create_run_manifest(
+        output_dir=args.output,
+        command="evaluate_frozen_graph_checkpoint.py",
+        random_seed=loaded.config.random_seed,
+        input_paths=manifest_inputs,
+        metadata={
+            "selection": args.selection_label,
+            "test_evaluations": 1,
+            "configuration_frozen": True,
+            "history_start": history_start.isoformat(),
+            "first_test_date": first_test_date.isoformat(),
+        },
+        run_purpose="full",
+    )
     payload = {
         "schema_version": "1.0",
+        "run_id": manifest.run_id,
         "created_at_utc": datetime.now(UTC).isoformat(),
         "protocol": {
             "selection": args.selection_label,
