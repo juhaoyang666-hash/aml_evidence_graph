@@ -4,6 +4,14 @@
 原文仍可通过 Git 历史追溯。公开数字以 [简历证据.md](简历证据.md) 为唯一门禁来源，完整上下文
 以 [实验结果.md](实验结果.md) 和 [模型卡.md](模型卡.md) 为准。
 
+当前公开版本为
+[v1.0.0-resume](https://github.com/juhaoyang666-hash/aml_evidence_graph/releases/tag/v1.0.0-resume)：
+P0/P1 求职工程项已闭环，Mock 发布烟雾和 GitHub CI 已通过。三个 README 的职责为：
+
+- [仓库 README](../README.md)：面向招聘者的项目总览、结果、Demo 与安装入口；
+- 本页：长期维护文档索引与口径治理；
+- [Golden README](../golden/README.md)：生成、检索、盲法和 Agent 回归集合说明。
+
 ## 状态与结果
 
 | 文档 | 用途 |

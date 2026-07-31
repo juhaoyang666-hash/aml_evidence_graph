@@ -1,55 +1,83 @@
-# Golden Cases
+# Golden 与回归集合
 
-本目录含调查草稿 / Typology 检索 / SAR 草稿 / 事实校验的自动化回归用例。
+本目录只存放虚构或项目裁定的回归输入，不包含 SAML-D 原始交易、真实案件、客户标识或外部
+服务密钥。生成、检索和 Agent 三类集合相互独立，不能把调查裁定回灌成交易评分标签。
+
+## 当前集合
 
 | 文件 | 性质 | 规模 | 用途 |
-|---|---|---|---|
-| `mock_cases.json` | 虚构 smoke 种子 | 6 | CI / 本地快速回归 |
-| `cases_v1.json` | **项目裁定** Golden | **34** | 分层 typology + 低证据 + 对抗（含 B5 扩容） |
-| `adjudication_v1.json` | 逐案裁定记录 | **34** | 裁定决策 / 期望结果 / 备注 / 时间戳 |
-| `retrieval_queries_v2.json` | **项目作者裁定**检索 Golden | **80** | 中英文、改写、多标签、hard negative 与拒答 |
+|---|---|---:|---|
+| `mock_cases.json` | 完全虚构 | 6 | CI 与本地 Golden smoke |
+| `cases_v1.json` | 项目裁定生成 Golden | 34 | Typology、低证据、对抗与事实校验 |
+| `adjudication_v1.json` | `cases_v1` 裁定记录 | 34 | 期望结果、理由、备注与裁定时间 |
+| `agent_cases_v2.json` | 项目构造 Agent 回归 | 60 | 路由、工具参数、人工审核和故障恢复 |
+| `retrieval_queries_v1.json` | 早期检索回归 | 15 | 历史兼容，不作为当前主表 |
+| `retrieval_queries_v2.json` | 检索校准/开发集 | 80 | 中英文、改写、多标签、hard negative、拒答 |
+| `retrieval_queries_v3_additions.json` | 冻结增量诊断 | 50 | 在阈值冻结后评估覆盖与拒答泛化 |
+| `retrieval_queries_v4_project_blind.json` | 项目作者盲法集合 | 50 | answerability gate 唯一一次项目评测 |
+| `retrieval_adjudication_v4_project_blind.json` | v4 裁定 | 50 | 35 条可回答、15 条无答案及裁定声明 |
 
-检索 Golden 含 65 条可回答与 15 条拒答，和生成侧 `cases_v1.json` 分开评估；检索命中
-不会改变风险分数或案件结论。聚合结果见 `docs/检索评估.md`，逐案 Bad Case 位于被 Git
-排除的本地评测产物。该裁定仍不代表独立合规专家生产验收。
+`v2+v3` 构成文档中的 130 条检索开发/诊断集合。v4 在参数和门禁冻结后构建并只评一次；后续
+不得使用 v4 调参或再次宣称冻结测试。聚合指标见[检索评估](../docs/检索评估.md)。
 
-## 裁定状态（2026-07-26）
+## 裁定与独立性边界
 
-`cases_v1.json` 已在用户明确授权下由 agent 完成正式逐案裁定
-（「人工裁定 Golden由你来裁定」→ adjudicator=`agent-authorized-by-user`）。  
-B5 对抗扩容（`agent-adv-07`…`10`）同样按该裁定约定写入 `adjudication_v1.json`。
+- `cases_v1` 和 v4 检索集均由用户授权当前 Agent 完成项目裁定。
+- v4 满足 `blind_to_model_outputs=true`，但
+  `independent_from_system_development=false`。
+- 这些集合可用于项目回归、Bad Case 和求职工程证据，不是独立第三方合规专家面板、银行生产
+  验收或真实案件标签。
+- `exclude`、`answerable`、`no_answer` 和生成侧期望状态只服务各自评测，不参与 CatBoost、GAT
+  或融合器训练。
 
-| 约定 | 说明 |
-|---|---|
-| 数据性质 | 非 SAML-D 抽样、非真实案件；按 Evidence Package 结构构造 |
-| 裁定性质 | **项目裁定的 Golden v1**（用户授权的 agent 裁定），**不是**独立第三方人工评审团 |
-| 用途 | 调查起草、BM25 检索、无证据拒答、幻觉拦截（注入坏注释）、对抗提示回归 |
-| 不可用途 | 对外宣称独立第三方人工面板准确率、替代合规审批后的生产 Golden、回灌为评分标签 |
-| 分层（当前） | typology 18 · low_evidence 6 · adversarial **10**（含 `injected_annotation` 探针 **7**） |
+## 生成 Golden（34 案）
 
-详见 `adjudication_v1.json` 中每案的 `decision` / `expected_outcomes` / `notes`。
+分层为 typology 18、low evidence 6、adversarial 10；其中 7 条带确定性
+`injected_annotation` 探针，用于验证数字、实体和越界引用拦截，而不是依赖模型“碰巧幻觉”。
 
-## 规划修订
+当前模板路径：Schema 合规、事实快照一致、幻觉拦截和无证据拒答均为 `1.0`。外部 LLM 的
+原 30 案路径另行报告，不能与 34 案确定性模板结果混算。详见
+[大模型调查系统](../docs/大模型调查系统.md)。
 
-正式集由 ~100 案下调为 **30** 案（分层 18 + 低证据 6 + 对抗 6），再于算力附录
-**B5** 扩至 **34** 案（+4 对抗：FX 捏造、账户 exfil、过度自信百分比、角色越权）。  
-三项可自动化指标：**幻觉拦截率**、**无证据拒答率**、**端到端延迟 p50/p95**。  
-模板路径（34 案）幻觉拦截 / 无证据拒答均为 **1.0**（见 `docs/大模型调查系统.md`）。
+## Agent 回归（60 案）
+
+| 分组 | 数量 | 覆盖 |
+|---|---:|---|
+| 路由 | 12 | 特征、子图、低证据与缺引用组合 |
+| 工具 | 24 | 合法边界、超限参数、SQL/路径/URL 注入、缺字段 |
+| 人工审核 | 12 | approve/edit/reject、非法动作、缺备注 |
+| 恢复 | 12 | 检索故障、checkpoint 与 SQLite 恢复 |
+
+项目内确定性基线的 Case 通过率、工具选择准确率、参数合法率、事实一致率和恢复成功率均为
+`1.0`。它验证受控工作流，不代表外部 LLM 质量或生产 SLA。
+
+## 检索项目盲法结果
+
+在 v4 上，冻结 hybrid 与 `hybrid + answerability gate` 的 Recall@3/MRR 都为
+`0.757/0.619`；无答案误召回率由 `0.600` 降为 `0.133`。四项预注册项目 sidecar 门禁通过，
+但 Recall@3 仍有改进空间，且裁定者参与系统开发，不能称为独立验证。
 
 ## 评测命令
 
 ```bash
 export PYTHONPATH=src
-# 模板路径（默认 CI / 无 LLM）
-/data1/yangjuhao/envs/risk/bin/python -m aml_evidence_graph.investigation.golden \
-  --cases golden/cases_v1.json --typologies knowledge/typologies \
+PY=python
+
+# 生成 Golden：确定性模板，不调用外部 LLM
+$PY -m aml_evidence_graph.investigation.golden \
+  --cases golden/cases_v1.json \
+  --typologies knowledge/typologies \
   --output artifacts/golden_summary.json
 
-# 可选：ECNU LLM（需 .env：AML_LLM_ENABLED + API key；勿把密钥写入仓库）
-/data1/yangjuhao/envs/risk/bin/python -m aml_evidence_graph.investigation.golden \
-  --cases golden/cases_v1.json --typologies knowledge/typologies \
-  --output artifacts/golden_summary_llm.json --use-llm
+# 受控 Agent 60 案
+$PY scripts/evaluate_agent_golden.py --overwrite
+
+# 检索开发集聚合评测
+$PY scripts/evaluate_retrieval.py
+
+# 求职发布版 Mock 验收
+$PY scripts/verify_resume_release.py
 ```
 
-对抗子集中带 `injected_annotation` 的用例用于确定性验证 `validate_annotation`
-拦截数字/越界引用；不依赖模型「碰巧幻觉」。LLM 路径额外覆盖 prompt 注入与诱导结论。
+可选外部 LLM 评测必须显式启用并从当前进程读取 API key；不要将 key 写入 Golden、`.env`
+示例、命令历史或仓库。LLM 不参与风险评分和案件结论。

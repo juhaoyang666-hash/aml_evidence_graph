@@ -3,21 +3,27 @@
 [![CI](https://github.com/juhaoyang666-hash/aml_evidence_graph/actions/workflows/ci.yml/badge.svg)](https://github.com/juhaoyang666-hash/aml_evidence_graph/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/juhaoyang666-hash/aml_evidence_graph?include_prereleases)](https://github.com/juhaoyang666-hash/aml_evidence_graph/releases)
 
-基于公开合成数据集 **[SAML-D](https://www.kaggle.com/datasets/berkanoztas/synthetic-transaction-monitoring-dataset-aml)**
-（约 950 万笔交易）的交易级 AML 风险识别与调查辅助系统。
+面向风控、反欺诈、图算法与大模型风控应用岗位的 AML 求职项目。项目在公开合成
+[SAML-D](https://www.kaggle.com/datasets/berkanoztas/synthetic-transaction-monitoring-dataset-aml)
+约 950 万笔交易上完成交易级风险排序，并将账户、资金路径和案件候选作为冻结交易分数的
+后评分聚合；LLM 只辅助调查措辞，不参与风险分数、阈值、告警排序或案件结论。
 
-- **打分**：PIT 表格特征 + 历史图边分类 + 训练期 OOF 堆叠融合（验证期校准 / 锁定阈值）
-- **调查**：Evidence Package 约束下的 Typology 检索、调查注释与 SAR 草稿；LLM **不参与**
-  风险分数、阈值或案件结论
-- **边界**：固定时间外切分；特征与图邻居只读预测时点之前的历史
+当前版本：[求职发布版 v1.0.0](https://github.com/juhaoyang666-hash/aml_evidence_graph/releases/tag/v1.0.0-resume)。
+投递前 P0/P1 工程项已经闭环，完整状态见[项目改进进度](docs/项目改进进度.md)。
 
-完整指标、run_id 与复现说明见 **[docs/实验结果.md](docs/实验结果.md)** ·
-**[docs/模型卡.md](docs/模型卡.md)**。
+## 项目亮点
 
-## 求职发布版：两分钟体验
+- **无未来泄漏**：固定时间外切分；每笔交易只使用 `[t-window,t)` 历史，同时间戳交易先评分再入历史。
+- **极不平衡评估**：以 PR-AUC 和 0.1%/0.5%/1% 告警预算为主，补充 Bootstrap、漂移和风险切片。
+- **历史图边分类**：同协议比较 GraphSAGE、GAT、RGCN、PNA；主线 GAT 优于表格基线。
+- **可审计融合**：只用训练期 expanding-time OOF 拟合融合器，验证期校准与锁定阈值，测试只披露。
+- **受控调查链**：RiskEvidencePackage、白名单工具、Typology 检索、事实校验、人工审批与独立审计。
+- **工程闭环**：Spark PIT 等价、MLflow candidate gate、FastAPI、Docker、结构化日志、CI 和 144 项测试。
 
-无需 SAML-D 完整数据、GPU、密钥或外部 LLM。Docker 会使用清华 PyPI 镜像构建仅含
-Mock/Schema/Typology 的公开演示：
+## 两分钟 Mock Demo
+
+不需要完整数据、GPU、密钥或外部 LLM。Docker 镜像只复制代码、配置和 Typology，不复制
+`data/`、`artifacts/` 或模型权重，并使用清华 PyPI 镜像安装依赖。
 
 ```bash
 git clone https://github.com/juhaoyang666-hash/aml_evidence_graph.git
@@ -25,136 +31,158 @@ cd aml_evidence_graph
 docker compose -f docker-compose.demo.yml up --build --wait
 ```
 
-打开 <http://127.0.0.1:8000/demo>，点击“加载 Mock 调查草稿”。演示重点：
+打开 <http://127.0.0.1:8000/demo>，点击“加载 Mock 调查草稿”。演示会展示：
 
-1. 页面首先声明虚构数据和非业务结论边界；
-2. Evidence Package 只提供已存在的规则、特征和图证据引用；
-3. 确定性调查链生成事实摘要、待核实项和 SAR 骨架；
-4. 状态停在 `draft_requires_human_review`，不会自动申报或处置。
-
-验收与停止：
+1. 虚构 Evidence Package 与数据边界；
+2. 规则、特征、图边和 Typology 的证据引用；
+3. 确定性事实摘要、待核实问题和 SAR 草稿骨架；
+4. `draft_requires_human_review` 停点，而不是自动申报或案件处置。
 
 ```bash
+# 查看健康状态并停止
 docker compose -f docker-compose.demo.yml ps
 docker compose -f docker-compose.demo.yml down
 
-# 已安装 Python 环境也可直接执行同一套发布断言
+# 已安装 Python 依赖时，可直接运行同一套六项发布断言
 python scripts/verify_resume_release.py
 ```
 
-发布烟雾会验证 API 版本、健康检查、Demo 边界、Mock Evidence、人工复核停点和
-Mock 模型标识；它不读取 `artifacts/`，结果不能替代下文 SAML-D 时间外测试指标。
+Mock 分数和页面内容只用于工程演示，不能当作 SAML-D 指标或真实业务结论。
 
-## 全量主线结果（公开合成 SAML-D，时间外测试）
+## 系统边界
 
-| 模型 | 角色 | 测试 PR-AUC | 0.1% 告警预算 P / R |
-|---|---|---:|---|
-| CatBoost | 主线表格 | **0.809** | 0.858 / 0.737 |
-| **GAT** | **主线图** | **0.948** | 0.974 / 0.838 |
-| **catboost + GAT** | **主线融合** | **0.918** | 0.936 / 0.805 |
-| GraphSAGE / catboost+GS | 原主线（保留可比） | 0.878 / 0.897 | 见 RESULTS |
+```mermaid
+flowchart LR
+    A["SAML-D 交易"] --> B["PIT 特征 / 历史有向图"]
+    B --> C["规则 / LR / CatBoost"]
+    B --> D["GAT 边分类"]
+    C --> E["训练期 OOF 融合"]
+    D --> E
+    E --> F["验证期校准与告警策略"]
+    F --> G["冻结交易分数"]
+    G --> H["账户 / 路径 / 案件候选聚合"]
+    H --> I["RiskEvidencePackage"]
+    I --> J["检索 + 受控 Agent"]
+    J --> K["人工复核"]
+    L["可选 LLM 注释"] -. "只写措辞，不打分" .-> J
+```
 
-同召回相对规则基线：CatBoost @50% 召回告警量削减约 **99.9%**（见 RESULTS）。
+监督目标是交易边标签。账户风险、资金路径和案件视图由交易结果聚合产生，不把交易标签直接
+转换成账户标签。普通 ODPS 笛卡尔积被禁止；批式实现使用预聚合和显式等值连接。
 
-**须同时披露**：融合（0.918）优于表格与原 GraphSAGE 融合，但**不**优于单独 GAT（0.948）。
-`graph_stats` / 三路融合仅作对照，不进主线。
+## 主线结果
 
-同协议边 GNN：GAT 0.948 > RGCN 0.903 > GraphSAGE 0.878 > PNA 0.705；
-多关系 RGCN（R=4）消融 **0.887**（未超过单关系 RGCN / GAT）。
+协议：训练 2022-10～2023-04、验证 2023-05～06、测试 2023-07～08；测试集
+1,558,821 笔、正例 1,813，正例率约 0.116%。数据为公开合成 SAML-D。
+
+| 模型 | 角色 | 测试 PR-AUC | 0.1% 告警预算 Precision / Recall |
+|---|---|---:|---:|
+| 规则 v2026.2 | 业务基线 | 0.0015 | 0.0019 / 0.0017 |
+| Logistic Regression | 表格对照 | 0.1966 | 0.2809 / 0.2416 |
+| CatBoost | 主线表格 | **0.8092** | **0.8576 / 0.7375** |
+| GraphSAGE | 图对照 | 0.8777 | 0.8736 / 0.7512 |
+| **GAT** | **主线图排序器** | **0.9483** | **0.9743 / 0.8378** |
+| CatBoost + GAT | OOF 融合策略 | **0.9175** | **0.9359 / 0.8047** |
+
+CatBoost 在 50% 召回下相对训练期定阈规则减少约 99.86% 告警。必须同时披露：融合优于
+CatBoost 和旧 CatBoost+GraphSAGE 融合，但**低于单独 GAT**；`graph_stats` 和三路融合只作
+合成机制对照，不进入主线。权威 run_id、Bootstrap 和切片见[实验结果](docs/实验结果.md)与
+[简历证据](docs/简历证据.md)。
+
+## 已验证 Sidecar
+
+Sidecar 用于展示迭代和实验纪律，不自动替换主线，也不能跨机器混报。
+
+| 候选 | 测试 PR-AUC | 证据边界 |
+|---|---:|---|
+| CatBoost FE v2 | 0.8754 | Linux 权威 sidecar；相对 v1 CatBoost 提升 |
+| GAT FE v2 | 0.9389 | 低于 v1 GAT，不晋升 |
+| CatBoost FE v2 + GAT FE v2 | 0.9554 | Linux 同版本融合 sidecar |
+| CatBoost FE v2 + 历史 GAT v1 | 0.9576 | Linux 跨版本融合；Windows 重训对照未提升 |
+| GAT + 时点新颖性 | 0.9714 | 本机唯一冻结 test；尚未在 Linux 权威环境或不同生成机制复现 |
+
+时点新颖性相对本机 v1 replay 的 PR-AUC 点差为 `+0.01922`，200 次配对 Bootstrap 95% CI
+`[+0.01152,+0.02798]`；部分已见账户与 Smurfing 切片退化，所以仍是 sidecar。度数交互的
+异常高分按 SAML-D 生成机制捷径处理，不包装为业务收益。详见
+[FE v2 实验](docs/特征工程V2实验.md)和[GAT 工程实验](docs/GAT工程Pareto实验.md)。
+
+## 调查、检索与 Agent 证据
+
+| 能力 | 当前证据 | 边界 |
+|---|---|---|
+| 生成 Golden | 34 案；Schema/事实快照、幻觉拦截、无证据拒答均通过 | 项目裁定，不是第三方专家面板 |
+| Typology 检索 | 11 篇语料、130 条开发评测；另有 50 条项目盲法集 | 检索只给调查线索，不参与评分 |
+| Answerability gate | 项目盲法集无答案误召回率 60.0% → 13.3%，Recall@3 保持 75.7% | 裁定者参与开发，不是独立合规验收 |
+| 受控 Agent | 60 案路由/工具/审核/恢复回归五项指标均为 1.0 | 确定性无 LLM 基线 |
+| Human-in-the-loop | checkpoint、approve/edit/reject、幂等键、两 worker 租约续期与 fencing | 单机 SQLite 原型，不是跨主机高可用 |
+
+外部 LLM 只接收最小化后的证据类别和引用元信息；返回内容必须通过引用白名单及数字/实体校验，
+失败时回退确定性模板。详见[大模型调查系统](docs/大模型调查系统.md)、
+[检索评估](docs/检索评估.md)和[Golden 数据说明](golden/README.md)。
+
+## 工程证据
+
+- Spark `local[8]` 在 9,504,852 行上重放 5 个代表性 PIT 特征，完整/增量逐交易 match rate
+  均为 `1.0`；窗口严格为 `[t-window,t)`。
+- MLflow 记录 v1/FE v2 的 CatBoost、GAT、融合三组同协议 candidate；选型 gate 只读取 validation，
+  测试指标标记为不可用于选择。
+- DuckDB/Polars 代表性窗口特征与官方 PIT match rate 均为 `1.0`。
+- FastAPI 支持 Mock 演示、受控本地评分、调查、人审恢复和结构化审计；完整融合 HTTP 基准与
+  单机两 worker 争用边界均有记录。
+- GitHub Actions 执行依赖检查、Ruff、实验脚本入口、144 项测试、Golden smoke 和发布 smoke。
+
+详情见[批量特征重放](docs/批量特征重放.md)、[服务性能基准](docs/服务性能基准.md)和
+[项目改进进度](docs/项目改进进度.md)。
+
+## 安装与验证
+
+Python `>=3.11,<3.14`。CPU/Mock 环境不需要安装 PyTorch；图训练请按目标 CUDA 版本单独安装
+GPU PyTorch 和 PyG wheels。
+
+```bash
+python -m venv .venv
+# Linux/macOS: source .venv/bin/activate
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple ".[dev,llm]"
+
+python scripts/verify_resume_release.py
+python -m ruff check src tests scripts
+python -m pytest
+aml-api  # http://127.0.0.1:8000/demo
+```
+
+完整训练需要 GPU 和本地 SAML-D 文件，正式命令、CUDA/Java/Spark 环境与产物路径见
+[环境配置](docs/环境配置.md)。公开仓库不包含完整数据和训练产物。
+
+## 仓库结构
+
+```text
+configs/                  规则、模型、Prompt、检索与评测配置
+golden/                   Mock、生成、检索与 Agent 回归集合
+knowledge/typologies/     版本化 Typology 语料
+scripts/                  实验、评估、压测、MLflow/Spark 与发布入口
+sql/                      ODPS/Hive 风格 PIT 模板（禁止普通笛卡尔积）
+src/aml_evidence_graph/   数据、特征、训练、聚合、调查与 API 实现
+tests/                    防泄漏、契约、模型、Agent、服务与工程回归
+docs/                     权威结果、模型卡、实验和求职材料
+```
 
 ## 文档入口
 
-完整索引见 **[docs/README.md](docs/README.md)**。常用入口：
-
-| 文档 | 内容 |
+| 文档 | 用途 |
 |---|---|
-| [实验结果.md](docs/实验结果.md) | 全量指标表、融合对比、架构对比、Bootstrap CI、Golden、调查视图 |
-| [模型卡.md](docs/模型卡.md) | 模型边界、评价协议、限制 |
-| [简历证据.md](docs/简历证据.md) | 产物自动门禁生成的唯一公开指标证据页 |
-| [主架构图.md](docs/主架构图.md) | 风险评分、后评分聚合、受控 Agent 与人工审批边界 |
-| [项目改进进度.md](docs/项目改进进度.md) | 求职改进完成度、sidecar 边界与下一步 |
-| [特征工程V2实验.md](docs/特征工程V2实验.md) | FE v2 sidecar 完成结果与判定 |
-| [面试要点.md](docs/面试要点.md) | 简历项目描述与面试自答要点 |
-| [环境配置.md](docs/环境配置.md) | conda `risk`、GPU、全量复现与轻量验证 |
+| [文档索引](docs/README.md) | 全部长期维护文档及维护规则 |
+| [项目改进进度](docs/项目改进进度.md) | P0/P1 完成度、已关闭事项与剩余边界 |
+| [实验结果](docs/实验结果.md) | 主线、Bootstrap、架构对比、漂移和负结果 |
+| [模型卡](docs/模型卡.md) | 适用范围、切分、限制和披露要求 |
+| [简历证据](docs/简历证据.md) | 自动门禁生成的唯一公开指标证据页 |
+| [主架构图](docs/主架构图.md) | 风险评分、后评分聚合、Agent 和人审边界 |
+| [面试要点](docs/面试要点.md) | 简历项目描述、项目介绍和高频追问 |
 
-## 环境（Linux，全量实验）
+## 必须披露的限制
 
-```bash
-export PY=/data1/yangjuhao/envs/risk/bin/python   # Python 3.12 · torch 2.5.1+cu121
-cd /data1/yangjuhao/反洗钱/aml_evidence_graph
-export PYTHONPATH=src
-```
-
-- GPU：最多 4× RTX 3090（`--max-gpus` / `CUDA_VISIBLE_DEVICES`）
-- 长任务请放在 **tmux** 中
-- 详细约定：[docs/环境配置.md](docs/环境配置.md)
-
-## 安全与数据边界
-
-- 对外须标注为**公开合成基准**，不得包装成私有/真实业务数据
-- 完整交易、模型与报告在 `artifacts/`（已 gitignore），仓库默认仅 Mock / Schema
-- 受控 API 只接受日期分区与告警引用；启用受控模式须配置强内部令牌
-
-## 快速烟雾（工程验证，指标不可对外引用）
-
-```bash
-export PYTHONPATH=src
-$PY -m aml_evidence_graph.ingestion.smoke_subset \
-  --input artifacts/prepared_transactions --output artifacts/prepared_smoke --overwrite
-$PY -m aml_evidence_graph.features.build \
-  --input artifacts/prepared_smoke --output artifacts/pit_features_smoke --overwrite
-# 后续 table / GAT / OOF / fusion 见 docs/环境配置.md 的全量复现清单
-# 或沿用 configs/models.smoke.yaml + artifacts/models_smoke/
-```
-
-全量 OOF 使用默认 `--splits 3 --minimum-training-months 2`。  
-**主线全量复现（GAT + catboost+GAT）**：[docs/环境配置.md](docs/环境配置.md)。
-
-辅助脚本：`scripts/run_full_train_chain.sh`、`scripts/run_remaining_gpu.sh`、
-`scripts/run_arch_comparison.sh`、`scripts/backfill_rule_hits.py`、
-`scripts/tmux_launch_tier_ab.sh`（漂移/社区/无监督/序列/蒸馏等算力附录）。
-
-## 调查视图 / API / Golden
-
-冻结融合分后生成账户风险、资金路径与案件视图（主线目录
-`artifacts/test_investigation_views_gat`），命令见 [环境配置.md](docs/环境配置.md)。
-
-```bash
-# Mock Demo（无完整交易）
-aml-api   # 安装后的入口；浏览器 http://127.0.0.1:8000/demo
-
-# Golden（30 案裁定集 + B5 扩容对抗探针；默认不调外部 LLM）
-$PY -m aml_evidence_graph.investigation.golden \
-  --cases golden/cases_v1.json --typologies knowledge/typologies \
-  --output artifacts/golden_summary.json
-# 可选：--use-llm（需 AML_LLM_ENABLED 与 ECNU_API_KEY，见 环境配置.md）
-
-# 受控 Agent Golden（60 案，确定性无 LLM 基线）
-$PY scripts/evaluate_agent_golden.py --overwrite
-```
-
-受控 Agent 的本地持久化可分别配置 checkpoint 与独立审计文件：
-
-```bash
-export AML_AGENT_CHECKPOINT_PATH=artifacts/checkpoints/investigations.sqlite
-export AML_AGENT_AUDIT_PATH=artifacts/audit/investigation_events.sqlite
-```
-
-审计表只追加工具、节点和人工动作元数据，不保存证据正文、特征值、图边或复核备注正文；
-SQLite 是本地原型，不应表述为生产 WORM 审计系统。
-
-审批恢复支持 `Idempotency-Key`：相同键与相同请求可跨 checkpoint 重启回放，冲突正文返回
-`409`。本机两 worker 已通过共享 SQLite 租约、续期和 fencing 验证；跨主机或高并发生产部署
-仍需事务型共享协调与集中审计后端。
-
-当前模板路径回归为 **34** 案（原 30 + 4 对抗扩容）；幻觉拦截 / 无证据拒答仍为 1.0，见
-[大模型调查系统.md](docs/大模型调查系统.md)。
-## 本地验收
-
-```bash
-export PYTHONPATH=src
-$PY -m ruff check src tests
-$PY -m pytest
-python scripts/verify_resume_release.py
-docker compose -f docker-compose.demo.yml up --build --wait
-```
+- 所有效果数字来自公开合成 SAML-D，不能外推为真实银行生产效果。
+- 项目没有真实线上流量、标签延迟验证、公司级 Spark/Hive 调度或在线特征存储。
+- Golden 和项目盲法检索集不是独立第三方合规专家验收。
+- SQLite checkpoint/audit/lease 适合单机演示，不等于生产 WORM、跨主机一致性或灾备。
+- LLM 不提高风险识别率，也不替代调查员或合规审批。
