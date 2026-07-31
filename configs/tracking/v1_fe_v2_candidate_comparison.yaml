@@ -1,0 +1,87 @@
+schema_version: "1.0"
+protocol_id: "windows-v1-fe-v2-validation-v1"
+tracking_uri: "sqlite:///artifacts/mlflow.db"
+experiment_name: "aml-evidence-graph-v1-fe-v2-candidates"
+selection_split: "validation"
+selection_metric: "pr_auc"
+minimum_relative_gain: 0.0
+output_root: "artifacts/mlflow_candidate_comparison_v1"
+
+pairs:
+  - comparison_group: "CatBoost"
+    interpretation: "FE v2 table features versus v1 table features on identical validation rows."
+    incumbent:
+      variant_id: "catboost_v1_windows"
+      source_artifact_dir: "artifacts/table_baseline"
+      evaluation_artifact_dir: "artifacts/mlflow_candidate_comparison_v1/catboost_v1"
+      replay_scores: true
+      validation_scores: "artifacts/table_baseline/scores/table_validation_scores.parquet"
+      test_scores: "artifacts/table_baseline/scores/table_test_scores.parquet"
+      score_column: "catboost"
+    candidate:
+      variant_id: "catboost_fe_v2_windows"
+      source_artifact_dir: "artifacts/table_baseline_fe_v2"
+      evaluation_artifact_dir: "artifacts/mlflow_candidate_comparison_v1/catboost_fe_v2"
+      replay_scores: true
+      validation_scores: "artifacts/table_baseline_fe_v2/scores/table_validation_scores.parquet"
+      test_scores: "artifacts/table_baseline_fe_v2/scores/table_test_scores.parquet"
+      score_column: "catboost"
+
+  - comparison_group: "GAT"
+    interpretation: "Windows v1 local replay versus FE v2 GAT; same time split and row population."
+    incumbent:
+      variant_id: "gat_v1_windows_replay"
+      source_artifact_dir: "artifacts/gat_v1_local_replay"
+      evaluation_artifact_dir: "artifacts/gat_v1_local_replay"
+      replay_scores: false
+      validation_scores: "artifacts/gat_v1_local_replay/scores/graphsage_validation_scores.parquet"
+      test_scores: "artifacts/gat_v1_local_replay/scores/graphsage_test_scores.parquet"
+      score_column: "graphsage"
+    candidate:
+      variant_id: "gat_fe_v2_windows"
+      source_artifact_dir: "artifacts/gat_fe_v2"
+      evaluation_artifact_dir: "artifacts/gat_fe_v2"
+      replay_scores: false
+      pipeline_status: "artifacts/logs/fe_v2_gat_oof_fusion_status.json"
+      required_pipeline_state: "complete"
+      validation_scores: "artifacts/gat_fe_v2/scores/graphsage_validation_scores.parquet"
+      test_scores: "artifacts/gat_fe_v2/scores/graphsage_test_scores.parquet"
+      score_column: "graphsage"
+
+  - comparison_group: "CatBoost FE v2 + GAT component"
+    interpretation: "Same CatBoost FE v2 scores and fusion protocol; only GAT v1 versus GAT FE v2 changes."
+    incumbent:
+      variant_id: "fusion_catboost_fe_v2_gat_v1_windows"
+      source_artifact_dir: "artifacts/fusion_catboost_fe_v2_gat_v1_local_replay"
+      evaluation_artifact_dir: "artifacts/fusion_catboost_fe_v2_gat_v1_local_replay"
+      test_artifact_dir: "artifacts/fusion_test_catboost_fe_v2_gat_v1_local_replay"
+      replay_scores: false
+      validation_scores: "artifacts/gat_v1_local_replay/scores/graphsage_validation_scores.parquet"
+      test_scores: "artifacts/gat_v1_local_replay/scores/graphsage_test_scores.parquet"
+      score_column: "graphsage"
+    candidate:
+      variant_id: "fusion_catboost_fe_v2_gat_fe_v2_windows"
+      source_artifact_dir: "artifacts/fusion_fe_v2"
+      evaluation_artifact_dir: "artifacts/fusion_fe_v2"
+      test_artifact_dir: "artifacts/fusion_test_fe_v2"
+      replay_scores: false
+      validation_scores: "artifacts/gat_fe_v2/scores/graphsage_validation_scores.parquet"
+      test_scores: "artifacts/gat_fe_v2/scores/graphsage_test_scores.parquet"
+      score_column: "graphsage"
+
+expected_population:
+  validation:
+    sample_count: 1814844
+    positive_count: 1890
+    start_date: "2023-05-01"
+    end_date: "2023-06-30"
+  test:
+    sample_count: 1558821
+    positive_count: 1813
+    start_date: "2023-07-01"
+    end_date: "2023-08-23"
+
+notes:
+  - "Candidate decisions use validation PR-AUC only; test metrics are disclosure-only."
+  - "This is a Windows same-population comparison, not a byte-identical Linux replay."
+  - "The fusion pair fixes CatBoost FE v2 and compares only the GAT component version."
