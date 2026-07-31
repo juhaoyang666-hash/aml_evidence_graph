@@ -22,7 +22,7 @@ jobs:
             -f https://data.pyg.org/whl/torch-2.5.0+cpu.html
       - name: Install project test dependencies
         run: |
-          python -m pip install ".[dev,llm,batch]"
+          python -m pip install ".[dev,llm,batch,agent-persistence]"
           python -m pip install --no-deps .
       - name: Validate dependency graph
         run: python -m pip check
