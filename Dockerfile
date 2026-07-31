@@ -6,7 +6,8 @@ COPY configs ./configs
 COPY src ./src
 COPY knowledge ./knowledge
 
-RUN python -m pip install --no-cache-dir ".[llm]"
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+RUN python -m pip install --no-cache-dir --index-url "${PIP_INDEX_URL}" ".[llm]"
 
 ENV AML_ENV=container
 ENV AML_LLM_ENABLED=false

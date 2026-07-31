@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import BaseModel, ConfigDict, Field
 
+from aml_evidence_graph import __version__
 from aml_evidence_graph.api.private_scoring import PrivateFeaturePartitionScoringService
 from aml_evidence_graph.api.services import (
     EvidenceStore,
@@ -250,7 +251,7 @@ def create_app(
     """Create an API bound to a local corpus; LLM use is annotation-only."""
     app = FastAPI(
         title="AML Evidence Graph",
-        version="0.1.0",
+        version=__version__,
         description=(
             "Evidence-bound investigation drafts. "
             "Risk scores must be produced by approved model inference upstream."

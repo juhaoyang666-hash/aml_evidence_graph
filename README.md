@@ -1,5 +1,8 @@
 # AML Evidence Graph
 
+[![CI](https://github.com/juhaoyang666-hash/aml_evidence_graph/actions/workflows/ci.yml/badge.svg)](https://github.com/juhaoyang666-hash/aml_evidence_graph/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/juhaoyang666-hash/aml_evidence_graph?include_prereleases)](https://github.com/juhaoyang666-hash/aml_evidence_graph/releases)
+
 基于公开合成数据集 **[SAML-D](https://www.kaggle.com/datasets/berkanoztas/synthetic-transaction-monitoring-dataset-aml)**
 （约 950 万笔交易）的交易级 AML 风险识别与调查辅助系统。
 
@@ -10,6 +13,37 @@
 
 完整指标、run_id 与复现说明见 **[docs/实验结果.md](docs/实验结果.md)** ·
 **[docs/模型卡.md](docs/模型卡.md)**。
+
+## 求职发布版：两分钟体验
+
+无需 SAML-D 完整数据、GPU、密钥或外部 LLM。Docker 会使用清华 PyPI 镜像构建仅含
+Mock/Schema/Typology 的公开演示：
+
+```bash
+git clone https://github.com/juhaoyang666-hash/aml_evidence_graph.git
+cd aml_evidence_graph
+docker compose -f docker-compose.demo.yml up --build --wait
+```
+
+打开 <http://127.0.0.1:8000/demo>，点击“加载 Mock 调查草稿”。演示重点：
+
+1. 页面首先声明虚构数据和非业务结论边界；
+2. Evidence Package 只提供已存在的规则、特征和图证据引用；
+3. 确定性调查链生成事实摘要、待核实项和 SAR 骨架；
+4. 状态停在 `draft_requires_human_review`，不会自动申报或处置。
+
+验收与停止：
+
+```bash
+docker compose -f docker-compose.demo.yml ps
+docker compose -f docker-compose.demo.yml down
+
+# 已安装 Python 环境也可直接执行同一套发布断言
+python scripts/verify_resume_release.py
+```
+
+发布烟雾会验证 API 版本、健康检查、Demo 边界、Mock Evidence、人工复核停点和
+Mock 模型标识；它不读取 `artifacts/`，结果不能替代下文 SAML-D 时间外测试指标。
 
 ## 全量主线结果（公开合成 SAML-D，时间外测试）
 
@@ -83,7 +117,7 @@ $PY -m aml_evidence_graph.features.build \
 ## 调查视图 / API / Golden
 
 冻结融合分后生成账户风险、资金路径与案件视图（主线目录
-`artifacts/test_investigation_views_gat`），命令见 FULL_RUN 文档。
+`artifacts/test_investigation_views_gat`），命令见 [环境配置.md](docs/环境配置.md)。
 
 ```bash
 # Mock Demo（无完整交易）
@@ -110,7 +144,8 @@ export AML_AGENT_AUDIT_PATH=artifacts/audit/investigation_events.sqlite
 SQLite 是本地原型，不应表述为生产 WORM 审计系统。
 
 审批恢复支持 `Idempotency-Key`：相同键与相同请求可跨 checkpoint 重启回放，冲突正文返回
-`409`。当前线程锁只覆盖单 API 进程，多 worker 部署仍需共享锁/CAS 后端。
+`409`。本机两 worker 已通过共享 SQLite 租约、续期和 fencing 验证；跨主机或高并发生产部署
+仍需事务型共享协调与集中审计后端。
 
 当前模板路径回归为 **34** 案（原 30 + 4 对抗扩容）；幻觉拦截 / 无证据拒答仍为 1.0，见
 [大模型调查系统.md](docs/大模型调查系统.md)。
@@ -120,5 +155,6 @@ SQLite 是本地原型，不应表述为生产 WORM 审计系统。
 export PYTHONPATH=src
 $PY -m ruff check src tests
 $PY -m pytest
-docker compose -f docker-compose.demo.yml up --build
+python scripts/verify_resume_release.py
+docker compose -f docker-compose.demo.yml up --build --wait
 ```

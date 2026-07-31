@@ -50,3 +50,5 @@ jobs:
           --cases golden/mock_cases.json
           --typologies knowledge/typologies
           --output /tmp/golden-summary.json
+      - name: Resume release smoke test
+        run: python scripts/verify_resume_release.py --output /tmp/resume-release-smoke.json
