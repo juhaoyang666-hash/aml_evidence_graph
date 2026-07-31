@@ -10,8 +10,8 @@ from datetime import UTC, datetime
 from threading import Lock
 from typing import Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,6 +24,7 @@ from aml_evidence_graph.api.services import (
     MockPartitionScoringService,
     PartitionScoringService,
     ReviewStore,
+    SQLiteEvidenceStore,
 )
 from aml_evidence_graph.demo.mock_data import build_mock_evidence_package
 from aml_evidence_graph.evidence.package import InvestigationReport, RiskEvidencePackage
@@ -36,6 +37,10 @@ from aml_evidence_graph.investigation.audit_store import (
     InvestigationAuditStore,
     SQLiteInvestigationAuditStore,
     persist_state_audit,
+)
+from aml_evidence_graph.investigation.coordination import (
+    LeaseLostError,
+    SQLiteThreadLockRegistry,
 )
 from aml_evidence_graph.investigation.llm import ECNUAnnotationClient, EvidenceAnnotationClient
 from aml_evidence_graph.investigation.tools import InvestigationToolRegistry
@@ -240,6 +245,7 @@ def create_app(
     internal_api_token: str | None = None,
     controlled_checkpointer: object | None = None,
     controlled_audit_store: InvestigationAuditStore | None = None,
+    thread_lock_registry: object | None = None,
 ) -> FastAPI:
     """Create an API bound to a local corpus; LLM use is annotation-only."""
     app = FastAPI(
@@ -258,7 +264,7 @@ def create_app(
     reviews = review_store or InMemoryReviewStore()
     checkpointer = controlled_checkpointer or InMemorySaver()
     investigation_audits = controlled_audit_store or InMemoryInvestigationAuditStore()
-    thread_locks = _ThreadLockRegistry()
+    thread_locks = thread_lock_registry or _ThreadLockRegistry()
     controlled_graph = build_controlled_investigation_graph(
         InvestigationToolRegistry(retriever),
         retriever=retriever,
@@ -267,6 +273,11 @@ def create_app(
     )
     if isinstance(scorer, PrivateFeaturePartitionScoringService) and internal_api_token is None:
         raise ValueError("Private feature scoring requires an internal API token.")
+
+    @app.exception_handler(LeaseLostError)
+    def handle_lease_lost(request: Request, error: LeaseLostError) -> JSONResponse:
+        """A lost lease makes the mutation unconfirmed, so answer retryable, not 500."""
+        return JSONResponse(status_code=503, content={"detail": str(error)})
 
     def require_internal_token(
         x_aml_internal_token: str | None = Header(default=None),
@@ -496,6 +507,16 @@ def create_default_app() -> FastAPI:
         if settings.agent_audit_path is not None
         else None
     )
+    evidence_store = (
+        SQLiteEvidenceStore(settings.evidence_store_path)
+        if settings.evidence_store_path is not None
+        else InMemoryEvidenceStore()
+    )
+    thread_lock_registry = (
+        SQLiteThreadLockRegistry(settings.agent_coordination_path)
+        if settings.agent_coordination_path is not None
+        else None
+    )
     if (settings.feature_root is None) != (settings.table_model_dir is None):
         raise RuntimeError(
             "AML_FEATURE_ROOT and AML_TABLE_MODEL_DIR must be configured together."
@@ -504,6 +525,7 @@ def create_default_app() -> FastAPI:
         return create_app(
             retriever,
             annotator=annotator,
+            evidence_store=evidence_store,
             internal_api_token=(
                 settings.internal_api_token.get_secret_value()
                 if settings.internal_api_token is not None
@@ -511,14 +533,14 @@ def create_default_app() -> FastAPI:
             ),
             controlled_checkpointer=controlled_checkpointer,
             controlled_audit_store=controlled_audit_store,
+            thread_lock_registry=thread_lock_registry,
         )
     internal_api_token = settings.require_internal_api_token()
     model_version = settings.require_model_version()
-    store = InMemoryEvidenceStore()
     scorer = PrivateFeaturePartitionScoringService(
         feature_root=settings.feature_root,
         table_model_dir=settings.table_model_dir,
-        evidence_store=store,
+        evidence_store=evidence_store,
         alert_threshold=settings.alert_threshold,
         source_version=model_version,
         graphsage_artifact_path=settings.graphsage_model_path,
@@ -528,11 +550,12 @@ def create_default_app() -> FastAPI:
     return create_app(
         retriever,
         annotator=annotator,
-        evidence_store=store,
+        evidence_store=evidence_store,
         scoring_service=scorer,
         internal_api_token=internal_api_token,
         controlled_checkpointer=controlled_checkpointer,
         controlled_audit_store=controlled_audit_store,
+        thread_lock_registry=thread_lock_registry,
     )
 
 

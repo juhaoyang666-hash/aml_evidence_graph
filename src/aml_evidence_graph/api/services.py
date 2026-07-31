@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal, Protocol
 
 from aml_evidence_graph.evidence.package import RiskEvidencePackage
@@ -31,6 +34,73 @@ class InMemoryEvidenceStore:
 
     def put(self, evidence: RiskEvidencePackage) -> None:
         self._items[evidence.alert_id] = evidence
+
+
+class SQLiteEvidenceStore:
+    """Shared local evidence storage for multi-worker engineering validation."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS risk_evidence_packages (
+                    alert_id TEXT PRIMARY KEY,
+                    schema_version TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.path, timeout=30.0)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout=30000")
+        return connection
+
+    def get(self, alert_id: str) -> RiskEvidencePackage | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT payload_json FROM risk_evidence_packages WHERE alert_id = ?",
+                (alert_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return RiskEvidencePackage.model_validate_json(row["payload_json"])
+
+    def put(self, evidence: RiskEvidencePackage) -> None:
+        payload = json.dumps(
+            evidence.model_dump(mode="json"),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO risk_evidence_packages (
+                    alert_id, schema_version, payload_json, updated_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    evidence.alert_id,
+                    evidence.schema_version,
+                    payload,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+            if cursor.rowcount == 0:
+                row = connection.execute(
+                    "SELECT payload_json FROM risk_evidence_packages WHERE alert_id = ?",
+                    (evidence.alert_id,),
+                ).fetchone()
+                if row is None or row["payload_json"] != payload:
+                    raise ValueError(
+                        "Evidence alert_id already exists with a different immutable payload."
+                    )
 
 
 @dataclass(frozen=True)

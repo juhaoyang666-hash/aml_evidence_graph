@@ -41,6 +41,14 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="AML_AGENT_AUDIT_PATH",
     )
+    agent_coordination_path: Path | None = Field(
+        default=None,
+        validation_alias="AML_AGENT_COORDINATION_PATH",
+    )
+    evidence_store_path: Path | None = Field(
+        default=None,
+        validation_alias="AML_EVIDENCE_STORE_PATH",
+    )
     graphsage_device: str = Field(default="auto", validation_alias="AML_GRAPHSAGE_DEVICE")
     alert_threshold: float = Field(default=0.5, validation_alias="AML_ALERT_THRESHOLD")
     model_version: str = Field(default="unconfigured", validation_alias="AML_MODEL_VERSION")
@@ -83,6 +91,8 @@ class Settings(BaseSettings):
         "fusion_dir",
         "agent_checkpoint_path",
         "agent_audit_path",
+        "agent_coordination_path",
+        "evidence_store_path",
         "internal_api_token",
         "llm_api_key",
         "ecnu_api_key",
@@ -154,10 +164,23 @@ class Settings(BaseSettings):
         return value
 
     def validate_agent_storage_separation(self) -> None:
-        """Reject one SQLite file serving as both mutable state and append-only audit."""
-        if self.agent_checkpoint_path is None or self.agent_audit_path is None:
-            return
-        if self.agent_checkpoint_path.resolve() == self.agent_audit_path.resolve():
+        """Require separate files and a durable checkpoint for shared coordination."""
+        if self.agent_coordination_path is not None and self.agent_checkpoint_path is None:
             raise RuntimeError(
-                "AML_AGENT_CHECKPOINT_PATH and AML_AGENT_AUDIT_PATH must be different files."
+                "AML_AGENT_COORDINATION_PATH requires AML_AGENT_CHECKPOINT_PATH."
+            )
+        configured = {
+            name: path.resolve()
+            for name, path in {
+                "AML_AGENT_CHECKPOINT_PATH": self.agent_checkpoint_path,
+                "AML_AGENT_AUDIT_PATH": self.agent_audit_path,
+                "AML_AGENT_COORDINATION_PATH": self.agent_coordination_path,
+                "AML_EVIDENCE_STORE_PATH": self.evidence_store_path,
+            }.items()
+            if path is not None
+        }
+        if len(set(configured.values())) != len(configured):
+            raise RuntimeError(
+                "Agent checkpoint, audit, coordination, and evidence SQLite paths "
+                "must be different files."
             )

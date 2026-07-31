@@ -28,12 +28,9 @@ def main() -> None:
     if args.attempts < 1:
         raise ValueError("attempts must be positive.")
     token = os.environ.get("AML_INTERNAL_API_TOKEN")
-    if not token:
-        raise RuntimeError("AML_INTERNAL_API_TOKEN is required.")
-    headers = {
-        "X-AML-Internal-Token": token,
-        "Connection": "close",
-    }
+    headers = {"Connection": "close"}
+    if token:
+        headers["X-AML-Internal-Token"] = token
     with httpx.Client(
         base_url=args.base_url,
         headers=headers,

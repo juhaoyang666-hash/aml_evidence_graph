@@ -27,6 +27,8 @@ def test_blank_optional_environment_values_do_not_enable_private_mode() -> None:
         AML_FUSION_DIR="",
         AML_AGENT_CHECKPOINT_PATH="",
         AML_AGENT_AUDIT_PATH="",
+        AML_AGENT_COORDINATION_PATH="",
+        AML_EVIDENCE_STORE_PATH="",
         AML_INTERNAL_API_TOKEN="",
         ECNU_API_KEY="",
     )
@@ -37,6 +39,8 @@ def test_blank_optional_environment_values_do_not_enable_private_mode() -> None:
     assert settings.fusion_dir is None
     assert settings.agent_checkpoint_path is None
     assert settings.agent_audit_path is None
+    assert settings.agent_coordination_path is None
+    assert settings.evidence_store_path is None
     assert settings.internal_api_token is None
     assert settings.ecnu_api_key is None
 
@@ -59,6 +63,8 @@ def test_env_example_loads_with_blank_optional_values() -> None:
     assert settings.llm_input_cost_per_million_tokens_usd is None
     assert settings.agent_checkpoint_path is None
     assert settings.agent_audit_path is None
+    assert settings.agent_coordination_path is None
+    assert settings.evidence_store_path is None
 
 
 def test_agent_checkpoint_and_audit_paths_must_be_distinct(tmp_path: Path) -> None:
@@ -74,4 +80,23 @@ def test_agent_checkpoint_and_audit_paths_must_be_distinct(tmp_path: Path) -> No
     Settings(
         AML_AGENT_CHECKPOINT_PATH=str(tmp_path / "checkpoint.sqlite"),
         AML_AGENT_AUDIT_PATH=str(tmp_path / "audit.sqlite"),
+        AML_AGENT_COORDINATION_PATH=str(tmp_path / "coordination.sqlite"),
+        AML_EVIDENCE_STORE_PATH=str(tmp_path / "evidence.sqlite"),
     ).validate_agent_storage_separation()
+
+
+def test_shared_coordination_requires_checkpoint_and_all_files_are_distinct(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(RuntimeError, match="requires AML_AGENT_CHECKPOINT_PATH"):
+        Settings(
+            AML_AGENT_COORDINATION_PATH=str(tmp_path / "coordination.sqlite")
+        ).validate_agent_storage_separation()
+
+    shared = tmp_path / "shared.sqlite"
+    with pytest.raises(RuntimeError, match="must be different files"):
+        Settings(
+            AML_AGENT_CHECKPOINT_PATH=str(tmp_path / "checkpoint.sqlite"),
+            AML_AGENT_COORDINATION_PATH=str(shared),
+            AML_EVIDENCE_STORE_PATH=str(shared),
+        ).validate_agent_storage_separation()
