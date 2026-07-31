@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import time
 from dataclasses import asdict
@@ -34,7 +35,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--selection-label",
+        default="validation-only graph candidate",
+        help="Human-readable frozen selection protocol.",
+    )
+    parser.add_argument(
+        "--selection-evidence",
+        type=Path,
+        help="Optional JSON gate that must have passed without reading test.",
+    )
     return parser.parse_args()
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def main() -> None:
@@ -43,6 +62,13 @@ def main() -> None:
         raise FileExistsError(f"Refusing to overwrite frozen test output: {args.output}")
     args.output.mkdir(parents=True)
     started_at = time.perf_counter()
+    selection_evidence: dict[str, object] | None = None
+    if args.selection_evidence is not None:
+        selection_evidence = json.loads(args.selection_evidence.read_text(encoding="utf-8"))
+        if selection_evidence.get("passed") is not True:
+            raise ValueError("Selection evidence did not pass its frozen validation gate.")
+        if selection_evidence.get("test_split_read") is not False:
+            raise ValueError("Selection evidence does not prove that test remained frozen.")
     loaded = load_graphsage_artifact(args.checkpoint, device=args.device)
 
     # Read test only in this final selected-candidate command. Only the frozen
@@ -105,8 +131,12 @@ def main() -> None:
         "schema_version": "1.0",
         "created_at_utc": datetime.now(UTC).isoformat(),
         "protocol": {
-            "selection": "validation-only GAT Pareto",
+            "selection": args.selection_label,
+            "selection_evidence": (
+                str(args.selection_evidence) if args.selection_evidence is not None else None
+            ),
             "checkpoint": str(args.checkpoint),
+            "checkpoint_sha256": _sha256(args.checkpoint),
             "test_evaluations": 1,
             "configuration_frozen": True,
             "history_start": history_start.isoformat(),
@@ -114,6 +144,7 @@ def main() -> None:
             "history_rows": history.height,
         },
         "configuration": asdict(loaded.config),
+        "edge_feature_columns": list(loaded.edge_feature_columns),
         "test_metrics": metrics,
         "runtime": {
             "wall_time_seconds": time.perf_counter() - started_at,

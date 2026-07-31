@@ -108,3 +108,56 @@ Shapley 归因或因果效应，也不据此重新选择或读取测试集。
 - 冻结测试私有聚合：`artifacts/gat_pareto_selected_test/{metrics.json,paired_vs_gat30d.json,risk_slices.json}`
 
 这些指标是本机离线实验，不是生产在线 SLA；模型未接触真实金融数据。
+
+## 金额族第二 seed 复核预注册（2026-07-31，结果产生前）
+
+目的：复核 seed `20260722` 中“移除金额族后 validation PR-AUC 从 `0.924227`
+提高到 `0.931150`”是否为稳定现象，不使用 test 选择特征。
+
+固定协议：
+
+- 数据仍为 `artifacts/pit_features`，仅读取 train / validation；
+- 60 天历史、batch size `2048`、fanout `(15,10)`、同一模型配置与早停；
+- seed 固定为 `20260723`，成对训练完整 60d 和 `--exclude-feature-family amount`；
+- runner 产物必须记录 `selection_scope=train_validation_only`、`test_split_read=false`；
+- 两个模型均生成相同 validation 风险切片，不根据单个 Typology 反向调参。
+
+预注册判断：
+
+1. 若第二 seed 去金额族相对完整模型的 PR-AUC 点差仍为正，且 Recall@0.1% 没有下降超过
+   `0.01`，则记为“跨两个 seed 方向一致”；否则关闭“金额族稳定负贡献”的主张。
+2. 即使方向一致，也只解释为当前特征集合中的冗余或优化干扰，不解释为金额信息对 AML
+   无用；该消融会同时移除当前金额及名称含 `_amount_` 的历史聚合列。
+3. 本轮不读取 test，也不把去金额族模型自动晋升为主线；是否与时点新颖性组合必须另行
+   预注册，不能根据本轮结果临时追加。
+
+### 金额族第二 seed 结果
+
+| seed / 配置 | Validation PR-AUC | Recall@0.1% | epoch / 最佳 epoch |
+|---|---:|---:|---:|
+| 20260722 完整 60d | 0.92423 | — | — |
+| 20260722 去金额族 | 0.93115 | — | — |
+| 20260723 完整 60d | 0.88124 | 0.80476 | 5 / 2 |
+| 20260723 去金额族 | 0.89913 | 0.82116 | 5 / 2 |
+
+第二 seed 的配对点差为 PR-AUC `+0.01789`、Recall@0.1% `+0.01640`，预注册门禁通过；
+两个 seed 的 PR-AUC 方向一致。但完整模型在两个 seed 间从 `0.92423` 波动到 `0.88124`，
+因此不能用绝对分数宣称模型稳定。
+
+| seed23 validation 切片 | 完整 60d | 去金额族 | 点差 |
+|---|---:|---:|---:|
+| 训练期任一端点未见 | 0.73469 | 0.81159 | +0.07690 |
+| 两端点训练期已见 | 0.95221 | 0.94480 | -0.00741 |
+| 低度非零 | 0.54604 | 0.53190 | -0.01414 |
+| 中度 | 0.90745 | 0.90608 | -0.00137 |
+| 高度 | 0.97499 | 0.99334 | +0.01835 |
+
+结论限定为：当前 16 项金额相关边特征在该 GAT 实现中存在跨 seed 的冗余或优化干扰，但
+切片收益并不一致。去金额族不进入时点新颖性候选、不解冻 test，也不支持“金额信息对 AML
+无用”的业务结论。
+
+本机私有产物：
+
+- `artifacts/gat_amount_recheck_60d_seed20260723/full`
+- `artifacts/gat_amount_recheck_60d_seed20260723/without_amount`
+- `artifacts/gat_amount_recheck_60d_seed20260723/paired_gate.json`
