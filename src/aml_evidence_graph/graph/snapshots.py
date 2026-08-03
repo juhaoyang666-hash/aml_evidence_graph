@@ -326,3 +326,21 @@ def transform_edge_features(
             )
         )
     return transformed
+
+
+def transform_edge_features_in_place(
+    snapshots: list[TemporalGraphSnapshot],
+    scaler: StandardScaler,
+) -> list[TemporalGraphSnapshot]:
+    """Scale snapshots one at a time while releasing each raw feature matrix."""
+    for index, snapshot in enumerate(snapshots):
+        snapshots[index] = TemporalGraphSnapshot(
+            event_date=snapshot.event_date,
+            history_edge_index=snapshot.history_edge_index,
+            scoring_edge_index=snapshot.scoring_edge_index,
+            edge_features=scaler.transform(snapshot.edge_features).astype(np.float32),
+            labels=snapshot.labels,
+            transaction_ids=snapshot.transaction_ids,
+            history_edge_type=snapshot.history_edge_type,
+        )
+    return snapshots

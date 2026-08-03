@@ -31,16 +31,16 @@ jobs:
       - name: Validate experiment script entrypoints
         run: |
           for script in \
-            evaluate_spark_equivalence.py \
-            run_batch_feature_replay.py \
-            run_community_baseline.py \
-            run_drift_monitoring.py \
-            run_fe_v2_pipeline_resumable.py \
-            run_gat_distill_catboost.py \
-            run_nonlinear_fusion.py \
-            run_relation_ablation.py \
-            run_unsupervised_baseline.py; do
-            python "scripts/${script}" --help >/dev/null
+            scripts/data/evaluate_spark_equivalence.py \
+            scripts/data/run_batch_feature_replay.py \
+            scripts/experiments/run_community_baseline.py \
+            scripts/experiments/run_drift_monitoring.py \
+            scripts/pipelines/run_fe_v2_pipeline_resumable.py \
+            scripts/experiments/run_gat_distill_catboost.py \
+            scripts/experiments/run_nonlinear_fusion.py \
+            scripts/experiments/run_relation_ablation.py \
+            scripts/experiments/run_unsupervised_baseline.py; do
+            python "${script}" --help >/dev/null
           done
       - name: Test mock-only suite
         run: python -m pytest
@@ -51,4 +51,4 @@ jobs:
           --typologies knowledge/typologies
           --output /tmp/golden-summary.json
       - name: Resume release smoke test
-        run: python scripts/verify_resume_release.py --output /tmp/resume-release-smoke.json
+        run: python scripts/operations/verify_resume_release.py --output /tmp/resume-release-smoke.json

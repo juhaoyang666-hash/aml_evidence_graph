@@ -70,13 +70,13 @@ $PY -m aml_evidence_graph.investigation.golden \
   --output artifacts/golden_summary.json
 
 # 受控 Agent 60 案
-$PY scripts/evaluate_agent_golden.py --overwrite
+$PY scripts/operations/evaluate_agent_golden.py --overwrite
 
 # 检索开发集聚合评测
-$PY scripts/evaluate_retrieval.py
+$PY scripts/retrieval/evaluate_retrieval.py
 
 # 求职发布版 Mock 验收
-$PY scripts/verify_resume_release.py
+$PY scripts/operations/verify_resume_release.py
 ```
 
 可选外部 LLM 评测必须显式启用并从当前进程读取 API key；不要将 key 写入 Golden、`.env`

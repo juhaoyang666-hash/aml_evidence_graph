@@ -44,7 +44,7 @@ docker compose -f docker-compose.demo.yml ps
 docker compose -f docker-compose.demo.yml down
 
 # 已安装 Python 依赖时，可直接运行同一套六项发布断言
-python scripts/verify_resume_release.py
+python scripts/operations/verify_resume_release.py
 ```
 
 Mock 分数和页面内容只用于工程演示，不能当作 SAML-D 指标或真实业务结论。
@@ -96,6 +96,9 @@ CatBoost 在 50% 召回下相对训练期定阈规则减少约 99.86% 告警。�
 
 GraphSAGE `0.8777` 不再占用当前主线表位置；它与 RGCN、PNA 一并保留在
 [实验结果](docs/实验结果.md)的历史同协议架构对照中。
+补充的 validation-only 双 seed 矩阵显示，时点新颖性可将 GraphSAGE FE v2 从
+`0.54478 / 0.69682` 提升到 `0.90171 / 0.93154`，但仍低于同 seed GAT
+`0.94539 / 0.94686`；因此未读取 GraphSAGE 新测试集，也不改变 GAT 主线。
 
 ## 调查、检索与 Agent 证据
 
@@ -120,6 +123,8 @@ GraphSAGE `0.8777` 不再占用当前主线表位置；它与 RGCN、PNA 一并�
 - DuckDB/Polars 代表性窗口特征与官方 PIT match rate 均为 `1.0`。
 - FastAPI 支持 Mock 演示、受控本地评分、调查、人审恢复和结构化审计；完整融合 HTTP 基准与
   单机两 worker 争用边界均有记录。
+- 当前融合与 GAT + 时点新颖性均已生成独立版本的账户、资金路径和案件候选视图；这些是
+  冻结交易分数后的无标签聚合，不是账户监督标签或新增模型指标。
 - GitHub Actions 执行依赖检查、Ruff、实验脚本入口、144 项测试、Golden smoke 和发布 smoke。
 
 详情见[批量特征重放](docs/批量特征重放.md)、[服务性能基准](docs/服务性能基准.md)和
@@ -136,7 +141,7 @@ python -m venv .venv
 # Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple ".[dev,llm]"
 
-python scripts/verify_resume_release.py
+python scripts/operations/verify_resume_release.py
 python -m ruff check src tests scripts
 python -m pytest
 aml-api  # http://127.0.0.1:8000/demo
@@ -151,10 +156,10 @@ aml-api  # http://127.0.0.1:8000/demo
 configs/                  规则、模型、Prompt、检索与评测配置
 golden/                   Mock、生成、检索与 Agent 回归集合
 knowledge/typologies/     版本化 Typology 语料
-scripts/                  实验、评估、压测、MLflow/Spark 与发布入口
+scripts/                  按 data/experiments/retrieval/reporting/operations/pipelines 分类的入口
 sql/                      ODPS/Hive 风格 PIT 模板（禁止普通笛卡尔积）
 src/aml_evidence_graph/   数据、特征、训练、聚合、调查与 API 实现
-tests/                    防泄漏、契约、模型、Agent、服务与工程回归
+tests/                    按 api/data/features/models/investigation/evaluation/engineering 分类的回归
 docs/                     权威结果、模型卡、实验和求职材料
 ```
 

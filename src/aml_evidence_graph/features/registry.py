@@ -95,7 +95,7 @@ def load_static_feature_metadata(path: Path) -> list[FeatureMetadata]:
         source_columns=(CANONICAL.sender_account_id, CANONICAL.event_ts),
         window="current_transaction",
         available_at="event_time",
-        unit_test="tests/test_pit_features.py",
+        unit_test="tests/features/test_pit_features.py",
     )
     add(
         "is_new_receiver_account",
@@ -103,7 +103,7 @@ def load_static_feature_metadata(path: Path) -> list[FeatureMetadata]:
         source_columns=(CANONICAL.receiver_account_id, CANONICAL.event_ts),
         window="current_transaction",
         available_at="event_time",
-        unit_test="tests/test_pit_features.py",
+        unit_test="tests/features/test_pit_features.py",
     )
     add(
         "is_cross_border_current_transaction",
@@ -111,7 +111,7 @@ def load_static_feature_metadata(path: Path) -> list[FeatureMetadata]:
         source_columns=(CANONICAL.sender_location, CANONICAL.receiver_location),
         window="current_transaction",
         available_at="event_time",
-        unit_test="tests/test_pit_features.py",
+        unit_test="tests/features/test_pit_features.py",
     )
     add(
         "amount_log1p",
@@ -119,7 +119,7 @@ def load_static_feature_metadata(path: Path) -> list[FeatureMetadata]:
         source_columns=(CANONICAL.amount,),
         window="current_transaction",
         available_at="event_time",
-        unit_test="tests/test_pit_features.py",
+        unit_test="tests/features/test_pit_features.py",
     )
     add(
         "is_currency_conversion",
@@ -127,7 +127,7 @@ def load_static_feature_metadata(path: Path) -> list[FeatureMetadata]:
         source_columns=(CANONICAL.payment_currency, CANONICAL.received_currency),
         window="current_transaction",
         available_at="event_time",
-        unit_test="tests/test_pit_features.py",
+        unit_test="tests/features/test_pit_features.py",
     )
 
     typology_current = (
@@ -199,7 +199,7 @@ def load_static_feature_metadata(path: Path) -> list[FeatureMetadata]:
             source_columns=source_columns,
             window=window,
             available_at=available_at,
-            unit_test="tests/test_pit_features.py",
+            unit_test="tests/features/test_pit_features.py",
         )
 
     typology_history = (
@@ -281,7 +281,7 @@ def load_static_feature_metadata(path: Path) -> list[FeatureMetadata]:
             source_columns=source_columns,
             window=window,
             available_at=available_at,
-            unit_test="tests/test_pit_features.py",
+            unit_test="tests/features/test_pit_features.py",
         )
 
     history_definitions = (
@@ -310,7 +310,7 @@ def load_static_feature_metadata(path: Path) -> list[FeatureMetadata]:
                     source_columns=(account_column, counterparty_column, *extra_sources),
                     window=f"[{window}, event_time)",
                     available_at="strictly_before_event_time",
-                    unit_test="tests/test_pit_features.py",
+                    unit_test="tests/features/test_pit_features.py",
                 )
 
     graph_definitions = (
@@ -338,7 +338,7 @@ def load_static_feature_metadata(path: Path) -> list[FeatureMetadata]:
             source_columns=source_columns,
             window="all_strictly_prior_events",
             available_at="strictly_before_event_time",
-            unit_test="tests/test_graph_stats.py",
+            unit_test="tests/models/test_graph_snapshots.py",
         )
     return result
 
@@ -358,7 +358,7 @@ def rule_feature_metadata(
             window="rule_defined_pit_window",
             available_at="after_pit_feature_calculation",
             version=rule.version,
-            unit_test="tests/test_rules.py",
+            unit_test="tests/features/test_rules.py",
         )
         for rule in rules
         if rule.active

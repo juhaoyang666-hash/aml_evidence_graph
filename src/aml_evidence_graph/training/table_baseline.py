@@ -6,6 +6,7 @@ import argparse
 import json
 import shutil
 import time
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -74,8 +75,7 @@ class TableBaselineSummary:
     feature_drift: dict[str, dict[str, dict[str, Any]]]
 
 
-def load_feature_split(feature_root: Path, split: TimeSplit) -> pl.DataFrame:
-    """Load exactly one persisted chronological split without random sampling."""
+def _feature_split_paths(feature_root: Path, split: TimeSplit) -> list[Path]:
     if not feature_root.is_dir():
         raise FileNotFoundError(f"Feature dataset does not exist: {feature_root}")
     paths = sorted(feature_root.glob(f"**/split={split.value}/**/*.parquet"))
@@ -83,12 +83,57 @@ def load_feature_split(feature_root: Path, split: TimeSplit) -> pl.DataFrame:
         paths = sorted(feature_root.glob(f"**/split={split.value}/*.parquet"))
     if not paths:
         raise ValueError(f"Feature dataset contains no rows for split={split.value}.")
+    return paths
+
+
+def feature_split_schema(feature_root: Path, split: TimeSplit) -> pl.Schema:
+    """Inspect one split's union schema without materializing transaction rows."""
+    merged: dict[str, pl.DataType] = {}
+    for path in _feature_split_paths(feature_root, split):
+        for column, dtype in pl.read_parquet_schema(path).items():
+            existing = merged.get(column)
+            if existing is not None and existing != dtype:
+                raise ValueError(
+                    f"Feature column {column!r} has inconsistent types: {existing} vs {dtype}."
+                )
+            merged[column] = dtype
+    merged.setdefault("split", pl.String)
+    merged.setdefault("event_date", pl.String)
+    return pl.Schema(merged)
+
+
+def load_feature_split(
+    feature_root: Path,
+    split: TimeSplit,
+    *,
+    columns: Sequence[str] | None = None,
+) -> pl.DataFrame:
+    """Load one chronological split, optionally projecting only required columns."""
+    paths = _feature_split_paths(feature_root, split)
+    requested = tuple(dict.fromkeys(columns)) if columns is not None else None
+    if requested is not None:
+        if not requested:
+            raise ValueError("Feature column projection must not be empty.")
+        available = feature_split_schema(feature_root, split)
+        missing = sorted(set(requested).difference(available.names()))
+        if missing:
+            raise ValueError("Feature dataset is missing projected columns: " + ", ".join(missing))
     frames: list[pl.DataFrame] = []
     for path in paths:
-        frame = pl.read_parquet(path)
-        if "split" not in frame.columns:
+        physical_schema = pl.read_parquet_schema(path)
+        physical_columns = (
+            [column for column in requested if column in physical_schema]
+            if requested is not None
+            else None
+        )
+        if physical_columns == []:
+            raise ValueError(f"Projected columns contain no physical fields for: {path}")
+        frame = pl.read_parquet(path, columns=physical_columns)
+        if "split" not in frame.columns and (requested is None or "split" in requested):
             frame = frame.with_columns(pl.lit(split.value).alias("split"))
-        if "event_date" not in frame.columns:
+        if "event_date" not in frame.columns and (
+            requested is None or "event_date" in requested
+        ):
             event_date = next(
                 (
                     part.removeprefix("event_date=")
@@ -103,7 +148,7 @@ def load_feature_split(feature_root: Path, split: TimeSplit) -> pl.DataFrame:
     result = pl.concat(frames, how="diagonal_relaxed")
     if result.is_empty():
         raise ValueError(f"Feature dataset contains no rows for split={split.value}.")
-    return result
+    return result.select(requested) if requested is not None else result
 
 
 def deterministic_negative_downsample(

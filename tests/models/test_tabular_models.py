@@ -1,0 +1,64 @@
+from pathlib import Path
+
+import polars as pl
+
+from aml_evidence_graph.explain.tabular import write_catboost_explanations
+from aml_evidence_graph.models.tabular import fit_table_models
+
+
+def test_fit_table_models_excludes_labels_and_identifiers() -> None:
+    frame = pl.DataFrame(
+        {
+            "transaction_id": [f"t{i}" for i in range(12)],
+            "event_ts": [f"2022-10-{7 + i:02d}T00:00:00Z" for i in range(12)],
+            "sender_account_id": [f"a{i}" for i in range(12)],
+            "receiver_account_id": [f"b{i}" for i in range(12)],
+            "source_row_number": range(12),
+            "laundering_type": ["Normal"] * 12,
+            "split": ["train"] * 6 + ["validation"] * 3 + ["test"] * 3,
+            "is_laundering": [0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0],
+            "amount_feature": [float(value) for value in range(12)],
+            "payment_type_feature": ["A", "B"] * 6,
+        }
+    )
+
+    models = fit_table_models(
+        frame,
+        catboost_params={"iterations": 10, "early_stopping_rounds": 3},
+    )
+    probabilities = models.predict_proba(frame.filter(pl.col("split") == "test"))
+
+    assert models.feature_spec.all_columns == ("amount_feature", "payment_type_feature")
+    assert len(probabilities["logistic"]) == 3
+    assert len(probabilities["catboost"]) == 3
+
+
+def test_catboost_explanations_write_bounded_private_artifacts(tmp_path: Path) -> None:
+    frame = pl.DataFrame(
+        {
+            "transaction_id": [f"t{index}" for index in range(12)],
+            "event_ts": [f"2022-10-{7 + index:02d}T00:00:00Z" for index in range(12)],
+            "source_row_number": range(12),
+            "split": ["train"] * 6 + ["validation"] * 3 + ["test"] * 3,
+            "is_laundering": [0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0],
+            "laundering_type": ["None"] * 12,
+            "amount_feature": [float(index) for index in range(12)],
+            "payment_type_feature": ["A", "B"] * 6,
+        }
+    )
+    models = fit_table_models(
+        frame,
+        catboost_params={"iterations": 10, "early_stopping_rounds": 3},
+    )
+
+    result = write_catboost_explanations(
+        models,
+        frame.filter(pl.col("split") == "validation"),
+        tmp_path,
+        model_name="table",
+        max_rows=2,
+    )
+
+    assert result["sample_count"] == 2
+    assert Path(result["local_path"]).is_file()
+    assert Path(result["global_path"]).is_file()

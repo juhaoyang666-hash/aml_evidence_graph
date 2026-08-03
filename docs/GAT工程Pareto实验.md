@@ -97,12 +97,12 @@ Shapley 归因或因果效应，也不据此重新选择或读取测试集。
 
 ## 产物与复现
 
-- 候选入口：`scripts/run_gat_validation_candidate.py`
-- 两路调度：`scripts/run_gat_pareto.sh`
-- 特征族调度：`scripts/run_gat_feature_ablation.sh`
-- 验证汇总：`scripts/summarize_gat_pareto.py`
-- 冻结测试：`scripts/evaluate_frozen_graph_checkpoint.py`
-- 风险切片：`scripts/evaluate_gat_risk_slices.py`
+- 候选入口：`scripts/experiments/run_gat_validation_candidate.py`
+- 两路调度：`scripts/pipelines/run_gat_pareto.sh`
+- 特征族调度：`scripts/pipelines/run_gat_feature_ablation.sh`
+- 验证汇总：`scripts/experiments/summarize_gat_pareto.py`
+- 冻结测试：`scripts/experiments/evaluate_frozen_graph_checkpoint.py`
+- 风险切片：`scripts/experiments/evaluate_gat_risk_slices.py`
 - 私有聚合产物：`artifacts/gat_pareto_summary.json`
 - 特征族消融私有产物：`artifacts/gat_feature_ablation/*/metrics.json`
 - 冻结测试私有聚合：`artifacts/gat_pareto_selected_test/{metrics.json,paired_vs_gat30d.json,risk_slices.json}`
@@ -218,3 +218,35 @@ v1 GAT 主排序器。本机 GAT 特征迭代至此关闭，不再用 test 选�
 - `artifacts/gat_cold_start_v3_degree_without_min_60d_seed20260722`
 - `artifacts/degree_matched_stress_v3_seed20260730.json`
 - `artifacts/gat_cold_start_v3_novelty_only_60d_seed20260723_frozen_test`
+
+## GraphSAGE FE v2 / 时点新颖性双 seed 对照
+
+2026-08-03 完成预注册的 GraphSAGE/GAT 2×2 validation-only 矩阵，用于区分架构收益与
+时点新颖性收益。四个 GraphSAGE 单元均使用 60 天历史、batch `2048`、fanout `(15,10)`、
+相同 hidden/layer/epoch/early-stop 协议；全程 `test_split_read=false`。
+
+| 架构 / 特征 | Seed | Validation PR-AUC | Recall@0.1% |
+|---|---:|---:|---:|
+| GraphSAGE FE v2 | 20260722 | 0.54478 | 0.54762 |
+| GraphSAGE + 时点新颖性 | 20260722 | 0.90171 | 0.82116 |
+| GraphSAGE FE v2 | 20260723 | 0.69682 | 0.65185 |
+| GraphSAGE + 时点新颖性 | 20260723 | 0.93154 | 0.85503 |
+| GAT FE v2 | 20260722 | 0.89795 | 0.83175 |
+| GAT + 时点新颖性 | 20260722 | 0.94539 | 0.87672 |
+| GAT FE v2 | 20260723 | 0.76778 | 0.69048 |
+| GAT + 时点新颖性 | 20260723 | 0.94686 | 0.86561 |
+
+GraphSAGE 的时点新颖性配对增益分别为 `+0.35694 / +0.23472`，两个 seed 的总体 PR-AUC、
+Recall@0.1%、事件时点未见端点、训练期未见端点和低度切片门禁均通过。这证明该特征族的收益
+不只存在于 GAT。另一方面，GraphSAGE + 时点新颖性仍分别低于同 seed GAT `0.04368 /
+0.01532`，且 GraphSAGE 基线 seed 波动明显，因此不读取 GraphSAGE test、不生成 OOF，也不
+替换 GAT 主线；该矩阵只作为跨架构验证与负结果证据。
+
+runner 同时改为先按最终特征列投影 Parquet，并逐快照替换标准化矩阵，不改变 batch、fanout、
+窗口、精度或训练轮数。旧 FE v2 seed 1 与新 seed 2 的总耗时为 `17.94 / 18.00` 分钟；加载
+结束 RSS 从 `10059 / 6609 MiB` 显著下降，但快照全过程峰值约为 `19128 / 19229 MiB`，基本
+持平，说明峰值主要来自历史快照构建而非无用列。两个 novelty run 的快照峰值为
+`19995 / 20671 MiB`，均在 31.77 GB 物理内存上完成。此前的 Windows 非正常退出没有
+Python/CUDA OOM traceback 或资源耗尽事件，不能归因为已证实的内存不足。
+
+矩阵汇总：`artifacts/graphsage_fe_v2_novelty_matrix_validation/summary.json`。
