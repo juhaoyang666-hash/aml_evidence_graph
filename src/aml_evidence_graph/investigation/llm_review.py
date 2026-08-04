@@ -123,6 +123,13 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _sha256_crlf_text(path: Path) -> str:
+    """Reproduce preregistration hashes for JSON frozen on the Windows runner."""
+
+    normalized = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.replace("\n", "\r\n").encode()).hexdigest()
+
+
 def summarize_human_review(
     summary_path: Path,
     adjudication_path: Path,
@@ -311,7 +318,9 @@ def build_public_llm_evaluation(
     ):
         raise ValueError("Holdout run did not use the preregistered cases and prompt.")
     holdout_stage.preregistered_protocol_id = str(protocol["protocol_id"])
-    holdout_stage.preregistered_protocol_sha256 = _sha256(holdout_protocol_path)
+    holdout_stage.preregistered_protocol_sha256 = _sha256_crlf_text(
+        holdout_protocol_path
+    )
     holdout_stage.preregistered_source_revision = str(run_manifest["source_revision"])
     criteria = protocol.get("success_criteria")
     if not isinstance(criteria, dict):
@@ -435,9 +444,10 @@ def validate_public_llm_evaluation(
             prompt_path = Path(str(protocol["prompt_file"]))
             if (
                 stage.preregistered_protocol_id != protocol.get("protocol_id")
-                or stage.preregistered_protocol_sha256 != _sha256(holdout_protocol_path)
+                or stage.preregistered_protocol_sha256
+                != _sha256_crlf_text(holdout_protocol_path)
                 or not cases_path.is_file()
-                or _sha256(cases_path) != protocol.get("cases_sha256")
+                or _sha256_crlf_text(cases_path) != protocol.get("cases_sha256")
                 or not prompt_path.is_file()
                 or _sha256(prompt_path) != protocol.get("prompt_sha256")
                 or stage.case_count != protocol.get("case_count")

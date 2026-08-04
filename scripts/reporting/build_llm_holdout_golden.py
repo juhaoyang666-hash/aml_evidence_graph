@@ -33,6 +33,11 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _sha256_crlf_text(path: Path) -> str:
+    normalized = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.replace("\n", "\r\n").encode()).hexdigest()
+
+
 def _feature(name: str, index: int) -> dict[str, object]:
     return {
         "name": name,
@@ -288,7 +293,7 @@ def main() -> None:
             "not an external compliance-expert adjudication."
         ),
         "cases_file": args.output.as_posix(),
-        "cases_sha256": _sha256(args.output),
+        "cases_sha256": _sha256_crlf_text(args.output),
         "case_count": len(cases),
         "external_case_count": sum("injected_annotation" not in case for case in cases),
         "deterministic_probe_count": sum("injected_annotation" in case for case in cases),

@@ -24,7 +24,14 @@ def test_llm_holdout_v1_is_frozen_and_disjoint_from_prompt_development_set() -> 
     holdout_cases = load_golden_cases(holdout_path)
     development_cases = load_golden_cases(Path("golden/cases_v1.json"))
 
-    assert hashlib.sha256(holdout_path.read_bytes()).hexdigest() == protocol["cases_sha256"]
+    normalized_cases = (
+        holdout_path.read_text(encoding="utf-8")
+        .replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .replace("\n", "\r\n")
+        .encode()
+    )
+    assert hashlib.sha256(normalized_cases).hexdigest() == protocol["cases_sha256"]
     assert (
         hashlib.sha256(
             Path(protocol["prompt_file"]).read_bytes()
