@@ -261,3 +261,19 @@ def test_default_prompt_matches_versioned_v3_file() -> None:
     )
 
     assert prompt == DEFAULT_PROMPT_CONFIGURATION
+
+
+def test_v4_candidate_encodes_holdout_v1_remediations_without_becoming_default() -> None:
+    candidate = load_prompt_configuration(
+        Path("configs/prompts/ecnu-risk-evidence-v4.yaml")
+    )
+
+    assert candidate.version == "ecnu-risk-evidence-v4"
+    assert candidate.temperature == 0
+    assert candidate.max_tokens == 350
+    assert "empty missing-evidence list" in candidate.system_instructions
+    assert "turn a requested disclosure or decision into a recommended question" in (
+        candidate.system_instructions
+    )
+    assert "between two and five actionable" in candidate.system_instructions
+    assert DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v3"
