@@ -81,6 +81,7 @@ class LLMPublicStage(BaseModel):
         "same_set_development_regression",
         "prompt_isolated_project_internal_blind_holdout",
         "prompt_v4_candidate_project_internal_blind_holdout",
+        "prompt_v6_promoted_project_internal_blind_holdout",
     ]
     prompt_version: str
     case_count: int = Field(ge=1)
@@ -107,12 +108,12 @@ class LLMPublicEvaluation(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["1.2"] = "1.2"
+    schema_version: Literal["1.3"] = "1.3"
     evaluation_id: str
     evaluated_at: str
     model_name: str
     cost_status: Literal["reported", "unavailable"]
-    stages: list[LLMPublicStage] = Field(min_length=4)
+    stages: list[LLMPublicStage] = Field(min_length=5)
     limitations: list[str] = Field(min_length=1)
 
 
@@ -229,6 +230,10 @@ def build_public_llm_evaluation(
     candidate_adjudication_path: Path,
     candidate_protocol_path: Path,
     candidate_run_manifest_path: Path,
+    promoted_summary_path: Path,
+    promoted_adjudication_path: Path,
+    promoted_protocol_path: Path,
+    promoted_run_manifest_path: Path,
     evaluation_id: str,
     evaluated_at: str,
 ) -> LLMPublicEvaluation:
@@ -270,6 +275,16 @@ def build_public_llm_evaluation(
             True,
             candidate_protocol_path,
             candidate_run_manifest_path,
+        ),
+        (
+            "prompt_v6_preregistered_holdout_v3",
+            "prompt_v6_promoted_project_internal_blind_holdout",
+            promoted_summary_path,
+            promoted_adjudication_path,
+            False,
+            True,
+            promoted_protocol_path,
+            promoted_run_manifest_path,
         ),
     )
     stages: list[LLMPublicStage] = []
@@ -330,6 +345,8 @@ def build_public_llm_evaluation(
             "The Holdout is independent of prompt development and preregistered, but its human "
             "review is still project-internal.",
             "Prompt v4 failed its preregistered Holdout v2 availability gate and was not promoted.",
+            "Prompt v6 passed its preregistered Holdout v3 gates and replaced v3 as the default; "
+            "its human review remains project-internal.",
             "Provider parse success measures availability and format compliance, "
             "not content quality.",
             "The provider did not return price metadata, so monetary cost is unavailable.",
@@ -342,8 +359,13 @@ def build_public_llm_evaluation(
             development_adjudication_path,
             holdout_adjudication_path,
             candidate_adjudication_path,
+            promoted_adjudication_path,
         ),
-        holdout_protocol_paths=(holdout_protocol_path, candidate_protocol_path),
+        holdout_protocol_paths=(
+            holdout_protocol_path,
+            candidate_protocol_path,
+            promoted_protocol_path,
+        ),
     )
     return result
 
@@ -421,17 +443,18 @@ def validate_public_llm_evaluation(
             for path in adjudication_paths
         )
     }
-    if len(evaluation.stages) != 4:
-        raise ValueError("Public LLM evidence must contain exactly four evaluation stages.")
+    if len(evaluation.stages) != 5:
+        raise ValueError("Public LLM evidence must contain exactly five evaluation stages.")
     roles = {stage.evaluation_role for stage in evaluation.stages}
     if roles != {
         "frozen_baseline",
         "same_set_development_regression",
         "prompt_isolated_project_internal_blind_holdout",
         "prompt_v4_candidate_project_internal_blind_holdout",
+        "prompt_v6_promoted_project_internal_blind_holdout",
     }:
         raise ValueError(
-            "Public LLM evidence must distinguish development and both Holdout stages."
+            "Public LLM evidence must distinguish development and all Holdout stages."
         )
     protocols = {
         str(protocol["protocol_id"]): (path, protocol)
@@ -462,6 +485,7 @@ def validate_public_llm_evaluation(
         if stage.evaluation_role in {
             "prompt_isolated_project_internal_blind_holdout",
             "prompt_v4_candidate_project_internal_blind_holdout",
+            "prompt_v6_promoted_project_internal_blind_holdout",
         }:
             if (
                 stage.same_case_set_as_baseline

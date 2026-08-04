@@ -534,6 +534,7 @@ def render_resume_evidence_markdown(report: ResumeEvidenceReport) -> str:
             "same_set_development_regression": "同集开发回归",
             "prompt_isolated_project_internal_blind_holdout": "Prompt 隔离 Holdout",
             "prompt_v4_candidate_project_internal_blind_holdout": "Prompt v4 Holdout v2",
+            "prompt_v6_promoted_project_internal_blind_holdout": "Prompt v6 Holdout v3",
         }
         for stage in llm.stages:
             metrics = stage.metrics
@@ -560,6 +561,20 @@ def render_resume_evidence_markdown(report: ResumeEvidenceReport) -> str:
                     f"> `{holdout.prompt_version}` Holdout 未通过预注册质量门："
                     + "、".join(holdout.failed_success_criteria)
                     + "。该结果按负结果发布，未用于事后调整对应冻结 Prompt。",
+                ]
+            )
+        promoted = [
+            stage
+            for stage in llm.stages
+            if stage.evaluation_role
+            == "prompt_v6_promoted_project_internal_blind_holdout"
+        ]
+        if promoted:
+            lines.extend(
+                [
+                    "",
+                    "> `ecnu-risk-evidence-v6` 已通过预注册 Holdout v3 全部门槛并晋升为"
+                    "默认 Prompt；人工复核仍为项目内部复核。",
                 ]
             )
         if llm.cost_status == "unavailable":

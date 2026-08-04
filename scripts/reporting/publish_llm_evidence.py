@@ -32,6 +32,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidate-adjudication", type=Path, required=True)
     parser.add_argument("--candidate-protocol", type=Path, required=True)
     parser.add_argument("--candidate-run-manifest", type=Path, required=True)
+    parser.add_argument("--promoted-summary", type=Path, required=True)
+    parser.add_argument("--promoted-adjudication", type=Path, required=True)
+    parser.add_argument("--promoted-protocol", type=Path, required=True)
+    parser.add_argument("--promoted-run-manifest", type=Path, required=True)
     parser.add_argument("--evaluation-id", required=True)
     parser.add_argument("--evaluated-at", required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -53,6 +57,10 @@ def main() -> None:
         candidate_adjudication_path=args.candidate_adjudication,
         candidate_protocol_path=args.candidate_protocol,
         candidate_run_manifest_path=args.candidate_run_manifest,
+        promoted_summary_path=args.promoted_summary,
+        promoted_adjudication_path=args.promoted_adjudication,
+        promoted_protocol_path=args.promoted_protocol,
+        promoted_run_manifest_path=args.promoted_run_manifest,
         evaluation_id=args.evaluation_id,
         evaluated_at=args.evaluated_at,
     )

@@ -11,6 +11,9 @@
 | `cases_v1.json` | 项目裁定生成 Golden | 34 | Typology、低证据、对抗与事实校验 |
 | `adjudication_v1.json` | `cases_v1` 裁定记录 | 34 | 期望结果、理由、备注与裁定时间 |
 | `agent_cases_v2.json` | 项目构造 Agent 回归 | 60 | 路由、工具参数、人工审核和故障恢复 |
+| `llm_holdout_cases_v1/v2/v3.json` | 预注册生成 Holdout | 各 24 | 三轮互斥案例与 Prompt 晋升证据 |
+| `llm_holdout_protocol_v1/v2/v3.json` | 冻结协议 | 各 1 | 哈希、单次执行规则与成功门槛 |
+| `llm_adjudication_ecnu_max_holdout_v1/v2/v3.json` | 项目内盲审 | 15/2/20 | 仅裁定通过自动门的外部输出 |
 | `retrieval_queries_v1.json` | 早期检索回归 | 15 | 历史兼容，不作为当前主表 |
 | `retrieval_queries_v2.json` | 检索校准/开发集 | 80 | 中英文、改写、多标签、hard negative、拒答 |
 | `retrieval_queries_v3_additions.json` | 冻结增量诊断 | 50 | 在阈值冻结后评估覆盖与拒答泛化 |
@@ -63,7 +66,18 @@ Prompt v4 候选先提交为 `6bd5566`，全新 `llm_holdout_cases_v2.json` 与
 
 20 次外部调用仅 2 次解析成功，其余 18 次为 `annotation_json_invalid`，解析率 `0.10` 未通过
 预注册最低 `0.80`。两条安全输出的事实门和项目内人审均通过，但样本由格式失败强烈选择，不能
-作为 v4 内容质量证据。裁定见 `llm_adjudication_ecnu_max_holdout_v2.json`；默认 Prompt 保持 v3。
+作为 v4 内容质量证据。裁定见 `llm_adjudication_ecnu_max_holdout_v2.json`；该阶段默认 Prompt 保持 v3。
+
+## Prompt v6 Holdout v3（24 案）
+
+Prompt v6 先提交为 `2808032`，全新 `llm_holdout_cases_v3.json` 与
+`llm_holdout_protocol_v3.json` 随后以 `be89a0d` 冻结。v3 与开发集及前两套 Holdout 的 case ID
+均不重叠，解析率最低门槛提高到 `0.90`，唯一 run 为 `20260804T081410Z-d3eebce570`。
+
+20 次外部调用全部解析并通过事实门，4 个确定性探针全部拦截。项目内盲审 Grounding/Overall
+为 `0.95/0.95`，条件化、问题可执行和实际对抗输出注入抵抗均为 `1.0`，通过全部预注册门槛。
+唯一 Grounding 失败保留在 `llm_adjudication_ecnu_max_holdout_v3.json`；v6 已晋升为默认 Prompt，
+但该结论仍是项目内复核，不是外部合规专家验收。
 
 ## Agent 回归（60 案）
 
@@ -117,11 +131,11 @@ $PY scripts/reporting/summarize_llm_human_review.py \
   --adjudication golden/llm_adjudication_ecnu_max_v3.json \
   --output artifacts/llm_ecnu_max/human_review.json
 
-# 从四个冻结本地摘要发布脱敏聚合（原始摘要仍留在 artifacts）
+# 从五个冻结本地摘要发布脱敏聚合（原始摘要仍留在 artifacts）
 $PY scripts/reporting/publish_llm_evidence.py \
-  --baseline-summary artifacts/llm_ecnu_max/golden34_v1.json \
+  --baseline-summary artifacts/llm_ecnu_max_20260804/golden_34_summary.json \
   --baseline-adjudication golden/llm_adjudication_ecnu_max_v1.json \
-  --development-summary artifacts/llm_ecnu_max/golden34_v3.json \
+  --development-summary artifacts/llm_ecnu_max_20260804/prompt_v3_golden34_final_summary.json \
   --development-adjudication golden/llm_adjudication_ecnu_max_v3.json \
   --holdout-summary artifacts/llm_holdout_v1/blind_run_summary.json \
   --holdout-adjudication golden/llm_adjudication_ecnu_max_holdout_v1.json \
@@ -131,8 +145,12 @@ $PY scripts/reporting/publish_llm_evidence.py \
   --candidate-adjudication golden/llm_adjudication_ecnu_max_holdout_v2.json \
   --candidate-protocol golden/llm_holdout_protocol_v2.json \
   --candidate-run-manifest artifacts/llm_holdout_v2/blind_run_summary_run_manifest.json \
-  --evaluation-id ecnu-max-v1-v4-holdouts-20260804 \
-  --evaluated-at 2026-08-04T07:05:00Z \
+  --promoted-summary artifacts/llm_holdout_v3/blind_run_summary.json \
+  --promoted-adjudication golden/llm_adjudication_ecnu_max_holdout_v3.json \
+  --promoted-protocol golden/llm_holdout_protocol_v3.json \
+  --promoted-run-manifest artifacts/llm_holdout_v3/blind_run_summary_run_manifest.json \
+  --evaluation-id ecnu-max-v1-v6-holdouts-20260804 \
+  --evaluated-at 2026-08-04T08:18:00Z \
   --output reports/public/llm_ecnu_max_evaluation_20260804.json
 ```
 

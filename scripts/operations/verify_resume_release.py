@@ -174,8 +174,20 @@ def verify_release(
         "Failed Prompt v4 availability gate must remain visible in public evidence.",
     )
     require(
-        DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v3",
-        "An unqualified LLM candidate must not replace the default prompt.",
+        DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v6",
+        "The default prompt must match the qualified Prompt v6 Holdout result.",
+    )
+    promoted = next(
+        stage
+        for stage in llm_evaluation.stages
+        if stage.evaluation_role
+        == "prompt_v6_promoted_project_internal_blind_holdout"
+    )
+    require(
+        promoted.success_criteria_met is True
+        and not promoted.failed_success_criteria
+        and promoted.prompt_version == DEFAULT_PROMPT_CONFIGURATION.version,
+        "Prompt v6 promotion must remain tied to its successful preregistered Holdout.",
     )
     diagnostic = json.loads(llm_diagnostic_publication_path.read_text(encoding="utf-8"))
     require(
@@ -219,6 +231,7 @@ def main() -> None:
             Path("golden/llm_adjudication_ecnu_max_v3.json"),
             Path("golden/llm_adjudication_ecnu_max_holdout_v1.json"),
             Path("golden/llm_adjudication_ecnu_max_holdout_v2.json"),
+            Path("golden/llm_adjudication_ecnu_max_holdout_v3.json"),
         )
     )
     protocols = tuple(
@@ -226,6 +239,7 @@ def main() -> None:
         or (
             Path("golden/llm_holdout_protocol_v1.json"),
             Path("golden/llm_holdout_protocol_v2.json"),
+            Path("golden/llm_holdout_protocol_v3.json"),
         )
     )
     result = verify_release(

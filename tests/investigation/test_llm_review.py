@@ -84,10 +84,12 @@ def test_checked_in_public_llm_evidence_matches_adjudications() -> None:
         Path("golden/llm_adjudication_ecnu_max_v3.json"),
         Path("golden/llm_adjudication_ecnu_max_holdout_v1.json"),
         Path("golden/llm_adjudication_ecnu_max_holdout_v2.json"),
+        Path("golden/llm_adjudication_ecnu_max_holdout_v3.json"),
     )
     protocols = (
         Path("golden/llm_holdout_protocol_v1.json"),
         Path("golden/llm_holdout_protocol_v2.json"),
+        Path("golden/llm_holdout_protocol_v3.json"),
     )
     validate_public_llm_evaluation(
         evaluation,
@@ -95,7 +97,7 @@ def test_checked_in_public_llm_evidence_matches_adjudications() -> None:
         holdout_protocol_paths=protocols,
     )
 
-    baseline, development, holdout, candidate = evaluation.stages
+    baseline, development, holdout, candidate, promoted = evaluation.stages
     assert baseline.evaluation_role == "frozen_baseline"
     assert development.evaluation_role == "same_set_development_regression"
     assert development.same_case_set_as_baseline
@@ -117,6 +119,16 @@ def test_checked_in_public_llm_evidence_matches_adjudications() -> None:
     assert candidate.failed_success_criteria == [
         "external_parse_success_rate_minimum"
     ]
+    assert promoted.evaluation_role == (
+        "prompt_v6_promoted_project_internal_blind_holdout"
+    )
+    assert promoted.prompt_version == "ecnu-risk-evidence-v6"
+    assert promoted.metrics.external_parse_success_rate == 1.0
+    assert promoted.metrics.external_fact_validation_pass_rate == 1.0
+    assert promoted.metrics.human_evidence_grounded_rate == 0.95
+    assert promoted.metrics.human_overall_pass_rate == 0.95
+    assert promoted.success_criteria_met is True
+    assert promoted.failed_success_criteria == []
     assert evaluation.cost_status == "unavailable"
     assert all(stage.metrics.estimated_cost_usd is None for stage in evaluation.stages)
 
