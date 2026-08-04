@@ -43,7 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--llm-publication",
         type=Path,
-        default=Path("reports/public/llm_ecnu_max_golden34_20260804.json"),
+        default=Path("reports/public/llm_ecnu_max_evaluation_20260804.json"),
     )
     parser.add_argument(
         "--llm-adjudication",
@@ -51,6 +51,11 @@ def parse_args() -> argparse.Namespace:
         action="append",
         default=None,
         help="Tracked adjudication JSON; may be repeated.",
+    )
+    parser.add_argument(
+        "--llm-holdout-protocol",
+        type=Path,
+        default=Path("golden/llm_holdout_protocol_v1.json"),
     )
     return parser.parse_args()
 
@@ -64,6 +69,7 @@ def verify_release(
     typology_root: Path,
     llm_publication_path: Path,
     llm_adjudication_paths: tuple[Path, ...],
+    llm_holdout_protocol_path: Path,
 ) -> dict[str, object]:
     require(typology_root.is_dir(), f"Typology directory does not exist: {typology_root}")
     retriever = LocalBM25TypologyRetriever(load_typology_documents(typology_root))
@@ -112,7 +118,11 @@ def verify_release(
         "One or more LLM adjudication files are missing.",
     )
     llm_evaluation = load_public_llm_evaluation(llm_publication_path)
-    validate_public_llm_evaluation(llm_evaluation, llm_adjudication_paths)
+    validate_public_llm_evaluation(
+        llm_evaluation,
+        llm_adjudication_paths,
+        holdout_protocol_path=llm_holdout_protocol_path,
+    )
     development = next(
         stage
         for stage in llm_evaluation.stages
@@ -120,7 +130,7 @@ def verify_release(
     )
     require(
         development.same_case_set_as_baseline
-        and not development.independent_blind_evaluation,
+        and not development.prompt_isolated_blind_evaluation,
         "LLM development result must remain labelled as a same-set non-blind regression.",
     )
     require(
@@ -129,6 +139,16 @@ def verify_release(
             stage.metrics.estimated_cost_usd is None for stage in llm_evaluation.stages
         ),
         "Unavailable LLM cost must not be represented as a numeric claim.",
+    )
+    holdout = next(
+        stage
+        for stage in llm_evaluation.stages
+        if stage.evaluation_role == "prompt_isolated_project_internal_blind_holdout"
+    )
+    require(
+        holdout.prompt_isolated_blind_evaluation
+        and holdout.adjudication_independence == "project_internal",
+        "Holdout must preserve the prompt-isolated/project-internal review boundary.",
     )
 
     return {
@@ -156,9 +176,15 @@ def main() -> None:
         or (
             Path("golden/llm_adjudication_ecnu_max_v1.json"),
             Path("golden/llm_adjudication_ecnu_max_v3.json"),
+            Path("golden/llm_adjudication_ecnu_max_holdout_v1.json"),
         )
     )
-    result = verify_release(args.typologies, args.llm_publication, adjudications)
+    result = verify_release(
+        args.typologies,
+        args.llm_publication,
+        adjudications,
+        args.llm_holdout_protocol,
+    )
     rendered = json.dumps(result, ensure_ascii=False, indent=2)
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -76,14 +76,28 @@ class LLMPublicStage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     stage_id: str
-    evaluation_role: Literal["frozen_baseline", "same_set_development_regression"]
+    evaluation_role: Literal[
+        "frozen_baseline",
+        "same_set_development_regression",
+        "prompt_isolated_project_internal_blind_holdout",
+    ]
     prompt_version: str
+    case_count: int = Field(ge=1)
+    external_case_count: int = Field(ge=1)
+    deterministic_probe_count: int = Field(ge=0)
     source_run_id: str
     source_summary_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     adjudication_id: str
     adjudication_independence: Literal["project_internal", "external_independent"]
     same_case_set_as_baseline: bool
-    independent_blind_evaluation: bool
+    prompt_isolated_blind_evaluation: bool
+    preregistered_protocol_id: str | None = None
+    preregistered_protocol_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    preregistered_source_revision: str | None = None
+    success_criteria_met: bool | None = None
+    failed_success_criteria: list[str] = Field(default_factory=list)
     metrics: LLMPublicStageMetrics
 
 
@@ -92,15 +106,12 @@ class LLMPublicEvaluation(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.1"] = "1.1"
     evaluation_id: str
     evaluated_at: str
     model_name: str
-    golden_case_count: int = Field(ge=1)
-    external_case_count: int = Field(ge=1)
-    deterministic_probe_count: int = Field(ge=0)
     cost_status: Literal["reported", "unavailable"]
-    stages: list[LLMPublicStage] = Field(min_length=2)
+    stages: list[LLMPublicStage] = Field(min_length=3)
     limitations: list[str] = Field(min_length=1)
 
 
@@ -202,10 +213,14 @@ def build_public_llm_evaluation(
     baseline_adjudication_path: Path,
     development_summary_path: Path,
     development_adjudication_path: Path,
+    holdout_summary_path: Path,
+    holdout_adjudication_path: Path,
+    holdout_protocol_path: Path,
+    holdout_run_manifest_path: Path,
     evaluation_id: str,
     evaluated_at: str,
 ) -> LLMPublicEvaluation:
-    """Build a public aggregate while rechecking the two frozen source summaries."""
+    """Build a public aggregate while rechecking development and Holdout evidence."""
 
     definitions = (
         (
@@ -214,6 +229,7 @@ def build_public_llm_evaluation(
             baseline_summary_path,
             baseline_adjudication_path,
             False,
+            False,
         ),
         (
             "prompt_v3_same_set_regression",
@@ -221,14 +237,21 @@ def build_public_llm_evaluation(
             development_summary_path,
             development_adjudication_path,
             True,
+            False,
+        ),
+        (
+            "prompt_v3_preregistered_holdout",
+            "prompt_isolated_project_internal_blind_holdout",
+            holdout_summary_path,
+            holdout_adjudication_path,
+            False,
+            True,
         ),
     )
     stages: list[LLMPublicStage] = []
-    case_counts: set[int] = set()
-    external_counts: set[int] = set()
     model_names: set[str] = set()
     costs: list[float | None] = []
-    for stage_id, role, summary_path, adjudication_path, same_set in definitions:
+    for stage_id, role, summary_path, adjudication_path, same_set, blind in definitions:
         raw_summary = _load_json_object(summary_path)
         aggregate = summarize_human_review(summary_path, adjudication_path)
         prompt_versions = raw_summary.get("prompt_versions")
@@ -237,8 +260,8 @@ def build_public_llm_evaluation(
             raise ValueError(f"{stage_id} must contain exactly one prompt version.")
         if not isinstance(stage_models, list) or len(stage_models) != 1:
             raise ValueError(f"{stage_id} must contain exactly one model name.")
-        case_counts.add(int(raw_summary["case_count"]))
-        external_counts.add(int(aggregate["external_case_count"]))
+        case_count = int(raw_summary["case_count"])
+        external_case_count = int(aggregate["external_case_count"])
         model_names.add(str(stage_models[0]))
         metrics = LLMPublicStageMetrics.model_validate(
             {
@@ -252,38 +275,88 @@ def build_public_llm_evaluation(
                 stage_id=stage_id,
                 evaluation_role=role,
                 prompt_version=str(prompt_versions[0]),
+                case_count=case_count,
+                external_case_count=external_case_count,
+                deterministic_probe_count=case_count - external_case_count,
                 source_run_id=str(aggregate["source_run_id"]),
                 source_summary_sha256=str(aggregate["source_summary_sha256"]),
                 adjudication_id=str(aggregate["adjudication_id"]),
                 adjudication_independence=str(aggregate["independence"]),
                 same_case_set_as_baseline=same_set,
-                independent_blind_evaluation=False,
+                prompt_isolated_blind_evaluation=blind,
                 metrics=metrics,
             )
         )
-    if len(case_counts) != 1 or len(external_counts) != 1 or len(model_names) != 1:
-        raise ValueError("Published LLM stages must use one model and the same case counts.")
-    golden_case_count = case_counts.pop()
-    external_case_count = external_counts.pop()
+    if len(model_names) != 1:
+        raise ValueError("Published LLM stages must use one model.")
+
+    protocol = _load_json_object(holdout_protocol_path)
+    run_manifest = _load_json_object(holdout_run_manifest_path)
+    holdout_stage = stages[-1]
+    if protocol.get("protocol_id") != "ecnu-max-prompt-v3-holdout-blind-v1":
+        raise ValueError("Unexpected Holdout protocol ID.")
+    if run_manifest.get("run_id") != holdout_stage.source_run_id:
+        raise ValueError("Holdout run manifest does not match the reviewed summary.")
+    inputs = run_manifest.get("inputs")
+    configs = run_manifest.get("config_fingerprints")
+    if not isinstance(inputs, dict) or not isinstance(configs, dict):
+        raise ValueError("Holdout run manifest lacks input or prompt fingerprints.")
+    case_input = inputs.get("golden_cases")
+    prompt_input = configs.get("prompt_configuration")
+    if (
+        not isinstance(case_input, dict)
+        or case_input.get("sha256") != protocol.get("cases_sha256")
+        or not isinstance(prompt_input, dict)
+        or prompt_input.get("sha256") != protocol.get("prompt_sha256")
+    ):
+        raise ValueError("Holdout run did not use the preregistered cases and prompt.")
+    holdout_stage.preregistered_protocol_id = str(protocol["protocol_id"])
+    holdout_stage.preregistered_protocol_sha256 = _sha256(holdout_protocol_path)
+    holdout_stage.preregistered_source_revision = str(run_manifest["source_revision"])
+    criteria = protocol.get("success_criteria")
+    if not isinstance(criteria, dict):
+        raise ValueError("Holdout protocol lacks success criteria.")
+    failed_criteria: list[str] = []
+    for criterion, threshold in criteria.items():
+        metric_name = str(criterion).removesuffix("_minimum")
+        observed = getattr(holdout_stage.metrics, metric_name, None)
+        passed = (
+            observed is not None
+            and isinstance(threshold, int | float)
+            and (
+                observed >= float(threshold)
+                if str(criterion).endswith("_minimum")
+                else observed == float(threshold)
+            )
+        )
+        if not passed:
+            failed_criteria.append(str(criterion))
+    holdout_stage.success_criteria_met = not failed_criteria
+    holdout_stage.failed_success_criteria = failed_criteria
     result = LLMPublicEvaluation(
         evaluation_id=evaluation_id,
         evaluated_at=evaluated_at,
         model_name=model_names.pop(),
-        golden_case_count=golden_case_count,
-        external_case_count=external_case_count,
-        deterministic_probe_count=golden_case_count - external_case_count,
         cost_status="unavailable" if all(cost is None for cost in costs) else "reported",
         stages=stages,
         limitations=[
-            "Both adjudications are project-internal rather than external independent review.",
+            "All adjudications are project-internal rather than external expert review.",
             "Prompt v3 is a same-Golden-set development regression, not an independent blind test.",
+            "The Holdout is independent of prompt development and preregistered, but its human "
+            "review is still project-internal.",
             "Provider parse success measures availability and format compliance, "
             "not content quality.",
             "The provider did not return price metadata, so monetary cost is unavailable.",
         ],
     )
     validate_public_llm_evaluation(
-        result, (baseline_adjudication_path, development_adjudication_path)
+        result,
+        (
+            baseline_adjudication_path,
+            development_adjudication_path,
+            holdout_adjudication_path,
+        ),
+        holdout_protocol_path=holdout_protocol_path,
     )
     return result
 
@@ -302,6 +375,8 @@ def load_public_llm_evaluation(path: Path) -> LLMPublicEvaluation:
 def validate_public_llm_evaluation(
     evaluation: LLMPublicEvaluation,
     adjudication_paths: tuple[Path, ...],
+    *,
+    holdout_protocol_path: Path | None = None,
 ) -> None:
     """Validate checked-in aggregates without requiring ignored raw provider outputs."""
 
@@ -312,11 +387,17 @@ def validate_public_llm_evaluation(
             for path in adjudication_paths
         )
     }
-    if len(evaluation.stages) != 2:
-        raise ValueError("Public LLM evidence must contain exactly two evaluation stages.")
+    if len(evaluation.stages) != 3:
+        raise ValueError("Public LLM evidence must contain exactly three evaluation stages.")
     roles = {stage.evaluation_role for stage in evaluation.stages}
-    if roles != {"frozen_baseline", "same_set_development_regression"}:
-        raise ValueError("Public LLM evidence must distinguish baseline and development stages.")
+    if roles != {
+        "frozen_baseline",
+        "same_set_development_regression",
+        "prompt_isolated_project_internal_blind_holdout",
+    }:
+        raise ValueError(
+            "Public LLM evidence must distinguish baseline, development, and Holdout stages."
+        )
     for stage in evaluation.stages:
         adjudication = adjudications.get(stage.adjudication_id)
         if adjudication is None:
@@ -331,12 +412,63 @@ def validate_public_llm_evaluation(
             raise ValueError(f"Human review count mismatch for {stage.stage_id}.")
         if stage.metrics.human_review_coverage_rate != 1.0:
             raise ValueError(f"Human review coverage is incomplete for {stage.stage_id}.")
-        if stage.metrics.accepted_annotation_count > evaluation.external_case_count:
+        if stage.metrics.accepted_annotation_count > stage.external_case_count:
             raise ValueError(f"Accepted count exceeds external case count for {stage.stage_id}.")
         if stage.evaluation_role == "same_set_development_regression" and (
-            not stage.same_case_set_as_baseline or stage.independent_blind_evaluation
+            not stage.same_case_set_as_baseline
+            or stage.prompt_isolated_blind_evaluation
         ):
             raise ValueError("Development regression must be labelled same-set and non-blind.")
+        if stage.evaluation_role == "prompt_isolated_project_internal_blind_holdout":
+            if (
+                stage.same_case_set_as_baseline
+                or not stage.prompt_isolated_blind_evaluation
+                or stage.adjudication_independence != "project_internal"
+            ):
+                raise ValueError(
+                    "Holdout must be prompt-isolated and blind with project-internal review."
+                )
+            if holdout_protocol_path is None:
+                raise ValueError("Holdout protocol path is required for release validation.")
+            protocol = _load_json_object(holdout_protocol_path)
+            cases_path = Path(str(protocol["cases_file"]))
+            prompt_path = Path(str(protocol["prompt_file"]))
+            if (
+                stage.preregistered_protocol_id != protocol.get("protocol_id")
+                or stage.preregistered_protocol_sha256 != _sha256(holdout_protocol_path)
+                or not cases_path.is_file()
+                or _sha256(cases_path) != protocol.get("cases_sha256")
+                or not prompt_path.is_file()
+                or _sha256(prompt_path) != protocol.get("prompt_sha256")
+                or stage.case_count != protocol.get("case_count")
+                or stage.external_case_count != protocol.get("external_case_count")
+                or stage.deterministic_probe_count
+                != protocol.get("deterministic_probe_count")
+            ):
+                raise ValueError("Holdout publication does not match its preregistration.")
+            criteria = protocol.get("success_criteria")
+            if not isinstance(criteria, dict):
+                raise ValueError("Holdout protocol lacks success criteria.")
+            expected_failures = []
+            for criterion, threshold in criteria.items():
+                metric_name = str(criterion).removesuffix("_minimum")
+                observed = getattr(stage.metrics, metric_name, None)
+                passed = (
+                    observed is not None
+                    and isinstance(threshold, int | float)
+                    and (
+                        observed >= float(threshold)
+                        if str(criterion).endswith("_minimum")
+                        else observed == float(threshold)
+                    )
+                )
+                if not passed:
+                    expected_failures.append(str(criterion))
+            if (
+                stage.failed_success_criteria != expected_failures
+                or stage.success_criteria_met != (not expected_failures)
+            ):
+                raise ValueError("Holdout success-criteria outcome is inconsistent.")
     costs = [stage.metrics.estimated_cost_usd for stage in evaluation.stages]
     if evaluation.cost_status == "unavailable" and any(cost is not None for cost in costs):
         raise ValueError("Cost status conflicts with reported cost values.")

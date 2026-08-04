@@ -51,6 +51,7 @@ class ResumeEvidenceSpec(BaseModel):
     required_comparison_groups: list[str] = Field(default_factory=list)
     llm_publication_path: Path | None = None
     llm_adjudication_paths: list[Path] = Field(default_factory=list)
+    llm_holdout_protocol_path: Path | None = None
     sources: list[ResumeEvidenceSourceSpec]
 
 
@@ -413,7 +414,16 @@ def build_resume_evidence(
         else:
             try:
                 llm_evaluation = load_public_llm_evaluation(publication_path)
-                validate_public_llm_evaluation(llm_evaluation, adjudication_paths)
+                protocol_path = (
+                    root / spec.llm_holdout_protocol_path
+                    if spec.llm_holdout_protocol_path is not None
+                    else None
+                )
+                validate_public_llm_evaluation(
+                    llm_evaluation,
+                    adjudication_paths,
+                    holdout_protocol_path=protocol_path,
+                )
             except (ValueError, OSError) as error:
                 incomplete.append(
                     "llm_evaluation:invalid_" + str(error).replace(" ", "_")
@@ -513,11 +523,9 @@ def render_resume_evidence_markdown(report: ResumeEvidenceReport) -> str:
                 "",
                 "## 大模型调查证据",
                 "",
-                f"- 模型：`{llm.model_name}`；Golden Set：{llm.golden_case_count} 例，"
-                f"其中外部调用 {llm.external_case_count} 例、确定性探针 "
-                f"{llm.deterministic_probe_count} 例。",
-                "- 人工复核为项目内部复核；v3 是同一 Golden Set 上的开发回归，"
-                "不是独立盲测。",
+                f"- 模型：`{llm.model_name}`；全部人工复核均为项目内部复核。",
+                "- v3 开发回归使用原 Golden Set；Holdout 独立于 Prompt 调整并预注册，"
+                "但不是外部合规专家验收。",
                 "",
                 "| 阶段 | Prompt | 外部解析成功率 | 解析后事实门禁 | 人工证据扎根 | "
                 "人工总体通过 | P50 / P95 延迟 |",
@@ -527,17 +535,34 @@ def render_resume_evidence_markdown(report: ResumeEvidenceReport) -> str:
         role_names = {
             "frozen_baseline": "首次冻结基线",
             "same_set_development_regression": "同集开发回归",
+            "prompt_isolated_project_internal_blind_holdout": "Prompt 隔离 Holdout",
         }
         for stage in llm.stages:
             metrics = stage.metrics
             lines.append(
-                f"| {role_names[stage.evaluation_role]} | `{stage.prompt_version}` | "
+                f"| {role_names[stage.evaluation_role]}（{stage.case_count}/"
+                f"{stage.external_case_count}） | `{stage.prompt_version}` | "
                 f"{metrics.external_parse_success_rate:.2%} | "
                 f"{metrics.external_fact_validation_pass_rate:.2%} | "
                 f"{metrics.human_evidence_grounded_rate:.2%} | "
                 f"{metrics.human_overall_pass_rate:.2%} | "
                 f"{metrics.latency_p50_ms_all_cases / 1000:.2f}s / "
                 f"{metrics.latency_p95_ms_all_cases / 1000:.2f}s |"
+            )
+        holdout = next(
+            stage
+            for stage in llm.stages
+            if stage.evaluation_role
+            == "prompt_isolated_project_internal_blind_holdout"
+        )
+        if holdout.success_criteria_met is False:
+            lines.extend(
+                [
+                    "",
+                    "> Holdout 未通过预注册质量门："
+                    + "、".join(holdout.failed_success_criteria)
+                    + "。该结果按负结果发布，未用于事后调整 Prompt v3。",
+                ]
             )
         if llm.cost_status == "unavailable":
             lines.extend(["", "> 服务方未返回价格元数据，因此不声明金额成本。"])

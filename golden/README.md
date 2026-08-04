@@ -42,7 +42,18 @@ Grounding/Overall 为 `0.90`。v3 是开发回归而非独立盲测，且仍有 
 裁定文件为 `llm_adjudication_ecnu_max_v1.json` 与 `llm_adjudication_ecnu_max_v3.json`，详见
 [大模型调查系统](../docs/大模型调查系统.md)。
 可公开、无生成原文的聚合版本位于
-`../reports/public/llm_ecnu_max_golden34_20260804.json`，并由发布门禁核对上述裁定文件。
+`../reports/public/llm_ecnu_max_evaluation_20260804.json`，并由发布门禁核对上述裁定文件。
+
+## Prompt 隔离 Holdout（24 案）
+
+`llm_holdout_cases_v1.json` 与 `llm_holdout_protocol_v1.json` 已在外部运行前通过提交 `41922b8`
+冻结：20 案真实调用、4 案确定性探针，case ID 与开发集不重叠，Prompt/cases SHA-256、单次运行、
+禁止逐案重试及人审门槛均已预注册。
+
+唯一 run `20260804T061709Z-2930f2efc8` 的外部解析率为 `0.75`，15/15 解析输出通过事实门；
+项目内人审 Grounding/Overall 为 `0.80 / 0.7333`，未通过预注册 `0.90 / 0.90` 门槛。
+裁定见 `llm_adjudication_ecnu_max_holdout_v1.json`。它是独立于 Prompt 调整的项目内盲测，
+不是外部合规专家验证；结果冻结为负证据，不用于事后修改 v3 或 Holdout 案例。
 
 ## Agent 回归（60 案）
 
@@ -96,15 +107,19 @@ $PY scripts/reporting/summarize_llm_human_review.py \
   --adjudication golden/llm_adjudication_ecnu_max_v3.json \
   --output artifacts/llm_ecnu_max/human_review.json
 
-# 从两个冻结本地摘要发布脱敏聚合（原始摘要仍留在 artifacts）
+# 从三个冻结本地摘要发布脱敏聚合（原始摘要仍留在 artifacts）
 $PY scripts/reporting/publish_llm_evidence.py \
   --baseline-summary artifacts/llm_ecnu_max/golden34_v1.json \
   --baseline-adjudication golden/llm_adjudication_ecnu_max_v1.json \
   --development-summary artifacts/llm_ecnu_max/golden34_v3.json \
   --development-adjudication golden/llm_adjudication_ecnu_max_v3.json \
-  --evaluation-id ecnu-max-golden34-v1-v3 \
-  --evaluated-at 2026-08-04T03:45:00Z \
-  --output reports/public/llm_ecnu_max_golden34_20260804.json
+  --holdout-summary artifacts/llm_holdout_v1/blind_run_summary.json \
+  --holdout-adjudication golden/llm_adjudication_ecnu_max_holdout_v1.json \
+  --holdout-protocol golden/llm_holdout_protocol_v1.json \
+  --holdout-run-manifest artifacts/llm_holdout_v1/blind_run_summary_run_manifest.json \
+  --evaluation-id ecnu-max-v1-v3-holdout-20260804 \
+  --evaluated-at 2026-08-04T06:30:00Z \
+  --output reports/public/llm_ecnu_max_evaluation_20260804.json
 ```
 
 可选外部 LLM 评测必须显式启用并从当前进程读取 API key；不要将 key 写入 Golden、`.env`

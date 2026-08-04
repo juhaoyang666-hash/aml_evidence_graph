@@ -77,21 +77,34 @@ def test_human_review_separates_provider_and_content_quality(tmp_path) -> None:
 
 def test_checked_in_public_llm_evidence_matches_adjudications() -> None:
     evaluation = load_public_llm_evaluation(
-        Path("reports/public/llm_ecnu_max_golden34_20260804.json")
+        Path("reports/public/llm_ecnu_max_evaluation_20260804.json")
     )
+    adjudications = (
+        Path("golden/llm_adjudication_ecnu_max_v1.json"),
+        Path("golden/llm_adjudication_ecnu_max_v3.json"),
+        Path("golden/llm_adjudication_ecnu_max_holdout_v1.json"),
+    )
+    protocol = Path("golden/llm_holdout_protocol_v1.json")
     validate_public_llm_evaluation(
         evaluation,
-        (
-            Path("golden/llm_adjudication_ecnu_max_v1.json"),
-            Path("golden/llm_adjudication_ecnu_max_v3.json"),
-        ),
+        adjudications,
+        holdout_protocol_path=protocol,
     )
 
-    baseline, development = evaluation.stages
+    baseline, development, holdout = evaluation.stages
     assert baseline.evaluation_role == "frozen_baseline"
     assert development.evaluation_role == "same_set_development_regression"
     assert development.same_case_set_as_baseline
-    assert not development.independent_blind_evaluation
+    assert not development.prompt_isolated_blind_evaluation
+    assert holdout.evaluation_role == "prompt_isolated_project_internal_blind_holdout"
+    assert holdout.prompt_isolated_blind_evaluation
+    assert holdout.adjudication_independence == "project_internal"
+    assert holdout.metrics.human_overall_pass_rate == pytest.approx(11 / 15)
+    assert holdout.success_criteria_met is False
+    assert holdout.failed_success_criteria == [
+        "human_evidence_grounded_rate_minimum",
+        "human_overall_pass_rate_minimum",
+    ]
     assert evaluation.cost_status == "unavailable"
     assert all(stage.metrics.estimated_cost_usd is None for stage in evaluation.stages)
 
@@ -100,8 +113,6 @@ def test_checked_in_public_llm_evidence_matches_adjudications() -> None:
     with pytest.raises(ValueError, match="same-set"):
         validate_public_llm_evaluation(
             mislabeled,
-            (
-                Path("golden/llm_adjudication_ecnu_max_v1.json"),
-                Path("golden/llm_adjudication_ecnu_max_v3.json"),
-            ),
+            adjudications,
+            holdout_protocol_path=protocol,
         )
