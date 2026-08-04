@@ -73,6 +73,32 @@ def test_llm_holdout_v2_is_frozen_and_disjoint_from_all_earlier_sets() -> None:
     )
 
 
+def test_llm_holdout_v3_is_frozen_and_disjoint_from_all_earlier_sets() -> None:
+    protocol = json.loads(
+        Path("golden/llm_holdout_protocol_v3.json").read_text(encoding="utf-8")
+    )
+    holdout_path = Path(protocol["cases_file"])
+    holdout_cases = load_golden_cases(holdout_path)
+    prior_cases = [
+        *load_golden_cases(Path("golden/cases_v1.json")),
+        *load_golden_cases(Path("golden/llm_holdout_cases_v1.json")),
+        *load_golden_cases(Path("golden/llm_holdout_cases_v2.json")),
+    ]
+
+    assert _crlf_sha256(holdout_path) == protocol["cases_sha256"]
+    assert hashlib.sha256(Path(protocol["prompt_file"]).read_bytes()).hexdigest() == (
+        protocol["prompt_sha256"]
+    )
+    assert protocol["prompt_version"] == "ecnu-risk-evidence-v6"
+    assert protocol["success_criteria"]["external_parse_success_rate_minimum"] == 0.9
+    assert len(holdout_cases) == protocol["case_count"] == 24
+    assert sum(case.injected_annotation is None for case in holdout_cases) == 20
+    assert sum(case.injected_annotation is not None for case in holdout_cases) == 4
+    assert {case.case_id for case in holdout_cases}.isdisjoint(
+        case.case_id for case in prior_cases
+    )
+
+
 def test_golden_set_tracks_hallucination_intercept_and_latency() -> None:
     evidence = RiskEvidencePackage(
         alert_id="golden-adv-1",

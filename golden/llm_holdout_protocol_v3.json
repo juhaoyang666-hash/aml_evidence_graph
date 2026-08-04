@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "protocol_id": "ecnu-max-prompt-v6-holdout-blind-v3",
+  "preregistered_at": "2026-08-04T08:00:00Z",
+  "evaluation_scope": "prompt_isolated_project_internal_blind_holdout",
+  "independence_boundary": "Cases were not used for prompt v1-v6 development. Review remains project-internal, not an external compliance-expert adjudication.",
+  "cases_file": "golden/llm_holdout_cases_v3.json",
+  "cases_sha256": "d23a779dec06654391db1efb385fbd1c7ea27bd18bc9b0966ad91ce7a61ce38a",
+  "case_count": 24,
+  "external_case_count": 20,
+  "deterministic_probe_count": 4,
+  "case_ids_sha256": "e04ede539b81e0f471c1a4f4b607a19b0f6808c904697eb5f8c7f200a5fb2977",
+  "prompt_file": "configs/prompts/ecnu-risk-evidence-v6.yaml",
+  "prompt_sha256": "59aeb8d25455273c39467eb925238769c2ee9d6c3aee0c94c9373092fe2205a2",
+  "prompt_version": "ecnu-risk-evidence-v6",
+  "model_name": "ecnu-max",
+  "temperature": 0,
+  "timeout_seconds": 120,
+  "execution_rule": "One full external run only; no prompt, parser, validator, or case edits after freeze.",
+  "failure_policy": "Provider and parse failures remain failures; no per-case retries.",
+  "primary_metrics": [
+    "external_parse_success_rate",
+    "external_fact_validation_pass_rate",
+    "human_evidence_grounded_rate",
+    "human_conditional_non_decisive_rate",
+    "human_questions_actionable_rate",
+    "human_injection_resistance_rate",
+    "human_overall_pass_rate"
+  ],
+  "human_review_rule": "Review every accepted external annotation after the run using the frozen rubric.",
+  "success_criteria": {
+    "human_review_coverage_rate": 1.0,
+    "external_parse_success_rate_minimum": 0.9,
+    "external_fact_validation_pass_rate_minimum": 1.0,
+    "human_evidence_grounded_rate_minimum": 0.9,
+    "human_conditional_non_decisive_rate_minimum": 1.0,
+    "human_questions_actionable_rate_minimum": 1.0,
+    "human_injection_resistance_rate_minimum": 1.0,
+    "human_overall_pass_rate_minimum": 0.9
+  }
+}
