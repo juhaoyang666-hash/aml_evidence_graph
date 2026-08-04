@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0",
+  "evaluation_id": "ecnu-max-golden34-v1-v3-20260804",
+  "evaluated_at": "2026-08-04T03:45:00Z",
+  "model_name": "ecnu-max",
+  "golden_case_count": 34,
+  "external_case_count": 27,
+  "deterministic_probe_count": 7,
+  "cost_status": "unavailable",
+  "stages": [
+    {
+      "stage_id": "prompt_v1_frozen_baseline",
+      "evaluation_role": "frozen_baseline",
+      "prompt_version": "ecnu-risk-evidence-v1",
+      "source_run_id": "20260804T031333Z-e6d35f041c",
+      "source_summary_sha256": "4110ed6948a78f1aa94c47588617f7c89aefb162297dd0a0510f57286c5f1e60",
+      "adjudication_id": "ecnu-max-golden34-project-review-v1",
+      "adjudication_independence": "project_internal",
+      "same_case_set_as_baseline": false,
+      "independent_blind_evaluation": false,
+      "metrics": {
+        "external_parse_success_rate": 0.5555555555555556,
+        "external_fact_validation_pass_rate": 0.8666666666666667,
+        "accepted_annotation_count": 13,
+        "human_review_coverage_rate": 1.0,
+        "human_evidence_grounded_rate": 0.0,
+        "human_conditional_non_decisive_rate": 1.0,
+        "human_questions_actionable_rate": 1.0,
+        "human_injection_resistance_rate": 1.0,
+        "human_overall_pass_rate": 0.0,
+        "latency_p50_ms_all_cases": 17347.276350003085,
+        "latency_p95_ms_all_cases": 120078.63913499314,
+        "reported_prompt_tokens_for_accepted_annotations": 4784,
+        "reported_completion_tokens_for_accepted_annotations": 4342,
+        "estimated_cost_usd": null
+      }
+    },
+    {
+      "stage_id": "prompt_v3_same_set_regression",
+      "evaluation_role": "same_set_development_regression",
+      "prompt_version": "ecnu-risk-evidence-v3",
+      "source_run_id": "20260804T033209Z-b7e39be09d",
+      "source_summary_sha256": "80908e4ef6adcaf7495cd2a8fd7e5dd3270ee3089cbd0edac3f6aedec2e32e7a",
+      "adjudication_id": "ecnu-max-prompt-v3-golden34-project-review-v1",
+      "adjudication_independence": "project_internal",
+      "same_case_set_as_baseline": true,
+      "independent_blind_evaluation": false,
+      "metrics": {
+        "external_parse_success_rate": 0.7407407407407407,
+        "external_fact_validation_pass_rate": 1.0,
+        "accepted_annotation_count": 20,
+        "human_review_coverage_rate": 1.0,
+        "human_evidence_grounded_rate": 0.9,
+        "human_conditional_non_decisive_rate": 1.0,
+        "human_questions_actionable_rate": 1.0,
+        "human_injection_resistance_rate": 1.0,
+        "human_overall_pass_rate": 0.9,
+        "latency_p50_ms_all_cases": 7236.538749995816,
+        "latency_p95_ms_all_cases": 10210.01039000912,
+        "reported_prompt_tokens_for_accepted_annotations": 11175,
+        "reported_completion_tokens_for_accepted_annotations": 8362,
+        "estimated_cost_usd": null
+      }
+    }
+  ],
+  "limitations": [
+    "Both adjudications are project-internal rather than external independent review.",
+    "Prompt v3 is a same-Golden-set development regression, not an independent blind test.",
+    "Provider parse success measures availability and format compliance, not content quality.",
+    "The provider did not return price metadata, so monetary cost is unavailable."
+  ]
+}

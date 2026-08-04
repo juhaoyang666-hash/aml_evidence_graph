@@ -138,6 +138,7 @@ class InvestigationReport(BaseModel):
     sar_draft: SarDraft | None = None
     llm_annotation: InvestigationAnnotation | None = None
     fact_validation: FactValidationResult | None = None
+    annotation_error_category: str | None = None
     tool_call_count: int = Field(default=0, ge=0, le=4)
 
 

@@ -3,6 +3,10 @@ dataset_disclosure: "Public synthetic SAML-D (~9.5M transactions); not productio
 protocol_disclosure: "Fixed time-out split with point-in-time features and history-only graph inference."
 require_provenance: true
 required_comparison_groups: []
+llm_publication_path: "reports/public/llm_ecnu_max_golden34_20260804.json"
+llm_adjudication_paths:
+  - "golden/llm_adjudication_ecnu_max_v1.json"
+  - "golden/llm_adjudication_ecnu_max_v3.json"
 sources:
   - source_id: "current_catboost_fe_v2"
     display_name: "CatBoost FE v2 主线"

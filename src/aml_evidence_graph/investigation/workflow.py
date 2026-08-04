@@ -15,7 +15,11 @@ from aml_evidence_graph.evidence.package import (
     TypologyReference,
 )
 from aml_evidence_graph.evidence.typology import LocalBM25TypologyRetriever
-from aml_evidence_graph.investigation.llm import EvidenceAnnotationClient, validate_annotation
+from aml_evidence_graph.investigation.llm import (
+    AnnotationProviderError,
+    EvidenceAnnotationClient,
+    validate_annotation,
+)
 
 MAX_TOOL_CALLS = 4
 
@@ -99,10 +103,15 @@ def _annotate(
             state["evidence"],
             state.get("retrieved_typologies", []),
         )
+    except AnnotationProviderError as error:
+        return {
+            "annotation": None,
+            "annotation_error": error.category,
+        }
     except Exception:
         return {
             "annotation": None,
-            "annotation_error": "external_annotation_unavailable",
+            "annotation_error": "external_annotation_error",
         }
     return {"annotation": annotation, "annotation_error": None}
 
@@ -127,9 +136,10 @@ def _draft_report(state: InvestigationState) -> InvestigationState:
     annotation = state.get("annotation")
     validation = state.get("fact_validation") or FactValidationResult(valid=True)
     uncertainty_notes = list(evidence.uncertainty_notes)
-    if state.get("annotation_error") == "external_annotation_unavailable":
+    if state.get("annotation_error") is not None:
         uncertainty_notes.append(
-            "External LLM annotation was unavailable; deterministic evidence template used."
+            "External LLM annotation was unavailable "
+            f"({state['annotation_error']}); deterministic evidence template used."
         )
     if state.get("retrieval_error") == "typology_retrieval_unavailable":
         uncertainty_notes.append(
@@ -229,6 +239,7 @@ def _draft_report(state: InvestigationState) -> InvestigationState:
         sar_draft=sar_draft,
         llm_annotation=annotation if validation.valid else None,
         fact_validation=validation,
+        annotation_error_category=state.get("annotation_error"),
         tool_call_count=state.get("tool_call_count", 0),
     )
     return {"report": report}

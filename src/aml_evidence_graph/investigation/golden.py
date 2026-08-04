@@ -65,6 +65,10 @@ class GoldenCaseResult:
     hallucination_intercepted: bool | None
     tool_call_limit_respected: bool
     latency_ms: float
+    external_call_attempted: bool
+    annotation_parse_succeeded: bool
+    fact_validation_passed: bool | None
+    external_error_category: str | None
     annotation_used: bool
     report_status: str
     prompt_version: str | None
@@ -72,6 +76,10 @@ class GoldenCaseResult:
     prompt_tokens: int | None
     completion_tokens: int | None
     estimated_cost_usd: float | None
+    evidence_references: list[str]
+    analytical_considerations: list[str]
+    recommended_questions: list[str]
+    fact_validation_errors: list[str]
 
 
 @dataclass(frozen=True)
@@ -90,6 +98,9 @@ class GoldenSetSummary:
     mean_latency_ms: float
     latency_p50_ms: float
     latency_p95_ms: float
+    external_case_count: int
+    external_parse_success_rate: float | None
+    external_fact_validation_pass_rate: float | None
     llm_annotation_rate: float
     token_usage_coverage_rate: float
     reported_prompt_tokens: int
@@ -174,6 +185,21 @@ def evaluate_golden_set(
             else None
         )
         gate = evaluate_investigation_report(case.evidence, report)
+        external_call_attempted = annotator is not None and case.injected_annotation is None
+        validation_errors = (
+            list(report.fact_validation.errors)
+            if report.fact_validation is not None
+            else []
+        )
+        annotation_parse_succeeded = external_call_attempted and (
+            report.llm_annotation is not None or bool(validation_errors)
+        )
+        fact_validation_passed = (
+            report.fact_validation.valid
+            if annotation_parse_succeeded and report.fact_validation is not None
+            else None
+        )
+        exposed_annotation = report.llm_annotation
         hallucination_intercepted: bool | None = None
         if case.injected_annotation is not None and case.expect_rejected_facts:
             hallucination_intercepted = report.status == "rejected_facts"
@@ -194,6 +220,10 @@ def evaluate_golden_set(
                 hallucination_intercepted=hallucination_intercepted,
                 tool_call_limit_respected=report.tool_call_count <= 4,
                 latency_ms=latency_ms,
+                external_call_attempted=external_call_attempted,
+                annotation_parse_succeeded=annotation_parse_succeeded,
+                fact_validation_passed=fact_validation_passed,
+                external_error_category=report.annotation_error_category,
                 annotation_used=report.llm_annotation is not None,
                 report_status=report.status,
                 prompt_version=(
@@ -224,10 +254,30 @@ def evaluate_golden_set(
                     and report.llm_annotation.usage is not None
                     else None
                 ),
+                evidence_references=(
+                    list(exposed_annotation.evidence_references)
+                    if exposed_annotation is not None
+                    else []
+                ),
+                analytical_considerations=(
+                    list(exposed_annotation.analytical_considerations)
+                    if exposed_annotation is not None
+                    else []
+                ),
+                recommended_questions=(
+                    list(exposed_annotation.recommended_questions)
+                    if exposed_annotation is not None
+                    else []
+                ),
+                fact_validation_errors=validation_errors,
             )
         )
     comparable = [result.typology_match for result in results if result.typology_match is not None]
     annotations = [result for result in results if result.annotation_used]
+    external_results = [result for result in results if result.external_call_attempted]
+    parsed_external_results = [
+        result for result in external_results if result.annotation_parse_succeeded
+    ]
     token_usage = [
         result
         for result in annotations
@@ -285,6 +335,19 @@ def evaluate_golden_set(
         mean_latency_ms=sum(result.latency_ms for result in results) / len(results),
         latency_p50_ms=_percentile(latencies, 0.50),
         latency_p95_ms=_percentile(latencies, 0.95),
+        external_case_count=len(external_results),
+        external_parse_success_rate=(
+            sum(result.annotation_parse_succeeded for result in external_results)
+            / len(external_results)
+            if external_results
+            else None
+        ),
+        external_fact_validation_pass_rate=(
+            sum(result.fact_validation_passed is True for result in parsed_external_results)
+            / len(parsed_external_results)
+            if parsed_external_results
+            else None
+        ),
         llm_annotation_rate=len(annotations) / len(results),
         token_usage_coverage_rate=(
             len(token_usage) / len(annotations) if annotations else 0.0
@@ -316,6 +379,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--typologies", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--use-llm", action="store_true")
+    parser.add_argument(
+        "--case-id",
+        action="append",
+        default=[],
+        help="Evaluate only the named case; repeat to select multiple cases.",
+    )
     return parser.parse_args()
 
 
@@ -327,8 +396,15 @@ def main() -> None:
         from aml_evidence_graph.investigation.llm import ECNUAnnotationClient
 
         annotator = ECNUAnnotationClient.from_settings(settings)
+    cases = load_golden_cases(args.cases)
+    if args.case_id:
+        selected_ids = set(args.case_id)
+        cases = [case for case in cases if case.case_id in selected_ids]
+        missing_ids = sorted(selected_ids.difference(case.case_id for case in cases))
+        if missing_ids:
+            raise ValueError("Unknown Golden case IDs: " + ", ".join(missing_ids))
     summary = evaluate_golden_set(
-        load_golden_cases(args.cases),
+        cases,
         retriever=LocalBM25TypologyRetriever(load_typology_documents(args.typologies)),
         annotator=annotator,
     )
@@ -366,6 +442,10 @@ def main() -> None:
                 "fact_snapshot_match_rate": summary.fact_snapshot_match_rate,
                 "hallucination_intercept_rate": summary.hallucination_intercept_rate,
                 "no_evidence_refusal_rate": summary.no_evidence_refusal_rate,
+                "external_parse_success_rate": summary.external_parse_success_rate,
+                "external_fact_validation_pass_rate": (
+                    summary.external_fact_validation_pass_rate
+                ),
                 "latency_p50_ms": summary.latency_p50_ms,
                 "latency_p95_ms": summary.latency_p95_ms,
                 "run_id": manifest.run_id,

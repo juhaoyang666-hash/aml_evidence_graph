@@ -11,6 +11,12 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 from pydantic import BaseModel, ConfigDict, Field
 
+from aml_evidence_graph.investigation.llm_review import (
+    LLMPublicEvaluation,
+    load_public_llm_evaluation,
+    validate_public_llm_evaluation,
+)
+
 
 class ResumeEvidenceSourceSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -43,6 +49,8 @@ class ResumeEvidenceSpec(BaseModel):
     protocol_disclosure: str
     require_provenance: bool = False
     required_comparison_groups: list[str] = Field(default_factory=list)
+    llm_publication_path: Path | None = None
+    llm_adjudication_paths: list[Path] = Field(default_factory=list)
     sources: list[ResumeEvidenceSourceSpec]
 
 
@@ -91,6 +99,7 @@ class ResumeEvidenceReport(BaseModel):
     protocol_disclosure: str
     evidence: list[ResumeMetricEvidence]
     comparisons: list[ResumeComparisonEvidence] = Field(default_factory=list)
+    llm_evaluation: LLMPublicEvaluation | None = None
     incomplete_sources: list[str]
 
 
@@ -393,6 +402,22 @@ def build_resume_evidence(
             )
         )
     comparisons = _build_comparisons(evidence)
+    llm_evaluation: LLMPublicEvaluation | None = None
+    if spec.llm_publication_path is not None:
+        publication_path = root / spec.llm_publication_path
+        adjudication_paths = tuple(root / path for path in spec.llm_adjudication_paths)
+        if not publication_path.is_file():
+            incomplete.append("llm_evaluation:missing_publication")
+        elif not adjudication_paths or any(not path.is_file() for path in adjudication_paths):
+            incomplete.append("llm_evaluation:missing_adjudication")
+        else:
+            try:
+                llm_evaluation = load_public_llm_evaluation(publication_path)
+                validate_public_llm_evaluation(llm_evaluation, adjudication_paths)
+            except (ValueError, OSError) as error:
+                incomplete.append(
+                    "llm_evaluation:invalid_" + str(error).replace(" ", "_")
+                )
     completed_groups = {item.comparison_group for item in comparisons}
     for group in spec.required_comparison_groups:
         if group not in completed_groups:
@@ -404,6 +429,10 @@ def build_resume_evidence(
     incomplete_required.extend(
         item for item in incomplete if item.startswith("comparison_")
     )
+    if spec.llm_publication_path is not None:
+        incomplete_required.extend(
+            item for item in incomplete if item.startswith("llm_evaluation:")
+        )
     if incomplete_required and not allow_incomplete:
         raise RuntimeError(
             "Required resume evidence is incomplete: " + ", ".join(incomplete_required)
@@ -414,6 +443,7 @@ def build_resume_evidence(
         protocol_disclosure=spec.protocol_disclosure,
         evidence=evidence,
         comparisons=comparisons,
+        llm_evaluation=llm_evaluation,
         incomplete_sources=incomplete,
     )
 
@@ -476,6 +506,41 @@ def render_resume_evidence_markdown(report: ResumeEvidenceReport) -> str:
                 f"`{item.source_revision or '—'}` | "
                 f"{len(item.input_fingerprints)}/{len(item.config_fingerprints)} |"
             )
+    if report.llm_evaluation is not None:
+        llm = report.llm_evaluation
+        lines.extend(
+            [
+                "",
+                "## 大模型调查证据",
+                "",
+                f"- 模型：`{llm.model_name}`；Golden Set：{llm.golden_case_count} 例，"
+                f"其中外部调用 {llm.external_case_count} 例、确定性探针 "
+                f"{llm.deterministic_probe_count} 例。",
+                "- 人工复核为项目内部复核；v3 是同一 Golden Set 上的开发回归，"
+                "不是独立盲测。",
+                "",
+                "| 阶段 | Prompt | 外部解析成功率 | 解析后事实门禁 | 人工证据扎根 | "
+                "人工总体通过 | P50 / P95 延迟 |",
+                "|---|---|---:|---:|---:|---:|---:|",
+            ]
+        )
+        role_names = {
+            "frozen_baseline": "首次冻结基线",
+            "same_set_development_regression": "同集开发回归",
+        }
+        for stage in llm.stages:
+            metrics = stage.metrics
+            lines.append(
+                f"| {role_names[stage.evaluation_role]} | `{stage.prompt_version}` | "
+                f"{metrics.external_parse_success_rate:.2%} | "
+                f"{metrics.external_fact_validation_pass_rate:.2%} | "
+                f"{metrics.human_evidence_grounded_rate:.2%} | "
+                f"{metrics.human_overall_pass_rate:.2%} | "
+                f"{metrics.latency_p50_ms_all_cases / 1000:.2f}s / "
+                f"{metrics.latency_p95_ms_all_cases / 1000:.2f}s |"
+            )
+        if llm.cost_status == "unavailable":
+            lines.extend(["", "> 服务方未返回价格元数据，因此不声明金额成本。"])
     if report.incomplete_sources:
         lines.extend(["", "## Incomplete sources", ""])
         lines.extend(f"- `{item}`" for item in report.incomplete_sources)

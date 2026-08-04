@@ -7,7 +7,7 @@
 | `data/` | 数据审计、特征重放与 Spark 等价性验证 | `audit_saml_degree_proxy.py` |
 | `experiments/` | 模型训练、消融、压力测试与实验汇总 | `run_gat_validation_candidate.py` |
 | `retrieval/` | Typology 检索、盲审和拒答门控评估 | `evaluate_retrieval.py` |
-| `reporting/` | MLflow、简历证据和服务基准报告 | `build_resume_evidence.py` |
+| `reporting/` | MLflow、简历证据、LLM 脱敏聚合和服务基准报告 | `build_resume_evidence.py`、`publish_llm_evidence.py` |
 | `operations/` | 环境检查、API/Agent 基准和发布验证 | `verify_resume_release.py` |
 | `pipelines/` | 串联多个步骤的 PowerShell/Shell/Python 流水线 | `run_full_train_chain.sh` |
 

@@ -35,9 +35,14 @@
 分层为 typology 18、low evidence 6、adversarial 10；其中 7 条带确定性
 `injected_annotation` 探针，用于验证数字、实体和越界引用拦截，而不是依赖模型“碰巧幻觉”。
 
-当前模板路径：Schema 合规、事实快照一致、幻觉拦截和无证据拒答均为 `1.0`。外部 LLM 的
-原 30 案路径另行报告，不能与 34 案确定性模板结果混算。详见
+当前模板路径：Schema 合规、事实快照一致、幻觉拦截和无证据拒答均为 `1.0`。2026-08-04
+已完成 34 案的 ECNU 外部调用：v1 首次冻结执行暴露 names-only 定性推断 Bad Case；v3 在同一
+集合上的修复回归达到外部解析率 `0.7407`、解析后事实门 `1.0`，20 条安全输出的项目内人审
+Grounding/Overall 为 `0.90`。v3 是开发回归而非独立盲测，且仍有 7 次非法 JSON 回退。
+裁定文件为 `llm_adjudication_ecnu_max_v1.json` 与 `llm_adjudication_ecnu_max_v3.json`，详见
 [大模型调查系统](../docs/大模型调查系统.md)。
+可公开、无生成原文的聚合版本位于
+`../reports/public/llm_ecnu_max_golden34_20260804.json`，并由发布门禁核对上述裁定文件。
 
 ## Agent 回归（60 案）
 
@@ -77,6 +82,29 @@ $PY scripts/retrieval/evaluate_retrieval.py
 
 # 求职发布版 Mock 验收
 $PY scripts/operations/verify_resume_release.py
+
+# 外部 LLM 34 案（显式启用后；值仍不进入外部 payload）
+$PY -m aml_evidence_graph.investigation.golden \
+  --cases golden/cases_v1.json \
+  --typologies knowledge/typologies \
+  --output artifacts/llm_ecnu_max/golden34.json \
+  --use-llm
+
+# 对哈希绑定的项目内人工裁定做覆盖与指标汇总
+$PY scripts/reporting/summarize_llm_human_review.py \
+  --summary artifacts/llm_ecnu_max/golden34.json \
+  --adjudication golden/llm_adjudication_ecnu_max_v3.json \
+  --output artifacts/llm_ecnu_max/human_review.json
+
+# 从两个冻结本地摘要发布脱敏聚合（原始摘要仍留在 artifacts）
+$PY scripts/reporting/publish_llm_evidence.py \
+  --baseline-summary artifacts/llm_ecnu_max/golden34_v1.json \
+  --baseline-adjudication golden/llm_adjudication_ecnu_max_v1.json \
+  --development-summary artifacts/llm_ecnu_max/golden34_v3.json \
+  --development-adjudication golden/llm_adjudication_ecnu_max_v3.json \
+  --evaluation-id ecnu-max-golden34-v1-v3 \
+  --evaluated-at 2026-08-04T03:45:00Z \
+  --output reports/public/llm_ecnu_max_golden34_20260804.json
 ```
 
 可选外部 LLM 评测必须显式启用并从当前进程读取 API key；不要将 key 写入 Golden、`.env`

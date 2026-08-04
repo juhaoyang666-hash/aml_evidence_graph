@@ -138,7 +138,13 @@ def test_golden_set_tracks_llm_prompt_version_and_usage() -> None:
     )
 
     assert summary.llm_annotation_rate == 1
+    assert summary.external_case_count == 1
+    assert summary.external_parse_success_rate == 1
+    assert summary.external_fact_validation_pass_rate == 1
     assert summary.token_usage_coverage_rate == 1
     assert summary.reported_prompt_tokens == 10
     assert summary.estimated_cost_usd == 0.01
     assert summary.prompt_versions == ["golden-prompt-v1"]
+    assert summary.cases[0].analytical_considerations == [
+        "Consider corroborating the available evidence."
+    ]
