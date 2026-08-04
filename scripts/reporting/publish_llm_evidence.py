@@ -28,6 +28,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--holdout-adjudication", type=Path, required=True)
     parser.add_argument("--holdout-protocol", type=Path, required=True)
     parser.add_argument("--holdout-run-manifest", type=Path, required=True)
+    parser.add_argument("--candidate-summary", type=Path, required=True)
+    parser.add_argument("--candidate-adjudication", type=Path, required=True)
+    parser.add_argument("--candidate-protocol", type=Path, required=True)
+    parser.add_argument("--candidate-run-manifest", type=Path, required=True)
     parser.add_argument("--evaluation-id", required=True)
     parser.add_argument("--evaluated-at", required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -45,6 +49,10 @@ def main() -> None:
         holdout_adjudication_path=args.holdout_adjudication,
         holdout_protocol_path=args.holdout_protocol,
         holdout_run_manifest_path=args.holdout_run_manifest,
+        candidate_summary_path=args.candidate_summary,
+        candidate_adjudication_path=args.candidate_adjudication,
+        candidate_protocol_path=args.candidate_protocol,
+        candidate_run_manifest_path=args.candidate_run_manifest,
         evaluation_id=args.evaluation_id,
         evaluated_at=args.evaluated_at,
     )

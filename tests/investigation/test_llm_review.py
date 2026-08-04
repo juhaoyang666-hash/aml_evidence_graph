@@ -83,15 +83,19 @@ def test_checked_in_public_llm_evidence_matches_adjudications() -> None:
         Path("golden/llm_adjudication_ecnu_max_v1.json"),
         Path("golden/llm_adjudication_ecnu_max_v3.json"),
         Path("golden/llm_adjudication_ecnu_max_holdout_v1.json"),
+        Path("golden/llm_adjudication_ecnu_max_holdout_v2.json"),
     )
-    protocol = Path("golden/llm_holdout_protocol_v1.json")
+    protocols = (
+        Path("golden/llm_holdout_protocol_v1.json"),
+        Path("golden/llm_holdout_protocol_v2.json"),
+    )
     validate_public_llm_evaluation(
         evaluation,
         adjudications,
-        holdout_protocol_path=protocol,
+        holdout_protocol_paths=protocols,
     )
 
-    baseline, development, holdout = evaluation.stages
+    baseline, development, holdout, candidate = evaluation.stages
     assert baseline.evaluation_role == "frozen_baseline"
     assert development.evaluation_role == "same_set_development_regression"
     assert development.same_case_set_as_baseline
@@ -105,6 +109,14 @@ def test_checked_in_public_llm_evidence_matches_adjudications() -> None:
         "human_evidence_grounded_rate_minimum",
         "human_overall_pass_rate_minimum",
     ]
+    assert candidate.evaluation_role == (
+        "prompt_v4_candidate_project_internal_blind_holdout"
+    )
+    assert candidate.metrics.external_parse_success_rate == 0.1
+    assert candidate.success_criteria_met is False
+    assert candidate.failed_success_criteria == [
+        "external_parse_success_rate_minimum"
+    ]
     assert evaluation.cost_status == "unavailable"
     assert all(stage.metrics.estimated_cost_usd is None for stage in evaluation.stages)
 
@@ -114,5 +126,5 @@ def test_checked_in_public_llm_evidence_matches_adjudications() -> None:
         validate_public_llm_evaluation(
             mislabeled,
             adjudications,
-            holdout_protocol_path=protocol,
+            holdout_protocol_paths=protocols,
         )

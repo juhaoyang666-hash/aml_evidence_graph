@@ -51,7 +51,7 @@ class ResumeEvidenceSpec(BaseModel):
     required_comparison_groups: list[str] = Field(default_factory=list)
     llm_publication_path: Path | None = None
     llm_adjudication_paths: list[Path] = Field(default_factory=list)
-    llm_holdout_protocol_path: Path | None = None
+    llm_holdout_protocol_paths: list[Path] = Field(default_factory=list)
     sources: list[ResumeEvidenceSourceSpec]
 
 
@@ -414,15 +414,12 @@ def build_resume_evidence(
         else:
             try:
                 llm_evaluation = load_public_llm_evaluation(publication_path)
-                protocol_path = (
-                    root / spec.llm_holdout_protocol_path
-                    if spec.llm_holdout_protocol_path is not None
-                    else None
-                )
                 validate_public_llm_evaluation(
                     llm_evaluation,
                     adjudication_paths,
-                    holdout_protocol_path=protocol_path,
+                    holdout_protocol_paths=tuple(
+                        root / path for path in spec.llm_holdout_protocol_paths
+                    ),
                 )
             except (ValueError, OSError) as error:
                 incomplete.append(
@@ -536,6 +533,7 @@ def render_resume_evidence_markdown(report: ResumeEvidenceReport) -> str:
             "frozen_baseline": "首次冻结基线",
             "same_set_development_regression": "同集开发回归",
             "prompt_isolated_project_internal_blind_holdout": "Prompt 隔离 Holdout",
+            "prompt_v4_candidate_project_internal_blind_holdout": "Prompt v4 Holdout v2",
         }
         for stage in llm.stages:
             metrics = stage.metrics
@@ -549,19 +547,19 @@ def render_resume_evidence_markdown(report: ResumeEvidenceReport) -> str:
                 f"{metrics.latency_p50_ms_all_cases / 1000:.2f}s / "
                 f"{metrics.latency_p95_ms_all_cases / 1000:.2f}s |"
             )
-        holdout = next(
+        failed_holdouts = [
             stage
             for stage in llm.stages
-            if stage.evaluation_role
-            == "prompt_isolated_project_internal_blind_holdout"
-        )
-        if holdout.success_criteria_met is False:
+            if stage.prompt_isolated_blind_evaluation
+            and stage.success_criteria_met is False
+        ]
+        for holdout in failed_holdouts:
             lines.extend(
                 [
                     "",
-                    "> Holdout 未通过预注册质量门："
+                    f"> `{holdout.prompt_version}` Holdout 未通过预注册质量门："
                     + "、".join(holdout.failed_success_criteria)
-                    + "。该结果按负结果发布，未用于事后调整 Prompt v3。",
+                    + "。该结果按负结果发布，未用于事后调整对应冻结 Prompt。",
                 ]
             )
         if llm.cost_status == "unavailable":

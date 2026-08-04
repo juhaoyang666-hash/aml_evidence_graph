@@ -55,7 +55,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--llm-holdout-protocol",
         type=Path,
-        default=Path("golden/llm_holdout_protocol_v1.json"),
+        action="append",
+        default=None,
+        help="Tracked Holdout protocol JSON; may be repeated.",
     )
     return parser.parse_args()
 
@@ -69,7 +71,7 @@ def verify_release(
     typology_root: Path,
     llm_publication_path: Path,
     llm_adjudication_paths: tuple[Path, ...],
-    llm_holdout_protocol_path: Path,
+    llm_holdout_protocol_paths: tuple[Path, ...],
 ) -> dict[str, object]:
     require(typology_root.is_dir(), f"Typology directory does not exist: {typology_root}")
     retriever = LocalBM25TypologyRetriever(load_typology_documents(typology_root))
@@ -121,7 +123,7 @@ def verify_release(
     validate_public_llm_evaluation(
         llm_evaluation,
         llm_adjudication_paths,
-        holdout_protocol_path=llm_holdout_protocol_path,
+        holdout_protocol_paths=llm_holdout_protocol_paths,
     )
     development = next(
         stage
@@ -150,6 +152,18 @@ def verify_release(
         and holdout.adjudication_independence == "project_internal",
         "Holdout must preserve the prompt-isolated/project-internal review boundary.",
     )
+    candidate = next(
+        stage
+        for stage in llm_evaluation.stages
+        if stage.evaluation_role
+        == "prompt_v4_candidate_project_internal_blind_holdout"
+    )
+    require(
+        candidate.success_criteria_met is False
+        and "external_parse_success_rate_minimum"
+        in candidate.failed_success_criteria,
+        "Failed Prompt v4 availability gate must remain visible in public evidence.",
+    )
 
     return {
         "release_version": __version__,
@@ -177,13 +191,21 @@ def main() -> None:
             Path("golden/llm_adjudication_ecnu_max_v1.json"),
             Path("golden/llm_adjudication_ecnu_max_v3.json"),
             Path("golden/llm_adjudication_ecnu_max_holdout_v1.json"),
+            Path("golden/llm_adjudication_ecnu_max_holdout_v2.json"),
+        )
+    )
+    protocols = tuple(
+        args.llm_holdout_protocol
+        or (
+            Path("golden/llm_holdout_protocol_v1.json"),
+            Path("golden/llm_holdout_protocol_v2.json"),
         )
     )
     result = verify_release(
         args.typologies,
         args.llm_publication,
         adjudications,
-        args.llm_holdout_protocol,
+        protocols,
     )
     rendered = json.dumps(result, ensure_ascii=False, indent=2)
     if args.output is not None:

@@ -80,6 +80,7 @@ class LLMPublicStage(BaseModel):
         "frozen_baseline",
         "same_set_development_regression",
         "prompt_isolated_project_internal_blind_holdout",
+        "prompt_v4_candidate_project_internal_blind_holdout",
     ]
     prompt_version: str
     case_count: int = Field(ge=1)
@@ -106,12 +107,12 @@ class LLMPublicEvaluation(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["1.1"] = "1.1"
+    schema_version: Literal["1.2"] = "1.2"
     evaluation_id: str
     evaluated_at: str
     model_name: str
     cost_status: Literal["reported", "unavailable"]
-    stages: list[LLMPublicStage] = Field(min_length=3)
+    stages: list[LLMPublicStage] = Field(min_length=4)
     limitations: list[str] = Field(min_length=1)
 
 
@@ -224,6 +225,10 @@ def build_public_llm_evaluation(
     holdout_adjudication_path: Path,
     holdout_protocol_path: Path,
     holdout_run_manifest_path: Path,
+    candidate_summary_path: Path,
+    candidate_adjudication_path: Path,
+    candidate_protocol_path: Path,
+    candidate_run_manifest_path: Path,
     evaluation_id: str,
     evaluated_at: str,
 ) -> LLMPublicEvaluation:
@@ -253,12 +258,27 @@ def build_public_llm_evaluation(
             holdout_adjudication_path,
             False,
             True,
+            holdout_protocol_path,
+            holdout_run_manifest_path,
+        ),
+        (
+            "prompt_v4_preregistered_holdout_v2",
+            "prompt_v4_candidate_project_internal_blind_holdout",
+            candidate_summary_path,
+            candidate_adjudication_path,
+            False,
+            True,
+            candidate_protocol_path,
+            candidate_run_manifest_path,
         ),
     )
     stages: list[LLMPublicStage] = []
     model_names: set[str] = set()
     costs: list[float | None] = []
-    for stage_id, role, summary_path, adjudication_path, same_set, blind in definitions:
+    for definition in definitions:
+        stage_id, role, summary_path, adjudication_path, same_set, blind, *prereg = (
+            definition
+        )
         raw_summary = _load_json_object(summary_path)
         aggregate = summarize_human_review(summary_path, adjudication_path)
         prompt_versions = raw_summary.get("prompt_versions")
@@ -277,8 +297,7 @@ def build_public_llm_evaluation(
             }
         )
         costs.append(metrics.estimated_cost_usd)
-        stages.append(
-            LLMPublicStage(
+        stage = LLMPublicStage(
                 stage_id=stage_id,
                 evaluation_role=role,
                 prompt_version=str(prompt_versions[0]),
@@ -293,16 +312,50 @@ def build_public_llm_evaluation(
                 prompt_isolated_blind_evaluation=blind,
                 metrics=metrics,
             )
-        )
+        if prereg:
+            _attach_preregistration(stage, prereg[0], prereg[1])
+        stages.append(stage)
     if len(model_names) != 1:
         raise ValueError("Published LLM stages must use one model.")
 
-    protocol = _load_json_object(holdout_protocol_path)
-    run_manifest = _load_json_object(holdout_run_manifest_path)
-    holdout_stage = stages[-1]
-    if protocol.get("protocol_id") != "ecnu-max-prompt-v3-holdout-blind-v1":
-        raise ValueError("Unexpected Holdout protocol ID.")
-    if run_manifest.get("run_id") != holdout_stage.source_run_id:
+    result = LLMPublicEvaluation(
+        evaluation_id=evaluation_id,
+        evaluated_at=evaluated_at,
+        model_name=model_names.pop(),
+        cost_status="unavailable" if all(cost is None for cost in costs) else "reported",
+        stages=stages,
+        limitations=[
+            "All adjudications are project-internal rather than external expert review.",
+            "Prompt v3 is a same-Golden-set development regression, not an independent blind test.",
+            "The Holdout is independent of prompt development and preregistered, but its human "
+            "review is still project-internal.",
+            "Prompt v4 failed its preregistered Holdout v2 availability gate and was not promoted.",
+            "Provider parse success measures availability and format compliance, "
+            "not content quality.",
+            "The provider did not return price metadata, so monetary cost is unavailable.",
+        ],
+    )
+    validate_public_llm_evaluation(
+        result,
+        (
+            baseline_adjudication_path,
+            development_adjudication_path,
+            holdout_adjudication_path,
+            candidate_adjudication_path,
+        ),
+        holdout_protocol_paths=(holdout_protocol_path, candidate_protocol_path),
+    )
+    return result
+
+
+def _attach_preregistration(
+    stage: LLMPublicStage,
+    protocol_path: Path,
+    run_manifest_path: Path,
+) -> None:
+    protocol = _load_json_object(protocol_path)
+    run_manifest = _load_json_object(run_manifest_path)
+    if run_manifest.get("run_id") != stage.source_run_id:
         raise ValueError("Holdout run manifest does not match the reviewed summary.")
     inputs = run_manifest.get("inputs")
     configs = run_manifest.get("config_fingerprints")
@@ -317,18 +370,16 @@ def build_public_llm_evaluation(
         or prompt_input.get("sha256") != protocol.get("prompt_sha256")
     ):
         raise ValueError("Holdout run did not use the preregistered cases and prompt.")
-    holdout_stage.preregistered_protocol_id = str(protocol["protocol_id"])
-    holdout_stage.preregistered_protocol_sha256 = _sha256_crlf_text(
-        holdout_protocol_path
-    )
-    holdout_stage.preregistered_source_revision = str(run_manifest["source_revision"])
+    stage.preregistered_protocol_id = str(protocol["protocol_id"])
+    stage.preregistered_protocol_sha256 = _sha256_crlf_text(protocol_path)
+    stage.preregistered_source_revision = str(run_manifest["source_revision"])
     criteria = protocol.get("success_criteria")
     if not isinstance(criteria, dict):
         raise ValueError("Holdout protocol lacks success criteria.")
     failed_criteria: list[str] = []
     for criterion, threshold in criteria.items():
         metric_name = str(criterion).removesuffix("_minimum")
-        observed = getattr(holdout_stage.metrics, metric_name, None)
+        observed = getattr(stage.metrics, metric_name, None)
         passed = (
             observed is not None
             and isinstance(threshold, int | float)
@@ -340,34 +391,8 @@ def build_public_llm_evaluation(
         )
         if not passed:
             failed_criteria.append(str(criterion))
-    holdout_stage.success_criteria_met = not failed_criteria
-    holdout_stage.failed_success_criteria = failed_criteria
-    result = LLMPublicEvaluation(
-        evaluation_id=evaluation_id,
-        evaluated_at=evaluated_at,
-        model_name=model_names.pop(),
-        cost_status="unavailable" if all(cost is None for cost in costs) else "reported",
-        stages=stages,
-        limitations=[
-            "All adjudications are project-internal rather than external expert review.",
-            "Prompt v3 is a same-Golden-set development regression, not an independent blind test.",
-            "The Holdout is independent of prompt development and preregistered, but its human "
-            "review is still project-internal.",
-            "Provider parse success measures availability and format compliance, "
-            "not content quality.",
-            "The provider did not return price metadata, so monetary cost is unavailable.",
-        ],
-    )
-    validate_public_llm_evaluation(
-        result,
-        (
-            baseline_adjudication_path,
-            development_adjudication_path,
-            holdout_adjudication_path,
-        ),
-        holdout_protocol_path=holdout_protocol_path,
-    )
-    return result
+    stage.success_criteria_met = not failed_criteria
+    stage.failed_success_criteria = failed_criteria
 
 
 def _load_json_object(path: Path) -> dict[str, object]:
@@ -385,7 +410,7 @@ def validate_public_llm_evaluation(
     evaluation: LLMPublicEvaluation,
     adjudication_paths: tuple[Path, ...],
     *,
-    holdout_protocol_path: Path | None = None,
+    holdout_protocol_paths: tuple[Path, ...] = (),
 ) -> None:
     """Validate checked-in aggregates without requiring ignored raw provider outputs."""
 
@@ -396,17 +421,23 @@ def validate_public_llm_evaluation(
             for path in adjudication_paths
         )
     }
-    if len(evaluation.stages) != 3:
-        raise ValueError("Public LLM evidence must contain exactly three evaluation stages.")
+    if len(evaluation.stages) != 4:
+        raise ValueError("Public LLM evidence must contain exactly four evaluation stages.")
     roles = {stage.evaluation_role for stage in evaluation.stages}
     if roles != {
         "frozen_baseline",
         "same_set_development_regression",
         "prompt_isolated_project_internal_blind_holdout",
+        "prompt_v4_candidate_project_internal_blind_holdout",
     }:
         raise ValueError(
-            "Public LLM evidence must distinguish baseline, development, and Holdout stages."
+            "Public LLM evidence must distinguish development and both Holdout stages."
         )
+    protocols = {
+        str(protocol["protocol_id"]): (path, protocol)
+        for path in holdout_protocol_paths
+        for protocol in (_load_json_object(path),)
+    }
     for stage in evaluation.stages:
         adjudication = adjudications.get(stage.adjudication_id)
         if adjudication is None:
@@ -428,7 +459,10 @@ def validate_public_llm_evaluation(
             or stage.prompt_isolated_blind_evaluation
         ):
             raise ValueError("Development regression must be labelled same-set and non-blind.")
-        if stage.evaluation_role == "prompt_isolated_project_internal_blind_holdout":
+        if stage.evaluation_role in {
+            "prompt_isolated_project_internal_blind_holdout",
+            "prompt_v4_candidate_project_internal_blind_holdout",
+        }:
             if (
                 stage.same_case_set_as_baseline
                 or not stage.prompt_isolated_blind_evaluation
@@ -437,15 +471,16 @@ def validate_public_llm_evaluation(
                 raise ValueError(
                     "Holdout must be prompt-isolated and blind with project-internal review."
                 )
-            if holdout_protocol_path is None:
-                raise ValueError("Holdout protocol path is required for release validation.")
-            protocol = _load_json_object(holdout_protocol_path)
+            protocol_entry = protocols.get(str(stage.preregistered_protocol_id))
+            if protocol_entry is None:
+                raise ValueError("Holdout protocol is required for release validation.")
+            protocol_path, protocol = protocol_entry
             cases_path = Path(str(protocol["cases_file"]))
             prompt_path = Path(str(protocol["prompt_file"]))
             if (
                 stage.preregistered_protocol_id != protocol.get("protocol_id")
                 or stage.preregistered_protocol_sha256
-                != _sha256_crlf_text(holdout_protocol_path)
+                != _sha256_crlf_text(protocol_path)
                 or not cases_path.is_file()
                 or _sha256_crlf_text(cases_path) != protocol.get("cases_sha256")
                 or not prompt_path.is_file()

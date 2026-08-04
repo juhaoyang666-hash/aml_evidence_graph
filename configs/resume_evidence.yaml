@@ -8,7 +8,10 @@ llm_adjudication_paths:
   - "golden/llm_adjudication_ecnu_max_v1.json"
   - "golden/llm_adjudication_ecnu_max_v3.json"
   - "golden/llm_adjudication_ecnu_max_holdout_v1.json"
-llm_holdout_protocol_path: "golden/llm_holdout_protocol_v1.json"
+  - "golden/llm_adjudication_ecnu_max_holdout_v2.json"
+llm_holdout_protocol_paths:
+  - "golden/llm_holdout_protocol_v1.json"
+  - "golden/llm_holdout_protocol_v2.json"
 sources:
   - source_id: "current_catboost_fe_v2"
     display_name: "CatBoost FE v2 主线"

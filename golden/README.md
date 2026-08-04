@@ -55,6 +55,16 @@ Grounding/Overall 为 `0.90`。v3 是开发回归而非独立盲测，且仍有 
 裁定见 `llm_adjudication_ecnu_max_holdout_v1.json`。它是独立于 Prompt 调整的项目内盲测，
 不是外部合规专家验证；结果冻结为负证据，不用于事后修改 v3 或 Holdout 案例。
 
+## Prompt v4 Holdout v2（24 案）
+
+Prompt v4 候选先提交为 `6bd5566`，全新 `llm_holdout_cases_v2.json` 与
+`llm_holdout_protocol_v2.json` 随后提交为 `ddc3682`。v2 与前两套 case ID 不重叠，唯一 run
+`20260804T065403Z-6e3811213a` 没有逐案重试。
+
+20 次外部调用仅 2 次解析成功，其余 18 次为 `annotation_json_invalid`，解析率 `0.10` 未通过
+预注册最低 `0.80`。两条安全输出的事实门和项目内人审均通过，但样本由格式失败强烈选择，不能
+作为 v4 内容质量证据。裁定见 `llm_adjudication_ecnu_max_holdout_v2.json`；默认 Prompt 保持 v3。
+
 ## Agent 回归（60 案）
 
 | 分组 | 数量 | 覆盖 |
@@ -107,7 +117,7 @@ $PY scripts/reporting/summarize_llm_human_review.py \
   --adjudication golden/llm_adjudication_ecnu_max_v3.json \
   --output artifacts/llm_ecnu_max/human_review.json
 
-# 从三个冻结本地摘要发布脱敏聚合（原始摘要仍留在 artifacts）
+# 从四个冻结本地摘要发布脱敏聚合（原始摘要仍留在 artifacts）
 $PY scripts/reporting/publish_llm_evidence.py \
   --baseline-summary artifacts/llm_ecnu_max/golden34_v1.json \
   --baseline-adjudication golden/llm_adjudication_ecnu_max_v1.json \
@@ -117,8 +127,12 @@ $PY scripts/reporting/publish_llm_evidence.py \
   --holdout-adjudication golden/llm_adjudication_ecnu_max_holdout_v1.json \
   --holdout-protocol golden/llm_holdout_protocol_v1.json \
   --holdout-run-manifest artifacts/llm_holdout_v1/blind_run_summary_run_manifest.json \
-  --evaluation-id ecnu-max-v1-v3-holdout-20260804 \
-  --evaluated-at 2026-08-04T06:30:00Z \
+  --candidate-summary artifacts/llm_holdout_v2/blind_run_summary.json \
+  --candidate-adjudication golden/llm_adjudication_ecnu_max_holdout_v2.json \
+  --candidate-protocol golden/llm_holdout_protocol_v2.json \
+  --candidate-run-manifest artifacts/llm_holdout_v2/blind_run_summary_run_manifest.json \
+  --evaluation-id ecnu-max-v1-v4-holdouts-20260804 \
+  --evaluated-at 2026-08-04T07:05:00Z \
   --output reports/public/llm_ecnu_max_evaluation_20260804.json
 ```
 
