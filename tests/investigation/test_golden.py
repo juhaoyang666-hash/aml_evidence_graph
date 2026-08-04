@@ -1,4 +1,7 @@
+import hashlib
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 from aml_evidence_graph.evidence.package import (
     AnnotationUsage,
@@ -6,7 +9,34 @@ from aml_evidence_graph.evidence.package import (
     RiskEvidencePackage,
 )
 from aml_evidence_graph.evidence.typology import LocalBM25TypologyRetriever, TypologyDocument
-from aml_evidence_graph.investigation.golden import GoldenCase, evaluate_golden_set
+from aml_evidence_graph.investigation.golden import (
+    GoldenCase,
+    evaluate_golden_set,
+    load_golden_cases,
+)
+
+
+def test_llm_holdout_v1_is_frozen_and_disjoint_from_prompt_development_set() -> None:
+    protocol = json.loads(
+        Path("golden/llm_holdout_protocol_v1.json").read_text(encoding="utf-8")
+    )
+    holdout_path = Path(protocol["cases_file"])
+    holdout_cases = load_golden_cases(holdout_path)
+    development_cases = load_golden_cases(Path("golden/cases_v1.json"))
+
+    assert hashlib.sha256(holdout_path.read_bytes()).hexdigest() == protocol["cases_sha256"]
+    assert (
+        hashlib.sha256(
+            Path(protocol["prompt_file"]).read_bytes()
+        ).hexdigest()
+        == protocol["prompt_sha256"]
+    )
+    assert len(holdout_cases) == protocol["case_count"] == 24
+    assert sum(case.injected_annotation is None for case in holdout_cases) == 20
+    assert sum(case.injected_annotation is not None for case in holdout_cases) == 4
+    assert {case.case_id for case in holdout_cases}.isdisjoint(
+        case.case_id for case in development_cases
+    )
 
 
 def test_golden_set_tracks_hallucination_intercept_and_latency() -> None:
