@@ -139,6 +139,13 @@ class InvestigationReport(BaseModel):
     llm_annotation: InvestigationAnnotation | None = None
     fact_validation: FactValidationResult | None = None
     annotation_error_category: str | None = None
+    unusable_call_usage: AnnotationUsage | None = Field(
+        default=None,
+        description=(
+            "Provider-reported tokens for a call that was billed but yielded no usable "
+            "annotation. Kept so cost accounting covers failed calls, not only accepted ones."
+        ),
+    )
     tool_call_count: int = Field(default=0, ge=0, le=4)
 
 

@@ -113,11 +113,18 @@ class EvidenceAnnotationClient(Protocol):
 
 
 class AnnotationProviderError(RuntimeError):
-    """Sanitized external-provider failure safe for metrics and audit logs."""
+    """Sanitized external-provider failure safe for metrics and audit logs.
 
-    def __init__(self, category: str) -> None:
+    ``usage`` carries provider-reported tokens for a call that was billed but
+    produced no usable annotation. It stays ``None`` when no response body was
+    received, because in that case the billed amount is genuinely unknown and
+    must not be guessed.
+    """
+
+    def __init__(self, category: str, *, usage: AnnotationUsage | None = None) -> None:
         super().__init__(category)
         self.category = category
+        self.usage = usage
 
 
 @dataclass(frozen=True)
@@ -420,10 +427,19 @@ class ECNUAnnotationClient:
         finally:
             if close_client:
                 client.close()
+        # Parse usage before any content check: a response that cannot be turned into
+        # an annotation was still billed, and those tokens must not vanish from cost
+        # accounting just because the payload was unusable.
+        usage = _parse_usage(
+            payload.get("usage"),
+            input_cost_per_million_tokens_usd=self.input_cost_per_million_tokens_usd,
+            output_cost_per_million_tokens_usd=self.output_cost_per_million_tokens_usd,
+        )
+
         try:
             content = payload["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as error:
-            raise AnnotationProviderError("annotation_json_invalid") from error
+            raise AnnotationProviderError("annotation_json_invalid", usage=usage) from error
         try:
             decoded = _decode_annotation_content(content)
         except AnnotationProviderError as error:
@@ -432,8 +448,8 @@ class ECNUAnnotationClient:
             except (KeyError, IndexError, TypeError, AttributeError):
                 finish_reason = None
             if error.category == "annotation_json_invalid" and finish_reason == "length":
-                raise AnnotationProviderError("annotation_truncated") from error
-            raise
+                raise AnnotationProviderError("annotation_truncated", usage=usage) from error
+            raise AnnotationProviderError(error.category, usage=usage) from error
 
         def normalize_text_list(field: str) -> list[str]:
             value = decoded.get(field, [])
@@ -443,13 +459,7 @@ class ECNUAnnotationClient:
                 return [value]
             if isinstance(value, list) and all(isinstance(item, str) for item in value):
                 return value
-            raise AnnotationProviderError("annotation_schema_invalid")
-
-        usage = _parse_usage(
-            payload.get("usage"),
-            input_cost_per_million_tokens_usd=self.input_cost_per_million_tokens_usd,
-            output_cost_per_million_tokens_usd=self.output_cost_per_million_tokens_usd,
-        )
+            raise AnnotationProviderError("annotation_schema_invalid", usage=usage)
 
         return InvestigationAnnotation(
             prompt_version=self.prompt_configuration.version,

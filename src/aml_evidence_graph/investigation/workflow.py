@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+import time
+import uuid
+from collections.abc import Callable
+from datetime import UTC, datetime
+from operator import add
+from typing import Annotated, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
 from aml_evidence_graph.evidence.package import (
+    AnnotationUsage,
     FactValidationResult,
     InvestigationAnnotation,
     InvestigationReport,
@@ -29,12 +35,71 @@ class InvestigationState(TypedDict, total=False):
 
     evidence: RiskEvidencePackage
     retrieved_typologies: list[TypologyReference]
+    trace_id: str
+    node_timeline: Annotated[list[dict[str, object]], add]
     annotation: InvestigationAnnotation | None
     annotation_error: str | None
+    unusable_call_usage: AnnotationUsage | None
     retrieval_error: str | None
     fact_validation: FactValidationResult | None
     tool_call_count: int
     report: InvestigationReport
+
+
+# Every observed state change this chain can report, so a trace consumer can rely on a
+# closed vocabulary instead of parsing free text.
+_NODE_STATE_CHANGES: dict[str, str] = {
+    "retrieve_typologies": "typologies_retrieved",
+    "fact_check": "references_deduplicated",
+    "annotate": "annotation_attempted",
+    "validate_annotation": "annotation_validated",
+    "draft_report": "draft_rendered",
+}
+
+
+def _timeline_event(
+    node: str,
+    started: float,
+    *,
+    state_change: str,
+    status: Literal["complete", "failed"] = "complete",
+) -> dict[str, object]:
+    """Build one span in the same shape the controlled workflow already emits."""
+    return {
+        "node": node,
+        "timestamp_utc": datetime.now(UTC).isoformat(),
+        "duration_ms": (time.perf_counter() - started) * 1_000,
+        "status": status,
+        "state_change": state_change,
+    }
+
+
+def _traced_node(
+    node: str,
+    function: Callable[[InvestigationState], InvestigationState],
+) -> Callable[[InvestigationState], InvestigationState]:
+    """Time one node and append its span without changing the node's own contract."""
+
+    def wrapped(state: InvestigationState) -> InvestigationState:
+        started = time.perf_counter()
+        try:
+            update = dict(function(state))
+        except Exception:
+            # The span is recorded before propagating so a failed run still has a trace.
+            state.setdefault("node_timeline", []).append(
+                _timeline_event(node, started, state_change="node_failed", status="failed")
+            )
+            raise
+        update["node_timeline"] = [
+            _timeline_event(
+                node,
+                started,
+                state_change=_NODE_STATE_CHANGES.get(node, "state_updated"),
+            )
+        ]
+        return update
+
+    return wrapped
 
 
 def _query_from_evidence(evidence: RiskEvidencePackage) -> str:
@@ -107,13 +172,20 @@ def _annotate(
         return {
             "annotation": None,
             "annotation_error": error.category,
+            # Billed but unusable: keep the tokens so cost accounting stays complete.
+            "unusable_call_usage": error.usage,
         }
     except Exception:
         return {
             "annotation": None,
             "annotation_error": "external_annotation_error",
+            "unusable_call_usage": None,
         }
-    return {"annotation": annotation, "annotation_error": None}
+    return {
+        "annotation": annotation,
+        "annotation_error": None,
+        "unusable_call_usage": None,
+    }
 
 
 def _validate_annotation(state: InvestigationState) -> InvestigationState:
@@ -240,6 +312,13 @@ def _draft_report(state: InvestigationState) -> InvestigationState:
         llm_annotation=annotation if validation.valid else None,
         fact_validation=validation,
         annotation_error_category=state.get("annotation_error"),
+        # A fact-gate rejection drops the annotation from the report, but the call was
+        # still billed, so its usage moves to the unusable-call basis instead of vanishing.
+        unusable_call_usage=(
+            state.get("unusable_call_usage")
+            if validation.valid
+            else (annotation.usage if annotation is not None else None)
+        ),
         tool_call_count=state.get("tool_call_count", 0),
     )
     return {"report": report}
@@ -254,12 +333,21 @@ def build_investigation_graph(
     workflow = StateGraph(InvestigationState)
     workflow.add_node(
         "retrieve_typologies",
-        lambda state: _retrieve_typologies(state, retriever=retriever),
+        _traced_node(
+            "retrieve_typologies",
+            lambda state: _retrieve_typologies(state, retriever=retriever),
+        ),
     )
-    workflow.add_node("fact_check", _fact_check)
-    workflow.add_node("annotate", lambda state: _annotate(state, annotator=annotator))
-    workflow.add_node("validate_annotation", _validate_annotation)
-    workflow.add_node("draft_report", _draft_report)
+    workflow.add_node("fact_check", _traced_node("fact_check", _fact_check))
+    workflow.add_node(
+        "annotate",
+        _traced_node("annotate", lambda state: _annotate(state, annotator=annotator)),
+    )
+    workflow.add_node(
+        "validate_annotation",
+        _traced_node("validate_annotation", _validate_annotation),
+    )
+    workflow.add_node("draft_report", _traced_node("draft_report", _draft_report))
     workflow.add_edge(START, "retrieve_typologies")
     workflow.add_edge("retrieve_typologies", "fact_check")
     workflow.add_edge("fact_check", "annotate")
@@ -269,6 +357,45 @@ def build_investigation_graph(
     return workflow
 
 
+class InvestigationTrace(TypedDict):
+    """One correlated run record: identity plus the span list, no evidence bodies."""
+
+    trace_id: str
+    alert_id: str
+    node_timeline: list[dict[str, object]]
+    total_duration_ms: float
+    annotation_error_category: str | None
+    report_status: str
+
+
+def run_investigation_traced(
+    evidence: RiskEvidencePackage,
+    *,
+    retriever: LocalBM25TypologyRetriever,
+    annotator: EvidenceAnnotationClient | None = None,
+    trace_id: str | None = None,
+) -> tuple[InvestigationReport, InvestigationTrace]:
+    """Run the workflow and return the draft plus its correlated node trace.
+
+    Kept separate from :func:`run_investigation` so the API response model does not
+    grow operational spans that reviewers never need.
+    """
+    graph = build_investigation_graph(retriever, annotator=annotator).compile()
+    resolved_trace_id = trace_id or f"trace-{uuid.uuid4().hex}"
+    state = graph.invoke({"evidence": evidence, "trace_id": resolved_trace_id})
+    report: InvestigationReport = state["report"]
+    timeline = list(state.get("node_timeline", []))
+    trace: InvestigationTrace = {
+        "trace_id": resolved_trace_id,
+        "alert_id": report.alert_id,
+        "node_timeline": timeline,
+        "total_duration_ms": sum(float(span["duration_ms"]) for span in timeline),
+        "annotation_error_category": report.annotation_error_category,
+        "report_status": report.status,
+    }
+    return report, trace
+
+
 def run_investigation(
     evidence: RiskEvidencePackage,
     *,
@@ -276,6 +403,9 @@ def run_investigation(
     annotator: EvidenceAnnotationClient | None = None,
 ) -> InvestigationReport:
     """Run the evidence-bound workflow and return a human-review draft."""
-    graph = build_investigation_graph(retriever, annotator=annotator).compile()
-    state = graph.invoke({"evidence": evidence})
-    return state["report"]
+    report, _ = run_investigation_traced(
+        evidence,
+        retriever=retriever,
+        annotator=annotator,
+    )
+    return report

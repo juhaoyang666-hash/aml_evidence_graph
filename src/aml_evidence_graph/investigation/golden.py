@@ -12,11 +12,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from aml_evidence_graph.evidence.package import InvestigationAnnotation, RiskEvidencePackage
+from aml_evidence_graph.evidence.package import (
+    InvestigationAnnotation,
+    InvestigationReport,
+    RiskEvidencePackage,
+)
 from aml_evidence_graph.evidence.typology import LocalBM25TypologyRetriever, load_typology_documents
 from aml_evidence_graph.investigation.evaluation import evaluate_investigation_report
 from aml_evidence_graph.investigation.llm import EvidenceAnnotationClient
-from aml_evidence_graph.investigation.workflow import run_investigation
+from aml_evidence_graph.investigation.workflow import run_investigation_traced
 from aml_evidence_graph.settings import Settings
 from aml_evidence_graph.tracking.run import create_run_manifest
 
@@ -76,6 +80,9 @@ class GoldenCaseResult:
     prompt_tokens: int | None
     completion_tokens: int | None
     estimated_cost_usd: float | None
+    billable_prompt_tokens: int | None
+    billable_completion_tokens: int | None
+    billable_estimated_cost_usd: float | None
     evidence_references: list[str]
     analytical_considerations: list[str]
     recommended_questions: list[str]
@@ -106,6 +113,19 @@ class GoldenSetSummary:
     reported_prompt_tokens: int
     reported_completion_tokens: int
     estimated_cost_usd: float | None
+    # Billable basis: every attempted external call whose usage the provider reported,
+    # including calls whose output failed parsing or the fact gate. The `reported_*`
+    # fields above stay on the accepted-annotation basis so published numbers keep
+    # their original meaning.
+    billable_call_count: int
+    billable_token_coverage_rate: float | None
+    billable_prompt_tokens: int
+    billable_completion_tokens: int
+    billable_estimated_cost_usd: float | None
+    wasted_prompt_tokens: int
+    wasted_completion_tokens: int
+    wasted_estimated_cost_usd: float | None
+    wasted_token_share: float | None
     prompt_versions: list[str]
     model_names: list[str]
     category_counts: dict[str, int]
@@ -120,6 +140,42 @@ def load_golden_cases(path: Path) -> list[GoldenCase]:
     if isinstance(payload, list):
         return [GoldenCase.model_validate(item) for item in payload]
     raise ValueError("Golden case file must contain a JSON object or array.")
+
+
+def _sum_cost(values: list[float | None]) -> float | None:
+    """Total a cost column, distinguishing "exactly zero" from "not computable".
+
+    An empty column means no call fell in this basis, so the cost is exactly zero
+    regardless of whether prices are configured. A populated column with any null
+    means prices were unavailable, and the total must stay null rather than be
+    silently understated by treating unpriced calls as free.
+    """
+    if not values:
+        return 0.0
+    if any(value is None for value in values):
+        return None
+    return sum(value for value in values if value is not None)
+
+
+def _billable_usage_value(
+    report: InvestigationReport,
+    field: str,
+) -> int | float | None:
+    """Read one usage field on the billable basis: accepted or billed-but-unusable.
+
+    Exactly one of the two carries usage for a given case, because a report either
+    exposes an accepted annotation or records the unusable call that replaced it.
+    """
+    for usage in (
+        report.llm_annotation.usage if report.llm_annotation is not None else None,
+        report.unusable_call_usage,
+    ):
+        if usage is None:
+            continue
+        value = getattr(usage, field)
+        if value is not None:
+            return value
+    return None
 
 
 def _percentile(sorted_values: list[float], percentile: float) -> float:
@@ -141,8 +197,13 @@ def evaluate_golden_set(
     *,
     retriever: LocalBM25TypologyRetriever,
     annotator: EvidenceAnnotationClient | None = None,
+    trace_sink: list[dict[str, object]] | None = None,
 ) -> GoldenSetSummary:
-    """Evaluate schema, factual snapshot, evidence coverage, retrieval and latency."""
+    """Evaluate schema, factual snapshot, evidence coverage, retrieval and latency.
+
+    When ``trace_sink`` is supplied, one correlated node trace per case is appended to
+    it. Traces stay out of the summary so run summaries do not grow without bound.
+    """
     if not cases:
         raise ValueError("At least one Golden Case is required.")
     results: list[GoldenCaseResult] = []
@@ -153,11 +214,14 @@ def evaluate_golden_set(
         else:
             case_annotator = annotator
         started_at = time.perf_counter()
-        report = run_investigation(
+        report, trace = run_investigation_traced(
             case.evidence,
             retriever=retriever,
             annotator=case_annotator,
+            trace_id=f"golden-{case.case_id}",
         )
+        if trace_sink is not None:
+            trace_sink.append({**trace, "case_id": case.case_id})
         latency_ms = (time.perf_counter() - started_at) * 1_000
         expected_snapshot = case.evidence.model_dump(mode="json")
         evidence_items = (
@@ -254,6 +318,13 @@ def evaluate_golden_set(
                     and report.llm_annotation.usage is not None
                     else None
                 ),
+                billable_prompt_tokens=_billable_usage_value(report, "prompt_tokens"),
+                billable_completion_tokens=_billable_usage_value(
+                    report, "completion_tokens"
+                ),
+                billable_estimated_cost_usd=_billable_usage_value(
+                    report, "estimated_cost_usd"
+                ),
                 evidence_references=(
                     list(exposed_annotation.evidence_references)
                     if exposed_annotation is not None
@@ -284,6 +355,27 @@ def evaluate_golden_set(
         if result.prompt_tokens is not None or result.completion_tokens is not None
     ]
     cost_values = [result.estimated_cost_usd for result in annotations]
+    # Billable basis covers every attempted call with provider-reported usage, so a run
+    # whose annotations mostly failed still shows what the provider actually charged.
+    billable_results = [
+        result
+        for result in external_results
+        if result.billable_prompt_tokens is not None
+        or result.billable_completion_tokens is not None
+    ]
+    billable_cost_values = [result.billable_estimated_cost_usd for result in billable_results]
+    wasted_results = [result for result in billable_results if not result.annotation_used]
+    wasted_cost_values = [result.billable_estimated_cost_usd for result in wasted_results]
+    billable_prompt_tokens = sum(result.billable_prompt_tokens or 0 for result in billable_results)
+    billable_completion_tokens = sum(
+        result.billable_completion_tokens or 0 for result in billable_results
+    )
+    wasted_prompt_tokens = sum(result.billable_prompt_tokens or 0 for result in wasted_results)
+    wasted_completion_tokens = sum(
+        result.billable_completion_tokens or 0 for result in wasted_results
+    )
+    billable_total_tokens = billable_prompt_tokens + billable_completion_tokens
+    wasted_total_tokens = wasted_prompt_tokens + wasted_completion_tokens
     prompt_versions = sorted(
         {result.prompt_version for result in annotations if result.prompt_version is not None}
     )
@@ -361,6 +453,19 @@ def evaluate_golden_set(
             if cost_values and all(value is not None for value in cost_values)
             else None
         ),
+        billable_call_count=len(billable_results),
+        billable_token_coverage_rate=(
+            len(billable_results) / len(external_results) if external_results else None
+        ),
+        billable_prompt_tokens=billable_prompt_tokens,
+        billable_completion_tokens=billable_completion_tokens,
+        billable_estimated_cost_usd=_sum_cost(billable_cost_values),
+        wasted_prompt_tokens=wasted_prompt_tokens,
+        wasted_completion_tokens=wasted_completion_tokens,
+        wasted_estimated_cost_usd=_sum_cost(wasted_cost_values),
+        wasted_token_share=(
+            wasted_total_tokens / billable_total_tokens if billable_total_tokens else None
+        ),
         prompt_versions=prompt_versions,
         model_names=model_names,
         category_counts=category_counts,
@@ -403,14 +508,22 @@ def main() -> None:
         missing_ids = sorted(selected_ids.difference(case.case_id for case in cases))
         if missing_ids:
             raise ValueError("Unknown Golden case IDs: " + ", ".join(missing_ids))
+    traces: list[dict[str, object]] = []
     summary = evaluate_golden_set(
         cases,
         retriever=LocalBM25TypologyRetriever(load_typology_documents(args.typologies)),
         annotator=annotator,
+        trace_sink=traces,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(golden_summary_as_dict(summary), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    # Spans live beside the summary as JSONL so summary size stays flat as cases grow.
+    trace_path = args.output.with_name(f"{args.output.stem}_traces.jsonl")
+    trace_path.write_text(
+        "".join(json.dumps(trace, ensure_ascii=False) + "\n" for trace in traces),
         encoding="utf-8",
     )
     manifest = create_run_manifest(
