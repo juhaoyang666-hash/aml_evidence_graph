@@ -16,6 +16,17 @@ from aml_evidence_graph.investigation.golden import (
 )
 
 
+def _crlf_sha256(path: Path) -> str:
+    normalized = (
+        path.read_text(encoding="utf-8")
+        .replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .replace("\n", "\r\n")
+        .encode()
+    )
+    return hashlib.sha256(normalized).hexdigest()
+
+
 def test_llm_holdout_v1_is_frozen_and_disjoint_from_prompt_development_set() -> None:
     protocol = json.loads(
         Path("golden/llm_holdout_protocol_v1.json").read_text(encoding="utf-8")
@@ -24,14 +35,7 @@ def test_llm_holdout_v1_is_frozen_and_disjoint_from_prompt_development_set() -> 
     holdout_cases = load_golden_cases(holdout_path)
     development_cases = load_golden_cases(Path("golden/cases_v1.json"))
 
-    normalized_cases = (
-        holdout_path.read_text(encoding="utf-8")
-        .replace("\r\n", "\n")
-        .replace("\r", "\n")
-        .replace("\n", "\r\n")
-        .encode()
-    )
-    assert hashlib.sha256(normalized_cases).hexdigest() == protocol["cases_sha256"]
+    assert _crlf_sha256(holdout_path) == protocol["cases_sha256"]
     assert (
         hashlib.sha256(
             Path(protocol["prompt_file"]).read_bytes()
@@ -43,6 +47,29 @@ def test_llm_holdout_v1_is_frozen_and_disjoint_from_prompt_development_set() -> 
     assert sum(case.injected_annotation is not None for case in holdout_cases) == 4
     assert {case.case_id for case in holdout_cases}.isdisjoint(
         case.case_id for case in development_cases
+    )
+
+
+def test_llm_holdout_v2_is_frozen_and_disjoint_from_all_earlier_sets() -> None:
+    protocol = json.loads(
+        Path("golden/llm_holdout_protocol_v2.json").read_text(encoding="utf-8")
+    )
+    holdout_path = Path(protocol["cases_file"])
+    holdout_cases = load_golden_cases(holdout_path)
+    prior_cases = [
+        *load_golden_cases(Path("golden/cases_v1.json")),
+        *load_golden_cases(Path("golden/llm_holdout_cases_v1.json")),
+    ]
+
+    assert _crlf_sha256(holdout_path) == protocol["cases_sha256"]
+    assert hashlib.sha256(Path(protocol["prompt_file"]).read_bytes()).hexdigest() == (
+        protocol["prompt_sha256"]
+    )
+    assert len(holdout_cases) == protocol["case_count"] == 24
+    assert sum(case.injected_annotation is None for case in holdout_cases) == 20
+    assert sum(case.injected_annotation is not None for case in holdout_cases) == 4
+    assert {case.case_id for case in holdout_cases}.isdisjoint(
+        case.case_id for case in prior_cases
     )
 
 
