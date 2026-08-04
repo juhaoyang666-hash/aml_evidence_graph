@@ -7,8 +7,8 @@
 | `data/` | 数据审计、特征重放与 Spark 等价性验证 | `audit_saml_degree_proxy.py` |
 | `experiments/` | 模型训练、消融、压力测试与实验汇总 | `run_gat_validation_candidate.py` |
 | `retrieval/` | Typology 检索、盲审和拒答门控评估 | `evaluate_retrieval.py` |
-| `reporting/` | MLflow、简历证据、LLM Holdout/脱敏聚合和服务基准报告 | `build_llm_holdout_golden.py`、`publish_llm_evidence.py` |
-| `operations/` | 环境检查、API/Agent 基准和发布验证 | `verify_resume_release.py` |
+| `reporting/` | MLflow、简历证据、LLM Holdout/诊断脱敏聚合和服务基准报告 | `build_llm_holdout_golden.py`、`publish_llm_diagnostic.py` |
+| `operations/` | 环境检查、API/Agent 基准、LLM JSON 契约诊断和发布验证 | `diagnose_llm_json_contract.py`、`verify_resume_release.py` |
 | `pipelines/` | 串联多个步骤的 PowerShell/Shell/Python 流水线 | `run_full_train_chain.sh` |
 
 新增文件应放入最贴近其主要职责的子目录。只有共享包标识和本说明保留在 `scripts/` 根目录；流水线引用其他脚本时应写完整分类路径。

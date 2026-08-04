@@ -13,6 +13,7 @@ from aml_evidence_graph.evidence.typology import LocalBM25TypologyRetriever, Typ
 from aml_evidence_graph.investigation.llm import (
     DEFAULT_PROMPT_CONFIGURATION,
     ECNUAnnotationClient,
+    diagnose_annotation_content,
     load_prompt_configuration,
     validate_annotation,
 )
@@ -119,6 +120,35 @@ def test_ecnu_client_accepts_one_json_markdown_fence() -> None:
     annotation = client.annotate(_evidence(), [])
 
     assert annotation.evidence_references == []
+
+
+def test_annotation_diagnostic_classifies_truncated_json_without_retaining_text() -> None:
+    diagnostic = diagnose_annotation_content(
+        '{"evidence_references": [], "analytical_considerations": ['
+    )
+
+    assert diagnostic.category == "json_syntax_invalid"
+    assert diagnostic.content_char_count == 58
+    assert diagnostic.content_sha256 is not None
+    assert diagnostic.json_error_position is not None
+    assert not diagnostic.production_parser_compatible
+    assert not hasattr(diagnostic, "content")
+
+
+def test_annotation_diagnostic_distinguishes_contract_shape_and_markdown() -> None:
+    invalid_shape = diagnose_annotation_content('{"evidence_references": []}')
+    fenced_valid = diagnose_annotation_content(
+        """```json
+{"evidence_references": [], "analytical_considerations": [], "recommended_questions": []}
+```"""
+    )
+
+    assert invalid_shape.category == "field_shape_invalid"
+    assert invalid_shape.json_decode_succeeded
+    assert invalid_shape.production_parser_compatible
+    assert fenced_valid.category == "valid_contract"
+    assert fenced_valid.markdown_fence_detected
+    assert fenced_valid.production_parser_compatible
 
 
 def test_workflow_rejects_annotation_that_introduces_a_number() -> None:
@@ -237,6 +267,34 @@ def test_ecnu_client_reports_sanitized_timeout_category() -> None:
         raise AssertionError("Expected a sanitized provider timeout.")
 
 
+def test_ecnu_client_distinguishes_token_truncation_from_generic_invalid_json() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "length",
+                        "message": {"content": '{"evidence_references": ['},
+                    }
+                ]
+            },
+        )
+
+    client = ECNUAnnotationClient(
+        api_key="test-key",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    try:
+        client.annotate(_evidence(), [])
+    except RuntimeError as error:
+        assert str(error) == "annotation_truncated"
+    else:
+        raise AssertionError("Expected an explicit truncation category.")
+
+
 def test_prompt_configuration_is_versioned_and_validated(tmp_path) -> None:
     prompt_path = tmp_path / "prompt.yaml"
     prompt_path.write_text(
@@ -276,4 +334,15 @@ def test_v4_candidate_encodes_holdout_v1_remediations_without_becoming_default()
         candidate.system_instructions
     )
     assert "between two and five actionable" in candidate.system_instructions
+    assert DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v3"
+
+
+def test_v5_candidate_changes_only_version_and_diagnostic_token_limit() -> None:
+    v4 = load_prompt_configuration(Path("configs/prompts/ecnu-risk-evidence-v4.yaml"))
+    v5 = load_prompt_configuration(Path("configs/prompts/ecnu-risk-evidence-v5.yaml"))
+
+    assert v5.version == "ecnu-risk-evidence-v5"
+    assert v5.max_tokens == 500
+    assert v5.temperature == v4.temperature
+    assert v5.system_instructions == v4.system_instructions
     assert DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v3"

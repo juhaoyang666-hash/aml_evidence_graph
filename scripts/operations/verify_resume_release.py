@@ -21,6 +21,9 @@ from aml_evidence_graph.evidence.typology import (  # noqa: E402
     LocalBM25TypologyRetriever,
     load_typology_documents,
 )
+from aml_evidence_graph.investigation.llm import (  # noqa: E402
+    DEFAULT_PROMPT_CONFIGURATION,
+)
 from aml_evidence_graph.investigation.llm_review import (  # noqa: E402
     load_public_llm_evaluation,
     validate_public_llm_evaluation,
@@ -44,6 +47,11 @@ def parse_args() -> argparse.Namespace:
         "--llm-publication",
         type=Path,
         default=Path("reports/public/llm_ecnu_max_evaluation_20260804.json"),
+    )
+    parser.add_argument(
+        "--llm-diagnostic-publication",
+        type=Path,
+        default=Path("reports/public/llm_json_contract_diagnostic_20260804.json"),
     )
     parser.add_argument(
         "--llm-adjudication",
@@ -70,6 +78,7 @@ def require(condition: bool, message: str) -> None:
 def verify_release(
     typology_root: Path,
     llm_publication_path: Path,
+    llm_diagnostic_publication_path: Path,
     llm_adjudication_paths: tuple[Path, ...],
     llm_holdout_protocol_paths: tuple[Path, ...],
 ) -> dict[str, object]:
@@ -164,6 +173,23 @@ def verify_release(
         in candidate.failed_success_criteria,
         "Failed Prompt v4 availability gate must remain visible in public evidence.",
     )
+    require(
+        DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v3",
+        "An unqualified LLM candidate must not replace the default prompt.",
+    )
+    diagnostic = json.loads(llm_diagnostic_publication_path.read_text(encoding="utf-8"))
+    require(
+        diagnostic.get("diagnostic_not_model_evaluation") is True
+        and diagnostic.get("holdout_cases_used") is False
+        and diagnostic.get("raw_responses_included") is False,
+        "Public LLM diagnostic must preserve its non-evaluation and no-raw boundary.",
+    )
+    v5_regression = diagnostic.get("v5_development_regression", {})
+    require(
+        v5_regression.get("development_set_reused") is True
+        and v5_regression.get("candidate_promoted") is False,
+        "Prompt v5 must remain labelled as a non-blind, unpromoted diagnostic candidate.",
+    )
 
     return {
         "release_version": __version__,
@@ -179,6 +205,7 @@ def verify_release(
             "human_review_stop": "passed",
             "mock_scoring_boundary": "passed",
             "llm_public_evidence": "passed",
+            "llm_diagnostic_boundary": "passed",
         },
     }
 
@@ -204,6 +231,7 @@ def main() -> None:
     result = verify_release(
         args.typologies,
         args.llm_publication,
+        args.llm_diagnostic_publication,
         adjudications,
         protocols,
     )

@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0",
+  "purpose": "provider_json_contract_diagnosis_not_model_evaluation",
+  "generated_at": "2026-08-04T07:22:08.414794+00:00",
+  "diagnostic_not_model_evaluation": true,
+  "holdout_cases_used": false,
+  "raw_responses_included": false,
+  "protocol_path": "configs/diagnostics/ecnu_json_contract_v1.yaml",
+  "protocol_sha256": "8d8fb322590e32309e3ad3c21026a6c00067ac4d2928299de6fb043a112873e8",
+  "source_summary_sha256": "0d67043c274d7b542d9a5b9acc8c22c9a2edb6404e62054f19c0883f5e4b917b",
+  "diagnostic_run_id": "20260804T072208Z-8e42268dbe",
+  "source_revision": "c8cee09305b6ffd00816e4754e1749dcb10b1060",
+  "summary_by_variant": {
+    "v3-control": {
+      "case_count": 3,
+      "valid_contract_count": 0,
+      "production_parser_compatible_count": 3,
+      "category_counts": {
+        "field_shape_invalid": 3
+      },
+      "length_finish_count": 0
+    },
+    "v4-observed-limit": {
+      "case_count": 3,
+      "valid_contract_count": 3,
+      "production_parser_compatible_count": 3,
+      "category_counts": {
+        "valid_contract": 3
+      },
+      "length_finish_count": 1
+    },
+    "v4-token-control": {
+      "case_count": 3,
+      "valid_contract_count": 3,
+      "production_parser_compatible_count": 3,
+      "category_counts": {
+        "valid_contract": 3
+      },
+      "length_finish_count": 0
+    }
+  },
+  "interpretation": "The token-limit control isolates truncation risk on synthetic diagnostic inputs; it does not identify every historical Holdout failure or establish candidate quality.",
+  "v5_development_regression": {
+    "run_id": "20260804T072520Z-d4a37907cc",
+    "source_summary_sha256": "2b526b2f7d681c91a328b1f661ae8b94163b50033605d97e388a3292b664b596",
+    "case_count": 6,
+    "external_parse_success_rate": 1.0,
+    "external_fact_validation_pass_rate": 0.8333333333333334,
+    "llm_annotation_rate": 0.8333333333333334,
+    "latency_p50_ms": 6129.747649996716,
+    "latency_p95_ms": 12194.914474999678,
+    "prompt_versions": [
+      "ecnu-risk-evidence-v5"
+    ],
+    "development_set_reused": true,
+    "candidate_promoted": false
+  }
+}

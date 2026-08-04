@@ -18,7 +18,7 @@
 - **历史图边分类**：同协议比较 GraphSAGE、GAT、RGCN、PNA；在最优 GAT 上继续迭代时点新颖性。
 - **可审计融合**：只用训练期 expanding-time OOF 拟合融合器，验证期校准与锁定阈值，测试只披露。
 - **受控调查链**：RiskEvidencePackage、白名单工具、Typology 检索、事实校验、人工审批与独立审计。
-- **工程闭环**：Spark PIT 等价、MLflow candidate gate、FastAPI、Docker、结构化日志、CI 和 157 项测试。
+- **工程闭环**：Spark PIT 等价、MLflow candidate gate、FastAPI、Docker、结构化日志、CI 和 161 项测试。
 
 ## 两分钟 Mock Demo
 
@@ -110,6 +110,7 @@ GraphSAGE `0.8777` 不再占用当前主线表位置；它与 RGCN、PNA 一并�
 | 受控 Agent | 60 案路由/工具/审核/恢复回归五项指标均为 1.0 | 确定性无 LLM 基线 |
 | ECNU 调查注释 | 预注册 Holdout：20 次调用解析率 75.0%；15 条安全输出事实门 100%，人审 Grounding 80.0%、Overall 73.3% | 独立于 Prompt 调整但项目内复核；未通过预注册质量门 |
 | Prompt v4 候选 | Holdout v2：20 次调用仅 2 次解析成功；两条安全输出人审均通过 | 解析率 10.0%，未过 80% 门槛，不晋升，默认仍为 v3 |
+| Prompt v5 诊断候选 | 独立合成诊断矩阵定位到 350 token 截断风险；既有开发集 6 例解析 100%、事实门 83.3% | 非盲开发回归，不构成晋升证据；默认仍为 v3 |
 | Human-in-the-loop | checkpoint、approve/edit/reject、幂等键、两 worker 租约续期与 fencing | 单机 SQLite 原型，不是跨主机高可用 |
 
 外部 LLM 只接收最小化后的证据类别和引用元信息；返回内容必须通过引用白名单及数字/实体校验，
@@ -127,7 +128,7 @@ GraphSAGE `0.8777` 不再占用当前主线表位置；它与 RGCN、PNA 一并�
   单机两 worker 争用边界均有记录。
 - 当前融合与 GAT + 时点新颖性均已生成独立版本的账户、资金路径和案件候选视图；这些是
   冻结交易分数后的无标签聚合，不是账户监督标签或新增模型指标。
-- GitHub Actions 执行依赖检查、Ruff、实验脚本入口、157 项测试、Golden smoke 和发布 smoke。
+- GitHub Actions 执行依赖检查、Ruff、实验脚本入口、161 项测试、Golden smoke 和发布 smoke。
 
 详情见[批量特征重放](docs/批量特征重放.md)、[服务性能基准](docs/服务性能基准.md)和
 [项目改进进度](docs/项目改进进度.md)。

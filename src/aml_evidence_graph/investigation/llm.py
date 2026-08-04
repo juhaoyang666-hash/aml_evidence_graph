@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -105,6 +106,107 @@ class AnnotationProviderError(RuntimeError):
     def __init__(self, category: str) -> None:
         super().__init__(category)
         self.category = category
+
+
+@dataclass(frozen=True)
+class AnnotationContentDiagnostic:
+    """Non-content metadata for diagnosing provider JSON contract failures."""
+
+    category: str
+    content_type: str
+    content_char_count: int | None
+    content_sha256: str | None
+    markdown_fence_detected: bool
+    json_decode_succeeded: bool
+    top_level_type: str | None
+    json_error_position: int | None
+    json_error_line: int | None
+    json_error_column: int | None
+    field_shapes_valid: bool | None
+    production_parser_compatible: bool
+
+
+def diagnose_annotation_content(content: object) -> AnnotationContentDiagnostic:
+    """Classify a completion without retaining or echoing its text."""
+    if not isinstance(content, str):
+        return AnnotationContentDiagnostic(
+            category="content_not_string",
+            content_type=type(content).__name__,
+            content_char_count=None,
+            content_sha256=None,
+            markdown_fence_detected=False,
+            json_decode_succeeded=False,
+            top_level_type=None,
+            json_error_position=None,
+            json_error_line=None,
+            json_error_column=None,
+            field_shapes_valid=None,
+            production_parser_compatible=False,
+        )
+    stripped = content.strip()
+    digest = sha256(content.encode("utf-8")).hexdigest()
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", stripped, flags=re.DOTALL)
+    candidate = fenced.group(1).strip() if fenced is not None else stripped
+    try:
+        decoded = json.loads(candidate)
+    except json.JSONDecodeError as error:
+        category = "empty_content" if not candidate else "json_syntax_invalid"
+        return AnnotationContentDiagnostic(
+            category=category,
+            content_type="str",
+            content_char_count=len(content),
+            content_sha256=digest,
+            markdown_fence_detected=fenced is not None,
+            json_decode_succeeded=False,
+            top_level_type=None,
+            json_error_position=error.pos,
+            json_error_line=error.lineno,
+            json_error_column=error.colno,
+            field_shapes_valid=None,
+            production_parser_compatible=False,
+        )
+    top_level_type = type(decoded).__name__
+    if not isinstance(decoded, dict):
+        category = "top_level_not_object"
+        field_shapes_valid = None
+        production_parser_compatible = False
+    else:
+        expected_fields = (
+            "evidence_references",
+            "analytical_considerations",
+            "recommended_questions",
+        )
+        field_shapes_valid = all(
+            field in decoded
+            and isinstance(decoded[field], list)
+            and all(isinstance(item, str) for item in decoded[field])
+            for field in expected_fields
+        )
+        production_parser_compatible = all(
+            field not in decoded
+            or decoded[field] is None
+            or isinstance(decoded[field], str)
+            or (
+                isinstance(decoded[field], list)
+                and all(isinstance(item, str) for item in decoded[field])
+            )
+            for field in expected_fields
+        )
+        category = "valid_contract" if field_shapes_valid else "field_shape_invalid"
+    return AnnotationContentDiagnostic(
+        category=category,
+        content_type="str",
+        content_char_count=len(content),
+        content_sha256=digest,
+        markdown_fence_detected=fenced is not None,
+        json_decode_succeeded=True,
+        top_level_type=top_level_type,
+        json_error_position=None,
+        json_error_line=None,
+        json_error_column=None,
+        field_shapes_valid=field_shapes_valid,
+        production_parser_compatible=production_parser_compatible,
+    )
 
 
 def minimize_evidence_for_llm(
@@ -310,7 +412,16 @@ class ECNUAnnotationClient:
             content = payload["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as error:
             raise AnnotationProviderError("annotation_json_invalid") from error
-        decoded = _decode_annotation_content(content)
+        try:
+            decoded = _decode_annotation_content(content)
+        except AnnotationProviderError as error:
+            try:
+                finish_reason = payload["choices"][0].get("finish_reason")
+            except (KeyError, IndexError, TypeError, AttributeError):
+                finish_reason = None
+            if error.category == "annotation_json_invalid" and finish_reason == "length":
+                raise AnnotationProviderError("annotation_truncated") from error
+            raise
 
         def normalize_text_list(field: str) -> list[str]:
             value = decoded.get(field, [])
