@@ -536,6 +536,7 @@ def render_resume_evidence_markdown(report: ResumeEvidenceReport) -> str:
             "prompt_v4_candidate_project_internal_blind_holdout": "Prompt v4 Holdout v2",
             "prompt_v6_promoted_project_internal_blind_holdout": "Prompt v6 Holdout v3",
             "prompt_v7_promoted_project_internal_blind_holdout": "Prompt v7 Holdout v4",
+            "prompt_v8_candidate_project_internal_blind_holdout": "Prompt v8 Holdout v5",
         }
         for stage in llm.stages:
             metrics = stage.metrics

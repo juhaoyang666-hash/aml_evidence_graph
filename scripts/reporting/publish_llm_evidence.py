@@ -40,6 +40,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--retry-holdout-adjudication", type=Path, required=True)
     parser.add_argument("--retry-holdout-protocol", type=Path, required=True)
     parser.add_argument("--retry-holdout-run-manifest", type=Path, required=True)
+    parser.add_argument("--prose-holdout-summary", type=Path, required=True)
+    parser.add_argument("--prose-holdout-adjudication", type=Path, required=True)
+    parser.add_argument("--prose-holdout-protocol", type=Path, required=True)
+    parser.add_argument("--prose-holdout-run-manifest", type=Path, required=True)
     parser.add_argument("--evaluation-id", required=True)
     parser.add_argument("--evaluated-at", required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -69,6 +73,10 @@ def main() -> None:
         retry_adjudication_path=args.retry_holdout_adjudication,
         retry_protocol_path=args.retry_holdout_protocol,
         retry_run_manifest_path=args.retry_holdout_run_manifest,
+        prose_summary_path=args.prose_holdout_summary,
+        prose_adjudication_path=args.prose_holdout_adjudication,
+        prose_protocol_path=args.prose_holdout_protocol,
+        prose_run_manifest_path=args.prose_holdout_run_manifest,
         evaluation_id=args.evaluation_id,
         evaluated_at=args.evaluated_at,
     )

@@ -249,6 +249,7 @@ def main() -> None:
             Path("golden/llm_adjudication_ecnu_max_holdout_v2.json"),
             Path("golden/llm_adjudication_ecnu_max_holdout_v3.json"),
             Path("golden/llm_adjudication_ecnu_max_holdout_v4.json"),
+            Path("golden/llm_adjudication_ecnu_max_holdout_v5.json"),
         )
     )
     protocols = tuple(
@@ -258,6 +259,7 @@ def main() -> None:
             Path("golden/llm_holdout_protocol_v2.json"),
             Path("golden/llm_holdout_protocol_v3.json"),
             Path("golden/llm_holdout_protocol_v4.json"),
+            Path("golden/llm_holdout_protocol_v5.json"),
         )
     )
     result = verify_release(

@@ -1,7 +1,7 @@
 {
-  "schema_version": "1.4",
+  "schema_version": "1.5",
   "evaluation_id": "ecnu-max-llm-evaluation-20260805",
-  "evaluated_at": "2026-08-05T04:00:00Z",
+  "evaluated_at": "2026-08-05T04:45:00Z",
   "model_name": "ecnu-max",
   "cost_status": "unavailable",
   "stages": [
@@ -45,7 +45,9 @@
         "truncation_retry_count": null,
         "truncation_retry_recovered_count": null,
         "retry_recovery_rate": null,
-        "recovered_annotation_human_overall_pass_rate": null
+        "recovered_annotation_human_overall_pass_rate": null,
+        "prose_field_name_leak_rate": null,
+        "prose_field_names_per_annotation": null
       }
     },
     {
@@ -88,7 +90,9 @@
         "truncation_retry_count": null,
         "truncation_retry_recovered_count": null,
         "retry_recovery_rate": null,
-        "recovered_annotation_human_overall_pass_rate": null
+        "recovered_annotation_human_overall_pass_rate": null,
+        "prose_field_name_leak_rate": null,
+        "prose_field_names_per_annotation": null
       }
     },
     {
@@ -134,7 +138,9 @@
         "truncation_retry_count": null,
         "truncation_retry_recovered_count": null,
         "retry_recovery_rate": null,
-        "recovered_annotation_human_overall_pass_rate": null
+        "recovered_annotation_human_overall_pass_rate": null,
+        "prose_field_name_leak_rate": null,
+        "prose_field_names_per_annotation": null
       }
     },
     {
@@ -179,7 +185,9 @@
         "truncation_retry_count": null,
         "truncation_retry_recovered_count": null,
         "retry_recovery_rate": null,
-        "recovered_annotation_human_overall_pass_rate": null
+        "recovered_annotation_human_overall_pass_rate": null,
+        "prose_field_name_leak_rate": null,
+        "prose_field_names_per_annotation": null
       }
     },
     {
@@ -222,7 +230,9 @@
         "truncation_retry_count": null,
         "truncation_retry_recovered_count": null,
         "retry_recovery_rate": null,
-        "recovered_annotation_human_overall_pass_rate": null
+        "recovered_annotation_human_overall_pass_rate": null,
+        "prose_field_name_leak_rate": null,
+        "prose_field_names_per_annotation": null
       }
     },
     {
@@ -265,7 +275,56 @@
         "truncation_retry_count": 0,
         "truncation_retry_recovered_count": 0,
         "retry_recovery_rate": null,
-        "recovered_annotation_human_overall_pass_rate": null
+        "recovered_annotation_human_overall_pass_rate": null,
+        "prose_field_name_leak_rate": null,
+        "prose_field_names_per_annotation": null
+      }
+    },
+    {
+      "stage_id": "prompt_v8_preregistered_holdout_v5",
+      "evaluation_role": "prompt_v8_candidate_project_internal_blind_holdout",
+      "prompt_version": "ecnu-risk-evidence-v8",
+      "case_count": 24,
+      "external_case_count": 20,
+      "deterministic_probe_count": 4,
+      "source_run_id": "20260805T042610Z-960495cf87",
+      "source_summary_sha256": "58336b8c697d3b09d94653d1179429add93e70c490dbf4159e0bfa98fbcf8466",
+      "adjudication_id": "ecnu-max-prompt-v8-holdout-blind-project-review-v5",
+      "adjudication_independence": "project_internal",
+      "same_case_set_as_baseline": false,
+      "prompt_isolated_blind_evaluation": true,
+      "preregistered_protocol_id": "ecnu-max-prompt-v8-holdout-blind-v5",
+      "preregistered_protocol_sha256": "ede38b7232700ebe7d041b4b0ca9ed9cabd1e45eb36be9060ba0154dd2607b03",
+      "preregistered_source_revision": "0025fd816b68c84bd3f6fe680568b1d70eb161f7",
+      "success_criteria_met": false,
+      "failed_success_criteria": [
+        "human_injection_resistance_rate_minimum"
+      ],
+      "metrics": {
+        "external_parse_success_rate": 1.0,
+        "external_fact_validation_pass_rate": 1.0,
+        "accepted_annotation_count": 20,
+        "human_review_coverage_rate": 1.0,
+        "human_evidence_grounded_rate": 1.0,
+        "human_conditional_non_decisive_rate": 1.0,
+        "human_questions_actionable_rate": 1.0,
+        "human_injection_resistance_rate": 0.8333333333333334,
+        "human_overall_pass_rate": 0.95,
+        "latency_p50_ms_all_cases": 4476.412999996683,
+        "latency_p95_ms_all_cases": 11157.167690010088,
+        "reported_prompt_tokens_for_accepted_annotations": 17268,
+        "reported_completion_tokens_for_accepted_annotations": 6973,
+        "estimated_cost_usd": null,
+        "final_parse_success_rate": 1.0,
+        "first_attempt_parse_success_rate": 1.0,
+        "retry_attributable_parse_gain": 0.0,
+        "calls_per_case": 1.0,
+        "truncation_retry_count": 0,
+        "truncation_retry_recovered_count": 0,
+        "retry_recovery_rate": null,
+        "recovered_annotation_human_overall_pass_rate": null,
+        "prose_field_name_leak_rate": 0.15,
+        "prose_field_names_per_annotation": 0.35
       }
     }
   ],
@@ -277,6 +336,7 @@
     "Prompt v6 passed its preregistered Holdout v3 gates and replaced v3 as the default; its human review remains project-internal.",
     "Prompt v7 passed every preregistered Holdout v4 gate and replaced v6 as the default, but its retry fired zero times in that run, so the measured field benefit is zero and v7 is promoted only as a bounded safety net.",
     "Holdout v4 recorded an out-of-rubric defect affecting v6 and v7 alike: field names reach the annotation prose on unseen case sets. It is not gated by any frozen rubric and did not change the v4 verdict.",
+    "Prompt v8 sharply improved the prose boundary it was built for but reproduced an injected instruction verbatim in one adversarial case, failing the 1.0 injection criterion. It was not promoted and v7 remains the default.",
     "Provider parse success measures availability and format compliance, not content quality.",
     "The provider did not return price metadata, so monetary cost is unavailable."
   ]

@@ -86,12 +86,14 @@ def test_checked_in_public_llm_evidence_matches_adjudications() -> None:
         Path("golden/llm_adjudication_ecnu_max_holdout_v2.json"),
         Path("golden/llm_adjudication_ecnu_max_holdout_v3.json"),
         Path("golden/llm_adjudication_ecnu_max_holdout_v4.json"),
+        Path("golden/llm_adjudication_ecnu_max_holdout_v5.json"),
     )
     protocols = (
         Path("golden/llm_holdout_protocol_v1.json"),
         Path("golden/llm_holdout_protocol_v2.json"),
         Path("golden/llm_holdout_protocol_v3.json"),
         Path("golden/llm_holdout_protocol_v4.json"),
+        Path("golden/llm_holdout_protocol_v5.json"),
     )
     validate_public_llm_evaluation(
         evaluation,
@@ -99,7 +101,7 @@ def test_checked_in_public_llm_evidence_matches_adjudications() -> None:
         holdout_protocol_paths=protocols,
     )
 
-    baseline, development, holdout, candidate, promoted, retry = evaluation.stages
+    baseline, development, holdout, candidate, promoted, retry, prose = evaluation.stages
     assert baseline.evaluation_role == "frozen_baseline"
     assert development.evaluation_role == "same_set_development_regression"
     assert development.same_case_set_as_baseline
@@ -151,6 +153,16 @@ def test_checked_in_public_llm_evidence_matches_adjudications() -> None:
     # Runs predating the retry must not acquire fabricated call counts.
     assert promoted.metrics.truncation_retry_count is None
     assert promoted.metrics.calls_per_case is None
+    assert prose.evaluation_role == (
+        "prompt_v8_candidate_project_internal_blind_holdout"
+    )
+    assert prose.prompt_version == "ecnu-risk-evidence-v8"
+    # v8 fixed what it set out to fix and was still not promoted, because one adversarial
+    # case reproduced its injected instruction verbatim. Both halves must stay visible.
+    assert prose.metrics.prose_field_name_leak_rate == 0.15
+    assert prose.metrics.prose_field_names_per_annotation == 0.35
+    assert prose.success_criteria_met is False
+    assert prose.failed_success_criteria == ["human_injection_resistance_rate_minimum"]
     assert evaluation.cost_status == "unavailable"
     assert all(stage.metrics.estimated_cost_usd is None for stage in evaluation.stages)
 

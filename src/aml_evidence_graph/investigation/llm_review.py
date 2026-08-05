@@ -23,6 +23,9 @@ class LLMHumanReview(BaseModel):
     questions_actionable: bool
     injection_resistant: bool | None = None
     produced_by_retry: bool = False
+    # A rubric criterion from Holdout v5 onward; absent on earlier adjudications,
+    # whose rubrics genuinely did not contain it.
+    prose_boundary_respected: bool | None = None
     # Observations the frozen rubric does not gate on. Kept beside the verdict so a
     # defect found after the criteria were fixed cannot quietly disappear, and equally
     # cannot be used to move the goalposts on the run that found it.
@@ -62,7 +65,9 @@ class LLMHumanAdjudication(BaseModel):
     derived_metrics: dict[str, object] = Field(default_factory=dict)
     gate_results: dict[str, bool] = Field(default_factory=dict)
     all_preregistered_criteria_passed: bool | None = None
+    failed_criteria: list[str] = Field(default_factory=list)
     null_result_fired: bool | None = None
+    what_the_run_did_establish: str | None = None
     promotion_decision: dict[str, object] = Field(default_factory=dict)
     out_of_rubric_finding: dict[str, object] = Field(default_factory=dict)
     limitations: list[str] = Field(default_factory=list)
@@ -100,6 +105,10 @@ class LLMPublicStageMetrics(BaseModel):
     recovered_annotation_human_overall_pass_rate: float | None = Field(
         default=None, ge=0, le=1
     )
+    # Prose-boundary metrics, null before the detector existed. Holdout v5 gates on
+    # both, so both must be recomputable from the run rather than taken on trust.
+    prose_field_name_leak_rate: float | None = Field(default=None, ge=0, le=1)
+    prose_field_names_per_annotation: float | None = Field(default=None, ge=0)
 
 
 class LLMPublicStage(BaseModel):
@@ -113,6 +122,7 @@ class LLMPublicStage(BaseModel):
         "prompt_v4_candidate_project_internal_blind_holdout",
         "prompt_v6_promoted_project_internal_blind_holdout",
         "prompt_v7_promoted_project_internal_blind_holdout",
+        "prompt_v8_candidate_project_internal_blind_holdout",
     ]
     prompt_version: str
     case_count: int = Field(ge=1)
@@ -139,14 +149,15 @@ class LLMPublicEvaluation(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["1.4"] = "1.4"
+    schema_version: Literal["1.5"] = "1.5"
     evaluation_id: str
     evaluated_at: str
     model_name: str
     cost_status: Literal["reported", "unavailable"]
-    # Six: the promotion chain now runs v1 baseline, v3 regression, v3/v4/v6 holdouts and
-    # the v7 holdout that made v7 the default.
-    stages: list[LLMPublicStage] = Field(min_length=6)
+    # Seven: v1 baseline, v3 regression, and the v3/v4/v6/v7/v8 holdouts. Failed
+    # candidates stay in the chain; v4 and v8 are both here precisely because they
+    # did not pass.
+    stages: list[LLMPublicStage] = Field(min_length=7)
     limitations: list[str] = Field(min_length=1)
 
 
@@ -291,6 +302,10 @@ def summarize_human_review(
             if retry_reviews
             else None
         ),
+        "prose_field_name_leak_rate": summary.get("prose_field_name_leak_rate"),
+        "prose_field_names_per_annotation": summary.get(
+            "prose_field_names_per_annotation"
+        ),
     }
 
 
@@ -316,6 +331,10 @@ def build_public_llm_evaluation(
     retry_adjudication_path: Path,
     retry_protocol_path: Path,
     retry_run_manifest_path: Path,
+    prose_summary_path: Path,
+    prose_adjudication_path: Path,
+    prose_protocol_path: Path,
+    prose_run_manifest_path: Path,
     evaluation_id: str,
     evaluated_at: str,
 ) -> LLMPublicEvaluation:
@@ -377,6 +396,16 @@ def build_public_llm_evaluation(
             True,
             retry_protocol_path,
             retry_run_manifest_path,
+        ),
+        (
+            "prompt_v8_preregistered_holdout_v5",
+            "prompt_v8_candidate_project_internal_blind_holdout",
+            prose_summary_path,
+            prose_adjudication_path,
+            False,
+            True,
+            prose_protocol_path,
+            prose_run_manifest_path,
         ),
     )
     stages: list[LLMPublicStage] = []
@@ -445,6 +474,9 @@ def build_public_llm_evaluation(
             "Holdout v4 recorded an out-of-rubric defect affecting v6 and v7 alike: field "
             "names reach the annotation prose on unseen case sets. It is not gated by any "
             "frozen rubric and did not change the v4 verdict.",
+            "Prompt v8 sharply improved the prose boundary it was built for but "
+            "reproduced an injected instruction verbatim in one adversarial case, failing "
+            "the 1.0 injection criterion. It was not promoted and v7 remains the default.",
             "Provider parse success measures availability and format compliance, "
             "not content quality.",
             "The provider did not return price metadata, so monetary cost is unavailable.",
@@ -459,12 +491,14 @@ def build_public_llm_evaluation(
             candidate_adjudication_path,
             promoted_adjudication_path,
             retry_adjudication_path,
+            prose_adjudication_path,
         ),
         holdout_protocol_paths=(
             holdout_protocol_path,
             candidate_protocol_path,
             promoted_protocol_path,
             retry_protocol_path,
+            prose_protocol_path,
         ),
     )
     return result
@@ -583,8 +617,8 @@ def validate_public_llm_evaluation(
             for path in adjudication_paths
         )
     }
-    if len(evaluation.stages) != 6:
-        raise ValueError("Public LLM evidence must contain exactly six evaluation stages.")
+    if len(evaluation.stages) != 7:
+        raise ValueError("Public LLM evidence must contain exactly seven evaluation stages.")
     roles = {stage.evaluation_role for stage in evaluation.stages}
     if roles != {
         "frozen_baseline",
@@ -593,6 +627,7 @@ def validate_public_llm_evaluation(
         "prompt_v4_candidate_project_internal_blind_holdout",
         "prompt_v6_promoted_project_internal_blind_holdout",
         "prompt_v7_promoted_project_internal_blind_holdout",
+        "prompt_v8_candidate_project_internal_blind_holdout",
     }:
         raise ValueError(
             "Public LLM evidence must distinguish development and all Holdout stages."
@@ -628,6 +663,7 @@ def validate_public_llm_evaluation(
             "prompt_v4_candidate_project_internal_blind_holdout",
             "prompt_v6_promoted_project_internal_blind_holdout",
             "prompt_v7_promoted_project_internal_blind_holdout",
+            "prompt_v8_candidate_project_internal_blind_holdout",
         }:
             if (
                 stage.same_case_set_as_baseline
