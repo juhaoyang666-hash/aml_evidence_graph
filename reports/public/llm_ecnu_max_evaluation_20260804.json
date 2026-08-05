@@ -1,7 +1,7 @@
 {
-  "schema_version": "1.3",
-  "evaluation_id": "ecnu-max-v1-v6-holdouts-20260804",
-  "evaluated_at": "2026-08-04T08:18:00Z",
+  "schema_version": "1.4",
+  "evaluation_id": "ecnu-max-llm-evaluation-20260805",
+  "evaluated_at": "2026-08-05T04:00:00Z",
   "model_name": "ecnu-max",
   "cost_status": "unavailable",
   "stages": [
@@ -37,7 +37,15 @@
         "latency_p95_ms_all_cases": 120078.63913499314,
         "reported_prompt_tokens_for_accepted_annotations": 4784,
         "reported_completion_tokens_for_accepted_annotations": 4342,
-        "estimated_cost_usd": null
+        "estimated_cost_usd": null,
+        "final_parse_success_rate": null,
+        "first_attempt_parse_success_rate": null,
+        "retry_attributable_parse_gain": null,
+        "calls_per_case": null,
+        "truncation_retry_count": null,
+        "truncation_retry_recovered_count": null,
+        "retry_recovery_rate": null,
+        "recovered_annotation_human_overall_pass_rate": null
       }
     },
     {
@@ -72,7 +80,15 @@
         "latency_p95_ms_all_cases": 10210.01039000912,
         "reported_prompt_tokens_for_accepted_annotations": 11175,
         "reported_completion_tokens_for_accepted_annotations": 8362,
-        "estimated_cost_usd": null
+        "estimated_cost_usd": null,
+        "final_parse_success_rate": null,
+        "first_attempt_parse_success_rate": null,
+        "retry_attributable_parse_gain": null,
+        "calls_per_case": null,
+        "truncation_retry_count": null,
+        "truncation_retry_recovered_count": null,
+        "retry_recovery_rate": null,
+        "recovered_annotation_human_overall_pass_rate": null
       }
     },
     {
@@ -110,7 +126,15 @@
         "latency_p95_ms_all_cases": 44457.558885004255,
         "reported_prompt_tokens_for_accepted_annotations": 8504,
         "reported_completion_tokens_for_accepted_annotations": 6008,
-        "estimated_cost_usd": null
+        "estimated_cost_usd": null,
+        "final_parse_success_rate": null,
+        "first_attempt_parse_success_rate": null,
+        "retry_attributable_parse_gain": null,
+        "calls_per_case": null,
+        "truncation_retry_count": null,
+        "truncation_retry_recovered_count": null,
+        "retry_recovery_rate": null,
+        "recovered_annotation_human_overall_pass_rate": null
       }
     },
     {
@@ -147,7 +171,15 @@
         "latency_p95_ms_all_cases": 19413.839174993307,
         "reported_prompt_tokens_for_accepted_annotations": 1335,
         "reported_completion_tokens_for_accepted_annotations": 664,
-        "estimated_cost_usd": null
+        "estimated_cost_usd": null,
+        "final_parse_success_rate": null,
+        "first_attempt_parse_success_rate": null,
+        "retry_attributable_parse_gain": null,
+        "calls_per_case": null,
+        "truncation_retry_count": null,
+        "truncation_retry_recovered_count": null,
+        "retry_recovery_rate": null,
+        "recovered_annotation_human_overall_pass_rate": null
       }
     },
     {
@@ -182,7 +214,58 @@
         "latency_p95_ms_all_cases": 7107.238144998699,
         "reported_prompt_tokens_for_accepted_annotations": 14976,
         "reported_completion_tokens_for_accepted_annotations": 7002,
-        "estimated_cost_usd": null
+        "estimated_cost_usd": null,
+        "final_parse_success_rate": null,
+        "first_attempt_parse_success_rate": null,
+        "retry_attributable_parse_gain": null,
+        "calls_per_case": null,
+        "truncation_retry_count": null,
+        "truncation_retry_recovered_count": null,
+        "retry_recovery_rate": null,
+        "recovered_annotation_human_overall_pass_rate": null
+      }
+    },
+    {
+      "stage_id": "prompt_v7_preregistered_holdout_v4",
+      "evaluation_role": "prompt_v7_promoted_project_internal_blind_holdout",
+      "prompt_version": "ecnu-risk-evidence-v7",
+      "case_count": 24,
+      "external_case_count": 20,
+      "deterministic_probe_count": 4,
+      "source_run_id": "20260805T031709Z-5eac786fb6",
+      "source_summary_sha256": "643967ff8d67953f1b14729f4959c20e2efa64b4f218feb1135bf743881dc920",
+      "adjudication_id": "ecnu-max-prompt-v7-holdout-blind-project-review-v4",
+      "adjudication_independence": "project_internal",
+      "same_case_set_as_baseline": false,
+      "prompt_isolated_blind_evaluation": true,
+      "preregistered_protocol_id": "ecnu-max-prompt-v7-holdout-blind-v4",
+      "preregistered_protocol_sha256": "096e7455bfbc65171281b9c1c87a5c34293312fad23deb717d5e8d617dfdfdc7",
+      "preregistered_source_revision": "072844eef9256708c81de1ca358f52120ad87431",
+      "success_criteria_met": true,
+      "failed_success_criteria": [],
+      "metrics": {
+        "external_parse_success_rate": 1.0,
+        "external_fact_validation_pass_rate": 1.0,
+        "accepted_annotation_count": 20,
+        "human_review_coverage_rate": 1.0,
+        "human_evidence_grounded_rate": 1.0,
+        "human_conditional_non_decisive_rate": 1.0,
+        "human_questions_actionable_rate": 1.0,
+        "human_injection_resistance_rate": 1.0,
+        "human_overall_pass_rate": 1.0,
+        "latency_p50_ms_all_cases": 3548.4856999974,
+        "latency_p95_ms_all_cases": 5766.585014975861,
+        "reported_prompt_tokens_for_accepted_annotations": 15625,
+        "reported_completion_tokens_for_accepted_annotations": 7241,
+        "estimated_cost_usd": null,
+        "final_parse_success_rate": 1.0,
+        "first_attempt_parse_success_rate": 1.0,
+        "retry_attributable_parse_gain": 0.0,
+        "calls_per_case": 1.0,
+        "truncation_retry_count": 0,
+        "truncation_retry_recovered_count": 0,
+        "retry_recovery_rate": null,
+        "recovered_annotation_human_overall_pass_rate": null
       }
     }
   ],
@@ -192,6 +275,8 @@
     "The Holdout is independent of prompt development and preregistered, but its human review is still project-internal.",
     "Prompt v4 failed its preregistered Holdout v2 availability gate and was not promoted.",
     "Prompt v6 passed its preregistered Holdout v3 gates and replaced v3 as the default; its human review remains project-internal.",
+    "Prompt v7 passed every preregistered Holdout v4 gate and replaced v6 as the default, but its retry fired zero times in that run, so the measured field benefit is zero and v7 is promoted only as a bounded safety net.",
+    "Holdout v4 recorded an out-of-rubric defect affecting v6 and v7 alike: field names reach the annotation prose on unseen case sets. It is not gated by any frozen rubric and did not change the v4 verdict.",
     "Provider parse success measures availability and format compliance, not content quality.",
     "The provider did not return price metadata, so monetary cost is unavailable."
   ]

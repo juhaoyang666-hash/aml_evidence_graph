@@ -85,11 +85,13 @@ def test_checked_in_public_llm_evidence_matches_adjudications() -> None:
         Path("golden/llm_adjudication_ecnu_max_holdout_v1.json"),
         Path("golden/llm_adjudication_ecnu_max_holdout_v2.json"),
         Path("golden/llm_adjudication_ecnu_max_holdout_v3.json"),
+        Path("golden/llm_adjudication_ecnu_max_holdout_v4.json"),
     )
     protocols = (
         Path("golden/llm_holdout_protocol_v1.json"),
         Path("golden/llm_holdout_protocol_v2.json"),
         Path("golden/llm_holdout_protocol_v3.json"),
+        Path("golden/llm_holdout_protocol_v4.json"),
     )
     validate_public_llm_evaluation(
         evaluation,
@@ -97,7 +99,7 @@ def test_checked_in_public_llm_evidence_matches_adjudications() -> None:
         holdout_protocol_paths=protocols,
     )
 
-    baseline, development, holdout, candidate, promoted = evaluation.stages
+    baseline, development, holdout, candidate, promoted, retry = evaluation.stages
     assert baseline.evaluation_role == "frozen_baseline"
     assert development.evaluation_role == "same_set_development_regression"
     assert development.same_case_set_as_baseline
@@ -129,6 +131,26 @@ def test_checked_in_public_llm_evidence_matches_adjudications() -> None:
     assert promoted.metrics.human_overall_pass_rate == 0.95
     assert promoted.success_criteria_met is True
     assert promoted.failed_success_criteria == []
+    assert retry.evaluation_role == (
+        "prompt_v7_promoted_project_internal_blind_holdout"
+    )
+    assert retry.prompt_version == "ecnu-risk-evidence-v7"
+    assert retry.preregistered_protocol_id == "ecnu-max-prompt-v7-holdout-blind-v4"
+    assert retry.success_criteria_met is True
+    assert retry.failed_success_criteria == []
+    # The null result is the headline: the retry never fired, so the parse rate says
+    # nothing about it and must not be read as the retry working.
+    assert retry.metrics.truncation_retry_count == 0
+    assert retry.metrics.first_attempt_parse_success_rate == 1.0
+    assert retry.metrics.final_parse_success_rate == 1.0
+    assert retry.metrics.retry_attributable_parse_gain == 0.0
+    assert retry.metrics.calls_per_case == 1.0
+    # Empty populations stay null rather than being reported as a measured zero.
+    assert retry.metrics.retry_recovery_rate is None
+    assert retry.metrics.recovered_annotation_human_overall_pass_rate is None
+    # Runs predating the retry must not acquire fabricated call counts.
+    assert promoted.metrics.truncation_retry_count is None
+    assert promoted.metrics.calls_per_case is None
     assert evaluation.cost_status == "unavailable"
     assert all(stage.metrics.estimated_cost_usd is None for stage in evaluation.stages)
 

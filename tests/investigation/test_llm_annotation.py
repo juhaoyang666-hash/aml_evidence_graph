@@ -313,9 +313,9 @@ system_instructions: Test prompt instructions.
     assert prompt.max_tokens == 100
 
 
-def test_default_prompt_matches_promoted_versioned_v6_file() -> None:
+def test_default_prompt_matches_promoted_versioned_v7_file() -> None:
     prompt = load_prompt_configuration(
-        Path("configs/prompts/ecnu-risk-evidence-v6.yaml")
+        Path("configs/prompts/ecnu-risk-evidence-v7.yaml")
     )
 
     assert prompt == DEFAULT_PROMPT_CONFIGURATION
@@ -334,7 +334,7 @@ def test_v4_candidate_encodes_holdout_v1_remediations_without_becoming_default()
         candidate.system_instructions
     )
     assert "between two and five actionable" in candidate.system_instructions
-    assert DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v6"
+    assert DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v7"
 
 
 def test_v5_candidate_changes_only_version_and_diagnostic_token_limit() -> None:
@@ -345,7 +345,7 @@ def test_v5_candidate_changes_only_version_and_diagnostic_token_limit() -> None:
     assert v5.max_tokens == 500
     assert v5.temperature == v4.temperature
     assert v5.system_instructions == v4.system_instructions
-    assert DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v6"
+    assert DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v7"
 
 
 def test_v6_candidate_blocks_field_names_in_generated_prose() -> None:
@@ -357,4 +357,4 @@ def test_v6_candidate_blocks_field_names_in_generated_prose() -> None:
     assert v6.temperature == v5.temperature
     assert "Put reference paths only in evidence_references" in v6.system_instructions
     assert "never copy, spell out, paraphrase, or describe any" in v6.system_instructions
-    assert DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v6"
+    assert DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v7"

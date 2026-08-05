@@ -78,7 +78,7 @@ class Settings(BaseSettings):
         validation_alias="AML_LLM_TIMEOUT_SECONDS",
     )
     llm_prompt_config_path: Path = Field(
-        default=Path("./configs/prompts/ecnu-risk-evidence-v6.yaml"),
+        default=Path("./configs/prompts/ecnu-risk-evidence-v7.yaml"),
         validation_alias="AML_LLM_PROMPT_CONFIG",
     )
     llm_input_cost_per_million_tokens_usd: float | None = Field(

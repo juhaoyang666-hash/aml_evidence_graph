@@ -535,6 +535,7 @@ def render_resume_evidence_markdown(report: ResumeEvidenceReport) -> str:
             "prompt_isolated_project_internal_blind_holdout": "Prompt 隔离 Holdout",
             "prompt_v4_candidate_project_internal_blind_holdout": "Prompt v4 Holdout v2",
             "prompt_v6_promoted_project_internal_blind_holdout": "Prompt v6 Holdout v3",
+            "prompt_v7_promoted_project_internal_blind_holdout": "Prompt v7 Holdout v4",
         }
         for stage in llm.stages:
             metrics = stage.metrics
@@ -574,7 +575,28 @@ def render_resume_evidence_markdown(report: ResumeEvidenceReport) -> str:
                 [
                     "",
                     "> `ecnu-risk-evidence-v6` 已通过预注册 Holdout v3 全部门槛并晋升为"
-                    "默认 Prompt；人工复核仍为项目内部复核。",
+                    "当时的默认 Prompt；人工复核仍为项目内部复核。",
+                ]
+            )
+        retry_promoted = [
+            stage
+            for stage in llm.stages
+            if stage.evaluation_role
+            == "prompt_v7_promoted_project_internal_blind_holdout"
+        ]
+        if retry_promoted:
+            stage = retry_promoted[0]
+            # The zero-retry null result travels with the promotion, so the resume page
+            # cannot present a passed gate as a demonstrated improvement.
+            lines.extend(
+                [
+                    "",
+                    f"> `{stage.prompt_version}` 已通过预注册 Holdout v4 全部门槛并成为当前"
+                    "默认 Prompt。但该运行中截断重试触发 "
+                    f"{stage.metrics.truncation_retry_count} 次，"
+                    "可归因于重试的解析率增益为 "
+                    f"{stage.metrics.retry_attributable_parse_gain:+.4f}，"
+                    "因此它只是一张未被用到的安全网，不构成实测收益。",
                 ]
             )
         if llm.cost_status == "unavailable":

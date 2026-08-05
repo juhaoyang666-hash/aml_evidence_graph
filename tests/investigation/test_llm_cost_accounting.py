@@ -14,6 +14,7 @@ from aml_evidence_graph.investigation.golden import GoldenCase, evaluate_golden_
 from aml_evidence_graph.investigation.llm import (
     AnnotationProviderError,
     ECNUAnnotationClient,
+    PromptConfiguration,
 )
 from aml_evidence_graph.investigation.workflow import run_investigation
 
@@ -47,12 +48,26 @@ def _retriever() -> LocalBM25TypologyRetriever:
     )
 
 
+# Pinned to a no-retry configuration on purpose. These tests are about what a single
+# billed call contributes to each cost basis; inheriting the shipped default would make
+# them change meaning whenever its generation limits change, as promoting v7 did.
+# Retry-inclusive accounting is covered by tests/investigation/test_truncation_retry.py.
+_NO_RETRY_PROMPT = PromptConfiguration(
+    version="test-prompt-no-retry",
+    system_instructions="test",
+    temperature=0,
+    max_tokens=500,
+    truncation_retry_max_tokens=None,
+)
+
+
 def _client(handler) -> ECNUAnnotationClient:
     return ECNUAnnotationClient(
         api_key="test-key",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
         input_cost_per_million_tokens_usd=INPUT_PRICE,
         output_cost_per_million_tokens_usd=OUTPUT_PRICE,
+        prompt_configuration=_NO_RETRY_PROMPT,
     )
 
 
@@ -245,6 +260,7 @@ def test_unpriced_run_keeps_cost_null_on_both_bases() -> None:
     unpriced = ECNUAnnotationClient(
         api_key="test-key",
         http_client=httpx.Client(transport=httpx.MockTransport(_truncated_handler)),
+        prompt_configuration=_NO_RETRY_PROMPT,
     )
     summary = evaluate_golden_set(
         [_golden_case("cost-case-03")],

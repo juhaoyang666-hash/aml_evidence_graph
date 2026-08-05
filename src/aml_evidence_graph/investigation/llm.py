@@ -21,7 +21,9 @@ from aml_evidence_graph.evidence.package import (
 )
 from aml_evidence_graph.settings import Settings
 
-PROMPT_VERSION = "ecnu-risk-evidence-v6"
+PROMPT_VERSION = "ecnu-risk-evidence-v7"
+# v7 reuses these byte-for-byte and changes only the generation limits, which is why
+# Holdout v3's content evidence carries over. See golden/llm_holdout_protocol_v4.json.
 V6_SYSTEM_INSTRUCTIONS = (
     "You are an AML investigation annotation assistant. You do not score risk, "
     "decide cases, recommend filing, or approve escalation. The payload contains "
@@ -80,6 +82,9 @@ DEFAULT_PROMPT_CONFIGURATION = PromptConfiguration(
     system_instructions=V6_SYSTEM_INSTRUCTIONS,
     temperature=0,
     max_tokens=500,
+    # Promoted by Holdout v4 as a bounded safety net. The measured field benefit was
+    # zero: no retry fired in that run, nor in 27 development calls before it.
+    truncation_retry_max_tokens=1000,
 )
 
 

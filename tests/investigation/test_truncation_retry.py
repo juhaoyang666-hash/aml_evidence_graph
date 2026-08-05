@@ -8,6 +8,7 @@ See golden/llm_retry_policy_v1.json.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,6 +35,12 @@ RETRY_MAX_TOKENS = 1000
 
 V6_PATH = Path("configs/prompts/ecnu-risk-evidence-v6.yaml")
 V7_PATH = Path("configs/prompts/ecnu-risk-evidence-v7.yaml")
+
+
+def _crlf_sha256(path: Path) -> str:
+    """Hash text the way the preregistration builder does, so line endings cannot drift."""
+    normalized = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.replace("\n", "\r\n").encode()).hexdigest()
 
 VALID_ANNOTATION = {
     "evidence_references": ["model_probabilities.catboost"],
@@ -439,7 +446,61 @@ def test_v7_loads_with_the_retry_enabled() -> None:
     assert configuration.truncation_retry_max_tokens == RETRY_MAX_TOKENS
 
 
-def test_shipped_default_still_points_at_v6() -> None:
-    """v7 is a candidate; promoting it requires a preregistered holdout, not an edit."""
-    assert DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v6"
-    assert DEFAULT_PROMPT_CONFIGURATION.truncation_retry_max_tokens is None
+def test_shipped_default_is_v7_after_holdout_v4() -> None:
+    """Promotion came from a preregistered run, not an edit; the ceiling is unchanged."""
+    assert DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v7"
+    assert DEFAULT_PROMPT_CONFIGURATION.truncation_retry_max_tokens == RETRY_MAX_TOKENS
+    # First attempts still use the ceiling Holdout v3 measured, which is what lets v6's
+    # content evidence carry over to v7.
+    assert DEFAULT_PROMPT_CONFIGURATION.max_tokens == BASE_MAX_TOKENS
+
+
+def test_shipped_default_actually_retries_not_just_declares_it() -> None:
+    """Asserting the config field is not the same as the shipped client behaving."""
+    recorder = _Recorder(
+        _response(TRUNCATED_BODY, finish_reason="length", completion_tokens=500),
+        _response(json.dumps(VALID_ANNOTATION), completion_tokens=300),
+    )
+    shipped = ECNUAnnotationClient(
+        api_key="test-key",
+        http_client=httpx.Client(transport=httpx.MockTransport(recorder)),
+        input_cost_per_million_tokens_usd=INPUT_PRICE,
+        output_cost_per_million_tokens_usd=OUTPUT_PRICE,
+    )
+
+    report = run_investigation(_evidence(), retriever=_retriever(), annotator=shipped)
+
+    assert recorder.requested_max_tokens == [500, 1000]
+    assert report.external_call_attempts == 2
+    assert report.llm_annotation is not None
+    assert report.unusable_call_usage is not None
+
+
+def test_holdout_v4_preregistration_still_matches_what_was_run() -> None:
+    """The frozen hashes are the whole basis for calling this a one-shot result."""
+    protocol = json.loads(
+        Path("golden/llm_holdout_protocol_v4.json").read_text(encoding="utf-8")
+    )
+
+    assert protocol["retry_policy_id"] == "llm-chain-retry-policy-v1"
+    assert protocol["prompt_version"] == "ecnu-risk-evidence-v7"
+    assert _crlf_sha256(Path("golden/llm_holdout_cases_v4.json")) == protocol["cases_sha256"]
+    assert _crlf_sha256(Path(protocol["retry_policy_file"])) == protocol["retry_policy_sha256"]
+    assert (
+        hashlib.sha256(Path(protocol["prompt_file"]).read_bytes()).hexdigest()
+        == protocol["prompt_sha256"]
+    )
+
+
+def test_holdout_v4_verdict_records_a_zero_benefit_promotion() -> None:
+    """A null result must stay legible as a null result, not be smoothed into a win."""
+    adjudication = json.loads(
+        Path("golden/llm_adjudication_ecnu_max_holdout_v4.json").read_text(encoding="utf-8")
+    )
+
+    assert adjudication["all_preregistered_criteria_passed"] is True
+    assert adjudication["null_result_fired"] is True
+    assert adjudication["derived_metrics"]["retry_attributable_parse_gain"] == 0.0
+    assert adjudication["promotion_decision"]["measured_field_benefit"] == 0.0
+    # The out-of-rubric prose finding must travel with the verdict, not be dropped.
+    assert adjudication["out_of_rubric_finding"]["cases_affected"] == "7/20"

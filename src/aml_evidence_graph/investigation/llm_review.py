@@ -22,6 +22,11 @@ class LLMHumanReview(BaseModel):
     conditional_non_decisive: bool
     questions_actionable: bool
     injection_resistant: bool | None = None
+    produced_by_retry: bool = False
+    # Observations the frozen rubric does not gate on. Kept beside the verdict so a
+    # defect found after the criteria were fixed cannot quietly disappear, and equally
+    # cannot be used to move the goalposts on the run that found it.
+    out_of_rubric_field_names_in_prose: list[str] = Field(default_factory=list)
     notes: str = Field(min_length=1)
 
     @property
@@ -40,7 +45,7 @@ class LLMHumanAdjudication(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.0"
     adjudication_id: str
     reviewed_at: str
     reviewer_role: str
@@ -49,6 +54,18 @@ class LLMHumanAdjudication(BaseModel):
     source_summary_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     rubric: dict[str, str]
     reviews: list[LLMHumanReview]
+    # 1.1 additions, all optional so v1-v3 adjudications still validate unchanged.
+    protocol_id: str | None = None
+    retry_policy_id: str | None = None
+    source_revision: str | None = None
+    preregistration_commit: str | None = None
+    derived_metrics: dict[str, object] = Field(default_factory=dict)
+    gate_results: dict[str, bool] = Field(default_factory=dict)
+    all_preregistered_criteria_passed: bool | None = None
+    null_result_fired: bool | None = None
+    promotion_decision: dict[str, object] = Field(default_factory=dict)
+    out_of_rubric_finding: dict[str, object] = Field(default_factory=dict)
+    limitations: list[str] = Field(default_factory=list)
 
 
 class LLMPublicStageMetrics(BaseModel):
@@ -70,6 +87,19 @@ class LLMPublicStageMetrics(BaseModel):
     reported_prompt_tokens_for_accepted_annotations: int = Field(ge=0)
     reported_completion_tokens_for_accepted_annotations: int = Field(ge=0)
     estimated_cost_usd: float | None = Field(default=None, ge=0)
+    # Retry-aware metrics, null on runs that predate the chain retry. Published so that
+    # Holdout v4's gates stay recomputable from the run rather than self-reported by the
+    # adjudication that is supposed to be checked against them.
+    final_parse_success_rate: float | None = Field(default=None, ge=0, le=1)
+    first_attempt_parse_success_rate: float | None = Field(default=None, ge=0, le=1)
+    retry_attributable_parse_gain: float | None = Field(default=None, ge=-1, le=1)
+    calls_per_case: float | None = Field(default=None, ge=0)
+    truncation_retry_count: int | None = Field(default=None, ge=0)
+    truncation_retry_recovered_count: int | None = Field(default=None, ge=0)
+    retry_recovery_rate: float | None = Field(default=None, ge=0, le=1)
+    recovered_annotation_human_overall_pass_rate: float | None = Field(
+        default=None, ge=0, le=1
+    )
 
 
 class LLMPublicStage(BaseModel):
@@ -82,6 +112,7 @@ class LLMPublicStage(BaseModel):
         "prompt_isolated_project_internal_blind_holdout",
         "prompt_v4_candidate_project_internal_blind_holdout",
         "prompt_v6_promoted_project_internal_blind_holdout",
+        "prompt_v7_promoted_project_internal_blind_holdout",
     ]
     prompt_version: str
     case_count: int = Field(ge=1)
@@ -108,12 +139,14 @@ class LLMPublicEvaluation(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["1.3"] = "1.3"
+    schema_version: Literal["1.4"] = "1.4"
     evaluation_id: str
     evaluated_at: str
     model_name: str
     cost_status: Literal["reported", "unavailable"]
-    stages: list[LLMPublicStage] = Field(min_length=5)
+    # Six: the promotion chain now runs v1 baseline, v3 regression, v3/v4/v6 holdouts and
+    # the v7 holdout that made v7 the default.
+    stages: list[LLMPublicStage] = Field(min_length=6)
     limitations: list[str] = Field(min_length=1)
 
 
@@ -176,6 +209,33 @@ def summarize_human_review(
     def rate(values: list[bool]) -> float | None:
         return sum(values) / len(values) if values else None
 
+    external_cases = [case for case in cases if case.get("external_call_attempted")]
+    external_count = len(external_cases)
+    call_total = summary.get("external_call_total")
+    retries = summary.get("truncation_retry_count")
+    recovered = summary.get("truncation_retry_recovered_count")
+    # Runs that predate the chain retry have no attempt counts; leave those metrics null
+    # rather than assuming one call per case, so a missing field never reads as a measured
+    # zero.
+    retry_aware = isinstance(call_total, int) and isinstance(retries, int)
+    first_attempt_parsed = (
+        sum(
+            1
+            for case in external_cases
+            if case.get("external_call_attempts") == 1
+            and case.get("annotation_parse_succeeded")
+        )
+        if retry_aware
+        else None
+    )
+    first_attempt_rate = (
+        first_attempt_parsed / external_count
+        if first_attempt_parsed is not None and external_count
+        else None
+    )
+    final_rate = summary["external_parse_success_rate"]
+    retry_reviews = [review for review in reviews if review.produced_by_retry]
+
     return {
         "schema_version": "1.0",
         "adjudication_id": adjudication.adjudication_id,
@@ -213,6 +273,24 @@ def summarize_human_review(
         "estimated_cost_usd": summary["estimated_cost_usd"],
         "latency_p50_ms_all_cases": summary["latency_p50_ms"],
         "latency_p95_ms_all_cases": summary["latency_p95_ms"],
+        "final_parse_success_rate": final_rate if retry_aware else None,
+        "first_attempt_parse_success_rate": first_attempt_rate,
+        "retry_attributable_parse_gain": (
+            final_rate - first_attempt_rate if first_attempt_rate is not None else None
+        ),
+        "calls_per_case": (
+            call_total / external_count if retry_aware and external_count else None
+        ),
+        "truncation_retry_count": retries if retry_aware else None,
+        "truncation_retry_recovered_count": recovered if retry_aware else None,
+        "retry_recovery_rate": (
+            recovered / retries if retry_aware and retries else None
+        ),
+        "recovered_annotation_human_overall_pass_rate": (
+            rate([review.overall_pass for review in retry_reviews])
+            if retry_reviews
+            else None
+        ),
     }
 
 
@@ -234,6 +312,10 @@ def build_public_llm_evaluation(
     promoted_adjudication_path: Path,
     promoted_protocol_path: Path,
     promoted_run_manifest_path: Path,
+    retry_summary_path: Path,
+    retry_adjudication_path: Path,
+    retry_protocol_path: Path,
+    retry_run_manifest_path: Path,
     evaluation_id: str,
     evaluated_at: str,
 ) -> LLMPublicEvaluation:
@@ -285,6 +367,16 @@ def build_public_llm_evaluation(
             True,
             promoted_protocol_path,
             promoted_run_manifest_path,
+        ),
+        (
+            "prompt_v7_preregistered_holdout_v4",
+            "prompt_v7_promoted_project_internal_blind_holdout",
+            retry_summary_path,
+            retry_adjudication_path,
+            False,
+            True,
+            retry_protocol_path,
+            retry_run_manifest_path,
         ),
     )
     stages: list[LLMPublicStage] = []
@@ -347,6 +439,12 @@ def build_public_llm_evaluation(
             "Prompt v4 failed its preregistered Holdout v2 availability gate and was not promoted.",
             "Prompt v6 passed its preregistered Holdout v3 gates and replaced v3 as the default; "
             "its human review remains project-internal.",
+            "Prompt v7 passed every preregistered Holdout v4 gate and replaced v6 as the "
+            "default, but its retry fired zero times in that run, so the measured field "
+            "benefit is zero and v7 is promoted only as a bounded safety net.",
+            "Holdout v4 recorded an out-of-rubric defect affecting v6 and v7 alike: field "
+            "names reach the annotation prose on unseen case sets. It is not gated by any "
+            "frozen rubric and did not change the v4 verdict.",
             "Provider parse success measures availability and format compliance, "
             "not content quality.",
             "The provider did not return price metadata, so monetary cost is unavailable.",
@@ -360,11 +458,13 @@ def build_public_llm_evaluation(
             holdout_adjudication_path,
             candidate_adjudication_path,
             promoted_adjudication_path,
+            retry_adjudication_path,
         ),
         holdout_protocol_paths=(
             holdout_protocol_path,
             candidate_protocol_path,
             promoted_protocol_path,
+            retry_protocol_path,
         ),
     )
     return result
@@ -398,23 +498,63 @@ def _attach_preregistration(
     criteria = protocol.get("success_criteria")
     if not isinstance(criteria, dict):
         raise ValueError("Holdout protocol lacks success criteria.")
-    failed_criteria: list[str] = []
-    for criterion, threshold in criteria.items():
-        metric_name = str(criterion).removesuffix("_minimum")
-        observed = getattr(stage.metrics, metric_name, None)
-        passed = (
-            observed is not None
-            and isinstance(threshold, int | float)
-            and (
-                observed >= float(threshold)
-                if str(criterion).endswith("_minimum")
-                else observed == float(threshold)
-            )
-        )
-        if not passed:
-            failed_criteria.append(str(criterion))
+    failed_criteria = evaluate_success_criteria(stage.metrics, criteria)
     stage.success_criteria_met = not failed_criteria
     stage.failed_success_criteria = failed_criteria
+
+
+# Criteria that quantify over annotations produced by a retry. With no retry, that
+# population is empty and a universal statement over it is vacuously true. Holdout v4's
+# protocol names only one of these with an explicit `_when_retries_fire` guard, but its
+# null_result_rule preregisters that a zero-retry run may still promote. Failing these on
+# an empty population would make that rule unreachable, so the protocol read as a whole
+# requires the vacuous reading. Recorded here rather than applied silently.
+_RETRY_GUARDED_METRICS = frozenset(
+    {"retry_recovery_rate", "recovered_annotation_human_overall_pass_rate"}
+)
+
+
+def evaluate_success_criteria(
+    metrics: LLMPublicStageMetrics,
+    criteria: dict[str, object],
+) -> list[str]:
+    """Return the preregistered criteria a stage failed, newest naming conventions included.
+
+    Shared by the stage builder and the release validator. They previously carried
+    separate copies of this logic, which silently disagreed the moment a protocol used a
+    criterion name the older copy did not know.
+
+    A protocol is frozen before its run, so this adapts to the names each protocol was
+    written with. Renaming a criterion to suit the tooling would be editing the
+    preregistration after seeing the result.
+    """
+    failed: list[str] = []
+    for criterion, threshold in criteria.items():
+        name = str(criterion)
+        base = name.removesuffix("_when_retries_fire")
+        if base.endswith("_maximum"):
+            metric_name, ordering = base.removesuffix("_maximum"), "max"
+        elif base.endswith("_minimum"):
+            metric_name, ordering = base.removesuffix("_minimum"), "min"
+        else:
+            metric_name, ordering = base, "exact"
+        guarded = base != name or metric_name in _RETRY_GUARDED_METRICS
+        if guarded and not metrics.truncation_retry_count:
+            continue
+        observed = getattr(metrics, metric_name, None)
+        if observed is None or not isinstance(threshold, int | float):
+            failed.append(name)
+            continue
+        limit = float(threshold)
+        value = float(observed)
+        passed = (
+            value <= limit
+            if ordering == "max"
+            else value >= limit if ordering == "min" else value == limit
+        )
+        if not passed:
+            failed.append(name)
+    return failed
 
 
 def _load_json_object(path: Path) -> dict[str, object]:
@@ -443,8 +583,8 @@ def validate_public_llm_evaluation(
             for path in adjudication_paths
         )
     }
-    if len(evaluation.stages) != 5:
-        raise ValueError("Public LLM evidence must contain exactly five evaluation stages.")
+    if len(evaluation.stages) != 6:
+        raise ValueError("Public LLM evidence must contain exactly six evaluation stages.")
     roles = {stage.evaluation_role for stage in evaluation.stages}
     if roles != {
         "frozen_baseline",
@@ -452,6 +592,7 @@ def validate_public_llm_evaluation(
         "prompt_isolated_project_internal_blind_holdout",
         "prompt_v4_candidate_project_internal_blind_holdout",
         "prompt_v6_promoted_project_internal_blind_holdout",
+        "prompt_v7_promoted_project_internal_blind_holdout",
     }:
         raise ValueError(
             "Public LLM evidence must distinguish development and all Holdout stages."
@@ -486,6 +627,7 @@ def validate_public_llm_evaluation(
             "prompt_isolated_project_internal_blind_holdout",
             "prompt_v4_candidate_project_internal_blind_holdout",
             "prompt_v6_promoted_project_internal_blind_holdout",
+            "prompt_v7_promoted_project_internal_blind_holdout",
         }:
             if (
                 stage.same_case_set_as_baseline
@@ -518,21 +660,7 @@ def validate_public_llm_evaluation(
             criteria = protocol.get("success_criteria")
             if not isinstance(criteria, dict):
                 raise ValueError("Holdout protocol lacks success criteria.")
-            expected_failures = []
-            for criterion, threshold in criteria.items():
-                metric_name = str(criterion).removesuffix("_minimum")
-                observed = getattr(stage.metrics, metric_name, None)
-                passed = (
-                    observed is not None
-                    and isinstance(threshold, int | float)
-                    and (
-                        observed >= float(threshold)
-                        if str(criterion).endswith("_minimum")
-                        else observed == float(threshold)
-                    )
-                )
-                if not passed:
-                    expected_failures.append(str(criterion))
+            expected_failures = evaluate_success_criteria(stage.metrics, criteria)
             if (
                 stage.failed_success_criteria != expected_failures
                 or stage.success_criteria_met != (not expected_failures)

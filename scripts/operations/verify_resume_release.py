@@ -174,20 +174,36 @@ def verify_release(
         "Failed Prompt v4 availability gate must remain visible in public evidence.",
     )
     require(
-        DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v6",
-        "The default prompt must match the qualified Prompt v6 Holdout result.",
+        DEFAULT_PROMPT_CONFIGURATION.version == "ecnu-risk-evidence-v7",
+        "The default prompt must match the qualified Prompt v7 Holdout v4 result.",
     )
-    promoted = next(
+    v6_promoted = next(
         stage
         for stage in llm_evaluation.stages
         if stage.evaluation_role
         == "prompt_v6_promoted_project_internal_blind_holdout"
     )
     require(
+        v6_promoted.success_criteria_met is True
+        and not v6_promoted.failed_success_criteria,
+        "Prompt v6 promotion must remain tied to its successful preregistered Holdout.",
+    )
+    promoted = next(
+        stage
+        for stage in llm_evaluation.stages
+        if stage.evaluation_role
+        == "prompt_v7_promoted_project_internal_blind_holdout"
+    )
+    require(
         promoted.success_criteria_met is True
         and not promoted.failed_success_criteria
         and promoted.prompt_version == DEFAULT_PROMPT_CONFIGURATION.version,
-        "Prompt v6 promotion must remain tied to its successful preregistered Holdout.",
+        "The shipped default must be the prompt that passed the latest Holdout.",
+    )
+    require(
+        promoted.metrics.truncation_retry_count == 0
+        and promoted.metrics.retry_attributable_parse_gain == 0.0,
+        "Holdout v4's zero-retry null result must stay visible, not be smoothed away.",
     )
     diagnostic = json.loads(llm_diagnostic_publication_path.read_text(encoding="utf-8"))
     require(
@@ -232,6 +248,7 @@ def main() -> None:
             Path("golden/llm_adjudication_ecnu_max_holdout_v1.json"),
             Path("golden/llm_adjudication_ecnu_max_holdout_v2.json"),
             Path("golden/llm_adjudication_ecnu_max_holdout_v3.json"),
+            Path("golden/llm_adjudication_ecnu_max_holdout_v4.json"),
         )
     )
     protocols = tuple(
@@ -240,6 +257,7 @@ def main() -> None:
             Path("golden/llm_holdout_protocol_v1.json"),
             Path("golden/llm_holdout_protocol_v2.json"),
             Path("golden/llm_holdout_protocol_v3.json"),
+            Path("golden/llm_holdout_protocol_v4.json"),
         )
     )
     result = verify_release(
