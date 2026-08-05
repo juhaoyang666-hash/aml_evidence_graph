@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "policy_id": "llm-chain-retry-policy-v1",
+  "declared_at": "2026-08-05T00:00:00Z",
+  "purpose": "Separate an evaluator retry (forbidden) from a bounded retry that is part of the system under test (permitted and measured).",
+  "background": "Holdout protocols v1-v3 state 'no per-case retries'. That rule was written to stop an evaluator from re-running a case after seeing it fail and then reporting the better result. It was never intended to forbid the investigation chain from handling a detectable failure on its own. A chain-level retry is part of the artifact being measured, so it must be declared before a run rather than discovered in the numbers afterwards.",
+  "forbidden_evaluator_retry": {
+    "rule": "After a holdout run starts, no case may be re-executed, re-scored, patched, or excluded, and no prompt, parser, validator, or case edit may be made.",
+    "status": "unchanged from holdout protocols v1-v3",
+    "rationale": "Re-running a case after observing its outcome turns a one-shot measurement into a best-of-N measurement without saying so."
+  },
+  "permitted_chain_retry": {
+    "rule": "The client may retry at most once per external annotation request, only when the provider reported finish_reason='length' and the body failed to decode (error category 'annotation_truncated').",
+    "max_attempts_per_request": 2,
+    "trigger_categories": ["annotation_truncated"],
+    "excluded_trigger_categories": [
+      "timeout",
+      "http_status_*",
+      "transport_error",
+      "response_json_invalid",
+      "annotation_json_invalid",
+      "annotation_schema_invalid"
+    ],
+    "exclusion_rationale": "Availability failures and generic format failures carry no signal about what to change on a second attempt, so retrying them would inflate the apparent success rate while hiding provider instability that this project explicitly measures. Truncation is the one failure where the provider states the cause and the client can correct it deterministically by raising the token ceiling.",
+    "determinism": "The trigger is a provider-reported field, not a heuristic. The retry ceiling is a static prompt-configuration value, not adaptive.",
+    "configuration_key": "truncation_retry_max_tokens",
+    "default_state": "disabled; a prompt configuration must set the key to enable it"
+  },
+  "accounting_requirements": {
+    "rule": "Every attempt is billed and must appear in the billable basis, including the discarded one.",
+    "case_count_vs_call_count": "A holdout with N external cases no longer implies N external calls. Report both.",
+    "required_summary_fields": [
+      "external_call_attempts",
+      "truncation_retry_count",
+      "truncation_retry_recovered_count",
+      "billable_prompt_tokens",
+      "billable_completion_tokens",
+      "wasted_prompt_tokens",
+      "wasted_completion_tokens"
+    ],
+    "waste_definition": "Tokens from any billed attempt that produced no annotation surviving the fact gate, whether or not the case ultimately succeeded. A recovered truncation still wastes the first attempt."
+  },
+  "metric_effects": {
+    "external_parse_success_rate": "Measured per case, so a recovered truncation counts as a success. This is the intended reading: the system produced a usable annotation. Report truncation_retry_count alongside it so the rate is never mistaken for a first-attempt rate.",
+    "content_quality_metrics": "A retry can only convert a failed call into a successful one; it cannot alter a call that already succeeded, because the trigger requires a failed decode. Human-review grounding, conditionality, actionability and injection-resistance rates therefore carry over unchanged from a holdout run of the same system instructions without the retry.",
+    "cost": "Strictly increases. The retry spends a second full prompt."
+  },
+  "promotion_rule": "Enabling the retry changes generation limits, so it requires a new prompt version, exactly as raising max_tokens from 350 to 500 produced v5. The new version may not be promoted on the strength of the earlier version's holdout. Because the content axis provably carries over (see metric_effects), a promotion run may gate on the availability axis alone, but that narrowing must be preregistered in the holdout protocol rather than argued after the numbers are known.",
+  "supersedes_wording_in": [
+    "golden/llm_holdout_protocol_v1.json",
+    "golden/llm_holdout_protocol_v2.json",
+    "golden/llm_holdout_protocol_v3.json"
+  ],
+  "supersession_scope": "Wording only. No metric, threshold, or promotion decision recorded in v1-v3 is changed or re-opened; those runs executed with no chain-level retry available.",
+  "applies_to": "Holdout protocol v4 and later, which must reference this policy_id."
+}
