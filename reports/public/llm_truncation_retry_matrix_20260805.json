@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0",
+  "diagnostic_id": "llm-truncation-retry-matrix-v1",
+  "generated_at": "2026-08-05T02:44:35.624542+00:00",
+  "provider": "simulated_deterministic_stub",
+  "external_calls_made": 0,
+  "scope": "Mechanism check on a simulated provider. Truncation frequency is set by the harness, so parse rates here are not field rates and must not be reported as provider performance.",
+  "reference_prices_usd_per_million_tokens": {
+    "input": 0.14,
+    "output": 0.28,
+    "basis": "DeepSeek V4 Flash public cache-miss rate, applied as a labelled sensitivity. This project paid nothing for its calls."
+  },
+  "arms": [
+    {
+      "arm": "baseline_no_retry",
+      "prompt_version": "ecnu-risk-evidence-v6",
+      "max_tokens": 500,
+      "truncation_retry_max_tokens": null,
+      "case_count": 20,
+      "simulated_overruns": 4,
+      "external_case_count": 20,
+      "external_call_total": 20,
+      "truncation_retry_count": 0,
+      "truncation_retry_recovered_count": 0,
+      "external_parse_success_rate": 0.8,
+      "external_fact_validation_pass_rate": 1.0,
+      "billable_token_coverage_rate": 1.0,
+      "billable_prompt_tokens": 14000,
+      "billable_completion_tokens": 7440,
+      "billable_estimated_cost_usd": 0.004043200000000001,
+      "wasted_prompt_tokens": 2800,
+      "wasted_completion_tokens": 2000,
+      "wasted_estimated_cost_usd": 0.000952,
+      "wasted_token_share": 0.22388059701492538,
+      "error_categories": [
+        "annotation_truncated"
+      ]
+    },
+    {
+      "arm": "candidate_retry",
+      "prompt_version": "ecnu-risk-evidence-v7",
+      "max_tokens": 500,
+      "truncation_retry_max_tokens": 1000,
+      "case_count": 20,
+      "simulated_overruns": 4,
+      "external_case_count": 20,
+      "external_call_total": 24,
+      "truncation_retry_count": 4,
+      "truncation_retry_recovered_count": 4,
+      "external_parse_success_rate": 1.0,
+      "external_fact_validation_pass_rate": 1.0,
+      "billable_token_coverage_rate": 1.0,
+      "billable_prompt_tokens": 16800,
+      "billable_completion_tokens": 9920,
+      "billable_estimated_cost_usd": 0.005129600000000002,
+      "wasted_prompt_tokens": 2800,
+      "wasted_completion_tokens": 2000,
+      "wasted_estimated_cost_usd": 0.000952,
+      "wasted_token_share": 0.17964071856287425,
+      "error_categories": []
+    }
+  ],
+  "limitations": [
+    "A simulated provider cannot show how often a real completion overruns the ceiling, only what the chain does when one does.",
+    "Bodies exceeding both ceilings truncate twice; that path is covered by tests/investigation/test_truncation_retry.py, not by this matrix.",
+    "Content quality is unchanged by construction, because the stub returns the same annotation whenever it fits."
+  ]
+}

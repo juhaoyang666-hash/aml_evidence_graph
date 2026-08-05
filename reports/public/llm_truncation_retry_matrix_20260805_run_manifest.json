@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260805T024435Z-aa0bbcb712",
+  "created_at_utc": "2026-08-05T02:44:35.625543+00:00",
+  "command": "diagnose-truncation-retry",
+  "run_purpose": "full",
+  "random_seed": 0,
+  "inputs": {
+    "baseline_prompt": {
+      "kind": "file",
+      "name": "ecnu-risk-evidence-v6.yaml",
+      "bytes": 2278,
+      "sha256": "59aeb8d25455273c39467eb925238769c2ee9d6c3aee0c94c9373092fe2205a2"
+    },
+    "candidate_prompt": {
+      "kind": "file",
+      "name": "ecnu-risk-evidence-v7.yaml",
+      "bytes": 2312,
+      "sha256": "15861ca21a6d06794e9c1dce632617f89cfc554e52ec62851bf1c598c76718e6"
+    }
+  },
+  "config_fingerprints": {},
+  "source_revision": "e88411810ddb8ec3c0d1b9531c8fdbe013b10f7f",
+  "package_versions": {
+    "aml-evidence-graph": "0.1.0",
+    "catboost": "1.2.10",
+    "pandas": "2.3.3",
+    "pyarrow": "24.0.0",
+    "scikit-learn": "1.9.0",
+    "torch": "2.5.1+cu121",
+    "torch-geometric": "2.8.0.post1",
+    "langgraph": "1.2.9"
+  },
+  "hardware": {
+    "platform": "Windows-10-10.0.26200-SP0",
+    "python": "3.11.15 | packaged by conda-forge | (main, Jun 11 2026, 03:27:10) [MSC v.1944 64 bit (AMD64)]",
+    "processor": "Intel64 Family 6 Model 167 Stepping 1, GenuineIntel",
+    "torch_cuda_available": true,
+    "torch_cuda_version": "12.1",
+    "gpu_name": "NVIDIA GeForce RTX 2060"
+  },
+  "metadata": {
+    "case_count": 20,
+    "overruns": 4
+  }
+}
