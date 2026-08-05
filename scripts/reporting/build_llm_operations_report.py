@@ -47,6 +47,17 @@ DEFAULT_RUNS: tuple[tuple[str, str], ...] = (
         "prompt_v6_dev_regression34_complete_usage",
         "artifacts/llm_operations/v6_dev_regression_complete_usage.json",
     ),
+    # v7 candidate at the shipped ceiling. Fired zero retries: see the report findings.
+    (
+        "prompt_v7_dev_regression34_real",
+        "artifacts/llm_operations/v7_dev_regression34.json",
+    ),
+    # Ceiling lowered to 200 so truncation is provoked instead of awaited. The retry
+    # rate here is an experimental setting, not a field rate.
+    (
+        "diagnostic_forced_truncation_real",
+        "artifacts/llm_diagnostics/forced_truncation_retry_real.json",
+    ),
 )
 
 

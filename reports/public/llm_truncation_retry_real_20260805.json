@@ -1,0 +1,152 @@
+{
+  "schema_version": "1.0",
+  "evidence_id": "llm-truncation-retry-real-v1",
+  "raw_responses_included": false,
+  "holdout_cases_used": false,
+  "adjudication_independence": "project_internal",
+  "runs": [
+    {
+      "label": "v6_dev_regression34_baseline",
+      "run_id": "20260804T094026Z-ec55d5cd1d",
+      "source_revision": "7e014d13c76af30de8b1d8b85083d331330ac5fe",
+      "source_summary_sha256": "af86fb7454974e015aa25da097a7831b53934861b99196366b81632695c307db",
+      "prompt_versions": [
+        "ecnu-risk-evidence-v6"
+      ],
+      "model_names": [
+        "ecnu-max"
+      ],
+      "external_case_count": 27,
+      "external_call_total": null,
+      "truncation_retry_count": null,
+      "truncation_retry_recovered_count": null,
+      "external_parse_success_rate": 0.9629629629629629,
+      "external_fact_validation_pass_rate": 1.0,
+      "billable_token_coverage_rate": 1.0,
+      "billable_prompt_tokens": 19810,
+      "billable_completion_tokens": 9351,
+      "wasted_prompt_tokens": 707,
+      "wasted_completion_tokens": 500,
+      "wasted_token_share": 0.04139089880319605,
+      "latency_p50_ms": 4306.518849996792,
+      "latency_p95_ms": 6696.626170000671,
+      "error_categories": [
+        "annotation_truncated"
+      ],
+      "retried_cases": [],
+      "completion_token_max": 500
+    },
+    {
+      "label": "v7_dev_regression34_shipped_ceiling",
+      "run_id": "20260805T025859Z-b22df241b7",
+      "source_revision": "8eeca1e058614284713b2cc93538a7418767b3de",
+      "source_summary_sha256": "517b07eef770a9a67d0335eb90c9ee77db9307ad6e758252715931642c8d7932",
+      "prompt_versions": [
+        "ecnu-risk-evidence-v7"
+      ],
+      "model_names": [
+        "ecnu-max"
+      ],
+      "external_case_count": 27,
+      "external_call_total": 27,
+      "truncation_retry_count": 0,
+      "truncation_retry_recovered_count": 0,
+      "external_parse_success_rate": 1.0,
+      "external_fact_validation_pass_rate": 1.0,
+      "billable_token_coverage_rate": 1.0,
+      "billable_prompt_tokens": 19810,
+      "billable_completion_tokens": 9188,
+      "wasted_prompt_tokens": 0,
+      "wasted_completion_tokens": 0,
+      "wasted_token_share": 0.0,
+      "latency_p50_ms": 5112.213400003384,
+      "latency_p95_ms": 15877.35529499186,
+      "error_categories": [],
+      "retried_cases": [],
+      "completion_token_max": 462
+    },
+    {
+      "label": "diagnostic_forced_truncation_lowered_ceiling",
+      "run_id": "20260805T030152Z-d4442a83ef",
+      "source_revision": "8eeca1e058614284713b2cc93538a7418767b3de",
+      "source_summary_sha256": "b648c5b95acadf600f85816d99a2eb3cab9534db0571acb1dbb47cf87bdc7c23",
+      "prompt_versions": [
+        "diagnostic-forced-truncation-v1"
+      ],
+      "model_names": [
+        "ecnu-max"
+      ],
+      "external_case_count": 6,
+      "external_call_total": 12,
+      "truncation_retry_count": 6,
+      "truncation_retry_recovered_count": 6,
+      "external_parse_success_rate": 1.0,
+      "external_fact_validation_pass_rate": 1.0,
+      "billable_token_coverage_rate": 1.0,
+      "billable_prompt_tokens": 8802,
+      "billable_completion_tokens": 3345,
+      "wasted_prompt_tokens": 4401,
+      "wasted_completion_tokens": 1200,
+      "wasted_token_share": 0.4611015065448259,
+      "latency_p50_ms": 7848.812099997303,
+      "latency_p95_ms": 9446.668599994155,
+      "error_categories": [],
+      "retried_cases": [
+        {
+          "case_id": "agent-typo-01-structuring",
+          "attempts": 2,
+          "wasted_prompt_tokens": 715,
+          "wasted_completion_tokens": 200,
+          "recovered": true
+        },
+        {
+          "case_id": "agent-typo-05-withdrawal",
+          "attempts": 2,
+          "wasted_prompt_tokens": 709,
+          "wasted_completion_tokens": 200,
+          "recovered": true
+        },
+        {
+          "case_id": "agent-typo-17-cycle",
+          "attempts": 2,
+          "wasted_prompt_tokens": 709,
+          "wasted_completion_tokens": 200,
+          "recovered": true
+        },
+        {
+          "case_id": "agent-low-evidence-03",
+          "attempts": 2,
+          "wasted_prompt_tokens": 738,
+          "wasted_completion_tokens": 200,
+          "recovered": true
+        },
+        {
+          "case_id": "agent-adv-05-prompt-injection",
+          "attempts": 2,
+          "wasted_prompt_tokens": 745,
+          "wasted_completion_tokens": 200,
+          "recovered": true
+        },
+        {
+          "case_id": "agent-adv-06-force-conclusion",
+          "attempts": 2,
+          "wasted_prompt_tokens": 785,
+          "wasted_completion_tokens": 200,
+          "recovered": true
+        }
+      ],
+      "completion_token_max": 624
+    }
+  ],
+  "findings": [
+    "The v7 run at the shipped ceiling fired zero retries: the case that truncated under v6 completed in 391 tokens this time. Its parse rate of 1.0000 against v6's 0.9630 is therefore NOT attributable to the retry, and sits well inside the 0.2222 same-configuration spread already recorded for prompt v3.",
+    "Truncation is intermittent run-to-run variance in completion length, not a fixed property of a case. The ceiling is genuinely tight: the longest of 27 real completions reached 462 of 500 tokens.",
+    "The retry was therefore exercised by lowering the ceiling to 200 rather than waiting for a natural truncation. All six provoked truncations recovered on the second attempt, with the fact gate passing on every recovered annotation.",
+    "Recovery is bought, not free: in the provoked run 46.11% of billed tokens were spent on discarded first attempts."
+  ],
+  "limitations": [
+    "The provoked run uses a lowered ceiling, so its truncation rate is an experimental setting and not a field rate.",
+    "Every run here is a development-set regression. None is a preregistered holdout, and none promotes v7.",
+    "Review is project-internal, not an external compliance adjudication."
+  ]
+}
