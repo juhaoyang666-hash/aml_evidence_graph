@@ -142,8 +142,25 @@ class InvestigationReport(BaseModel):
     unusable_call_usage: AnnotationUsage | None = Field(
         default=None,
         description=(
-            "Provider-reported tokens for a call that was billed but yielded no usable "
-            "annotation. Kept so cost accounting covers failed calls, not only accepted ones."
+            "Provider-reported tokens for every attempt that was billed but yielded no "
+            "usable annotation, including an attempt discarded before a retry succeeded. "
+            "Kept so cost accounting covers failed calls, not only accepted ones."
+        ),
+    )
+    external_call_attempts: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "External annotation calls made for this alert. Exceeds one only when the "
+            "chain retried a truncated response, so a case count is not a call count."
+        ),
+    )
+    external_usage_complete: bool = Field(
+        default=True,
+        description=(
+            "Whether every attempt reported usage. A summed total is only a bill when "
+            "this holds: one attempt reporting nothing makes the total unknown, and a "
+            "null usage field alone cannot distinguish that from no attempt at all."
         ),
     )
     tool_call_count: int = Field(default=0, ge=0, le=4)
@@ -160,6 +177,18 @@ class InvestigationAnnotation(BaseModel):
     analytical_considerations: list[str] = Field(default_factory=list)
     recommended_questions: list[str] = Field(default_factory=list)
     usage: AnnotationUsage | None = None
+    superseded_usage: AnnotationUsage | None = Field(
+        default=None,
+        description=(
+            "Tokens billed by attempts discarded before this annotation succeeded. Kept "
+            "separate from `usage` so the accepted-annotation basis keeps its meaning."
+        ),
+    )
+    attempt_count: int = Field(
+        default=1,
+        ge=1,
+        description="External calls spent producing this annotation, retries included.",
+    )
 
 
 class AnnotationUsage(BaseModel):
@@ -171,6 +200,37 @@ class AnnotationUsage(BaseModel):
     completion_tokens: int | None = Field(default=None, ge=0)
     total_tokens: int | None = Field(default=None, ge=0)
     estimated_cost_usd: float | None = Field(default=None, ge=0)
+
+
+def add_usage(
+    left: AnnotationUsage | None,
+    right: AnnotationUsage | None,
+) -> AnnotationUsage | None:
+    """Total two billed attempts, keeping "unknown" distinct from "zero".
+
+    A ``None`` operand means no such call happened, so the other side is the total.
+    When both calls happened but only one reported a field, the sum is genuinely
+    unknown and stays ``None`` rather than silently reporting the one known half as
+    if it were the whole bill.
+    """
+    if left is None:
+        return right
+    if right is None:
+        return left
+
+    def total(field: str) -> int | float | None:
+        first = getattr(left, field)
+        second = getattr(right, field)
+        if first is None or second is None:
+            return None
+        return first + second
+
+    return AnnotationUsage(
+        prompt_tokens=total("prompt_tokens"),
+        completion_tokens=total("completion_tokens"),
+        total_tokens=total("total_tokens"),
+        estimated_cost_usd=total("estimated_cost_usd"),
+    )
 
 
 class FactValidationResult(BaseModel):

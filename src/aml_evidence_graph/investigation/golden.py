@@ -13,6 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from aml_evidence_graph.evidence.package import (
+    AnnotationUsage,
     InvestigationAnnotation,
     InvestigationReport,
     RiskEvidencePackage,
@@ -83,6 +84,10 @@ class GoldenCaseResult:
     billable_prompt_tokens: int | None
     billable_completion_tokens: int | None
     billable_estimated_cost_usd: float | None
+    wasted_prompt_tokens: int | None
+    wasted_completion_tokens: int | None
+    wasted_estimated_cost_usd: float | None
+    external_call_attempts: int
     evidence_references: list[str]
     analytical_considerations: list[str]
     recommended_questions: list[str]
@@ -106,6 +111,11 @@ class GoldenSetSummary:
     latency_p50_ms: float
     latency_p95_ms: float
     external_case_count: int
+    # A case is no longer one call: a truncated response may be retried once. Both are
+    # reported so a parse rate is never mistaken for a first-attempt rate.
+    external_call_total: int
+    truncation_retry_count: int
+    truncation_retry_recovered_count: int
     external_parse_success_rate: float | None
     external_fact_validation_pass_rate: float | None
     llm_annotation_rate: float
@@ -118,6 +128,8 @@ class GoldenSetSummary:
     # fields above stay on the accepted-annotation basis so published numbers keep
     # their original meaning.
     billable_call_count: int
+    # Per case, not per call: a case whose retry reported no usage counts as uncovered
+    # in full. That understates coverage and never overstates cost completeness.
     billable_token_coverage_rate: float | None
     billable_prompt_tokens: int
     billable_completion_tokens: int
@@ -157,25 +169,64 @@ def _sum_cost(values: list[float | None]) -> float | None:
     return sum(value for value in values if value is not None)
 
 
+def _usage_field_total(
+    usages: tuple[AnnotationUsage | None, ...],
+    field: str,
+) -> int | float | None:
+    """Total one usage field across every billed call recorded for a case.
+
+    An absent usage object means no such call happened and contributes nothing. A
+    present object whose field is ``None`` means the provider never reported it, so
+    the total becomes unknown rather than silently passing off the one reported half
+    as the whole bill.
+    """
+    present = [usage for usage in usages if usage is not None]
+    if not present:
+        return None
+    values = [getattr(usage, field) for usage in present]
+    if any(value is None for value in values):
+        return None
+    return sum(values)
+
+
 def _billable_usage_value(
     report: InvestigationReport,
     field: str,
 ) -> int | float | None:
-    """Read one usage field on the billable basis: accepted or billed-but-unusable.
+    """Read one usage field on the billable basis: accepted plus billed-but-unusable.
 
-    Exactly one of the two carries usage for a given case, because a report either
-    exposes an accepted annotation or records the unusable call that replaced it.
+    Both can be populated at once now that a truncated attempt may be retried, so the
+    two are summed. Reading only the first would drop the discarded attempt from the
+    bill, which is the same understatement the billable basis exists to prevent.
+
+    An incomplete run is not billed at all. A null usage object cannot distinguish "no
+    such call" from "a call that reported nothing", so summing what is present would
+    pass off a partial bill as a whole one.
     """
-    for usage in (
-        report.llm_annotation.usage if report.llm_annotation is not None else None,
-        report.unusable_call_usage,
-    ):
-        if usage is None:
-            continue
-        value = getattr(usage, field)
-        if value is not None:
-            return value
-    return None
+    if not report.external_usage_complete:
+        return None
+    return _usage_field_total(
+        (
+            report.llm_annotation.usage if report.llm_annotation is not None else None,
+            report.unusable_call_usage,
+        ),
+        field,
+    )
+
+
+def _wasted_usage_value(
+    report: InvestigationReport,
+    field: str,
+) -> int | float | None:
+    """Read one usage field for calls that yielded nothing surviving the fact gate.
+
+    Waste is a property of a call, not of a case: a case that recovered on retry still
+    paid for the truncated attempt. Gated on the same completeness flag as the billable
+    basis so the waste share is never a known numerator over an unknown denominator.
+    """
+    if not report.external_usage_complete:
+        return None
+    return _usage_field_total((report.unusable_call_usage,), field)
 
 
 def _percentile(sorted_values: list[float], percentile: float) -> float:
@@ -325,6 +376,10 @@ def evaluate_golden_set(
                 billable_estimated_cost_usd=_billable_usage_value(
                     report, "estimated_cost_usd"
                 ),
+                wasted_prompt_tokens=_wasted_usage_value(report, "prompt_tokens"),
+                wasted_completion_tokens=_wasted_usage_value(report, "completion_tokens"),
+                wasted_estimated_cost_usd=_wasted_usage_value(report, "estimated_cost_usd"),
+                external_call_attempts=report.external_call_attempts,
                 evidence_references=(
                     list(exposed_annotation.evidence_references)
                     if exposed_annotation is not None
@@ -364,16 +419,24 @@ def evaluate_golden_set(
         or result.billable_completion_tokens is not None
     ]
     billable_cost_values = [result.billable_estimated_cost_usd for result in billable_results]
-    wasted_results = [result for result in billable_results if not result.annotation_used]
-    wasted_cost_values = [result.billable_estimated_cost_usd for result in wasted_results]
+    # Waste is per call, not per case: a case that recovered on retry still paid for the
+    # truncated attempt, so it is not filtered out by having produced an annotation.
+    wasted_results = [
+        result
+        for result in external_results
+        if result.wasted_prompt_tokens is not None
+        or result.wasted_completion_tokens is not None
+    ]
+    wasted_cost_values = [result.wasted_estimated_cost_usd for result in wasted_results]
     billable_prompt_tokens = sum(result.billable_prompt_tokens or 0 for result in billable_results)
     billable_completion_tokens = sum(
         result.billable_completion_tokens or 0 for result in billable_results
     )
-    wasted_prompt_tokens = sum(result.billable_prompt_tokens or 0 for result in wasted_results)
+    wasted_prompt_tokens = sum(result.wasted_prompt_tokens or 0 for result in wasted_results)
     wasted_completion_tokens = sum(
-        result.billable_completion_tokens or 0 for result in wasted_results
+        result.wasted_completion_tokens or 0 for result in wasted_results
     )
+    retried_results = [result for result in external_results if result.external_call_attempts > 1]
     billable_total_tokens = billable_prompt_tokens + billable_completion_tokens
     wasted_total_tokens = wasted_prompt_tokens + wasted_completion_tokens
     prompt_versions = sorted(
@@ -428,6 +491,11 @@ def evaluate_golden_set(
         latency_p50_ms=_percentile(latencies, 0.50),
         latency_p95_ms=_percentile(latencies, 0.95),
         external_case_count=len(external_results),
+        external_call_total=sum(result.external_call_attempts for result in external_results),
+        truncation_retry_count=len(retried_results),
+        truncation_retry_recovered_count=sum(
+            result.annotation_used for result in retried_results
+        ),
         external_parse_success_rate=(
             sum(result.annotation_parse_succeeded for result in external_results)
             / len(external_results)

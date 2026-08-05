@@ -69,6 +69,10 @@ class PromptConfiguration:
     system_instructions: str
     temperature: float
     max_tokens: int
+    # When set, one truncated response may be retried at this wider ceiling. Left unset
+    # by default so an existing prompt version keeps the exact behavior its holdout
+    # measured; see golden/llm_retry_policy_v1.json.
+    truncation_retry_max_tokens: int | None = None
 
 
 DEFAULT_PROMPT_CONFIGURATION = PromptConfiguration(
@@ -86,12 +90,16 @@ def load_prompt_configuration(path: Path) -> PromptConfiguration:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("LLM prompt configuration must be a YAML object.")
+    raw_retry_ceiling = payload.get("truncation_retry_max_tokens")
     try:
         configuration = PromptConfiguration(
             version=str(payload["version"]),
             system_instructions=str(payload["system_instructions"]),
             temperature=float(payload["temperature"]),
             max_tokens=int(payload["max_tokens"]),
+            truncation_retry_max_tokens=(
+                None if raw_retry_ceiling is None else int(raw_retry_ceiling)
+            ),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("LLM prompt configuration is incomplete or invalid.") from error
@@ -99,6 +107,13 @@ def load_prompt_configuration(path: Path) -> PromptConfiguration:
         raise ValueError("LLM prompt configuration requires version and instructions.")
     if not 0 <= configuration.temperature <= 2 or configuration.max_tokens < 1:
         raise ValueError("LLM prompt configuration has invalid generation limits.")
+    ceiling = configuration.truncation_retry_max_tokens
+    if ceiling is not None and ceiling <= configuration.max_tokens:
+        # Retrying at the same ceiling would repeat the truncation and bill for it twice.
+        raise ValueError(
+            "truncation_retry_max_tokens must exceed max_tokens to be a fix rather "
+            "than a repeat of the same call."
+        )
     return configuration
 
 
@@ -118,13 +133,23 @@ class AnnotationProviderError(RuntimeError):
     ``usage`` carries provider-reported tokens for a call that was billed but
     produced no usable annotation. It stays ``None`` when no response body was
     received, because in that case the billed amount is genuinely unknown and
-    must not be guessed.
+    must not be guessed. ``superseded_usage`` carries the same for earlier
+    attempts when a retry also failed, so neither attempt drops out of the bill.
     """
 
-    def __init__(self, category: str, *, usage: AnnotationUsage | None = None) -> None:
+    def __init__(
+        self,
+        category: str,
+        *,
+        usage: AnnotationUsage | None = None,
+        superseded_usage: AnnotationUsage | None = None,
+        attempts: int = 1,
+    ) -> None:
         super().__init__(category)
         self.category = category
         self.usage = usage
+        self.superseded_usage = superseded_usage
+        self.attempts = attempts
 
 
 @dataclass(frozen=True)
@@ -370,11 +395,52 @@ class ECNUAnnotationClient:
         evidence: RiskEvidencePackage,
         references: list[TypologyReference],
     ) -> InvestigationAnnotation:
-        """Request constrained JSON; only minimized, deidentified evidence is sent."""
+        """Request constrained JSON, retrying once if the provider truncated the body.
+
+        Truncation is the only failure retried here. The provider states the cause via
+        ``finish_reason``, so a wider ceiling is a targeted correction. Availability and
+        generic format failures carry no such signal: retrying them would inflate the
+        apparent success rate while hiding instability this project measures on purpose.
+        See ``golden/llm_retry_policy_v1.json``.
+        """
+        ceiling = self.prompt_configuration.truncation_retry_max_tokens
+        try:
+            return self._attempt(
+                evidence,
+                references,
+                max_tokens=self.prompt_configuration.max_tokens,
+            )
+        except AnnotationProviderError as first:
+            if ceiling is None or first.category != "annotation_truncated":
+                raise
+            # Bind before the handler exits: Python unbinds `first` on the way out.
+            truncated_usage = first.usage
+        try:
+            retried = self._attempt(evidence, references, max_tokens=ceiling)
+        except AnnotationProviderError as second:
+            # Both attempts were billed; neither may drop out of the billable basis.
+            raise AnnotationProviderError(
+                second.category,
+                usage=second.usage,
+                superseded_usage=truncated_usage,
+                attempts=2,
+            ) from second
+        return retried.model_copy(
+            update={"superseded_usage": truncated_usage, "attempt_count": 2}
+        )
+
+    def _attempt(
+        self,
+        evidence: RiskEvidencePackage,
+        references: list[TypologyReference],
+        *,
+        max_tokens: int,
+    ) -> InvestigationAnnotation:
+        """Make one constrained call; only minimized, deidentified evidence is sent."""
         request_payload = {
             "model": self.model_name,
             "temperature": self.prompt_configuration.temperature,
-            "max_tokens": self.prompt_configuration.max_tokens,
+            "max_tokens": max_tokens,
             "response_format": {"type": "json_object"},
             "messages": [
                 {

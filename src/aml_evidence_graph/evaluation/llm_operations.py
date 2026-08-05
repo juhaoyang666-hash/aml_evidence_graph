@@ -53,6 +53,11 @@ class LLMRunOperations:
     parse_success_rate: float | None
     fact_gate_pass_rate: float | None
     acceptance_rate: float | None
+    # Calls, not cases. Runs predating the truncation retry bill one call per case, so
+    # these default to the case count rather than to zero when the field is absent.
+    external_calls: int = 0
+    truncation_retries: int = 0
+    truncation_retries_recovered: int = 0
     error_categories: dict[str, int] = field(default_factory=dict)
     availability_failures: int = 0
     format_failures: int = 0
@@ -154,6 +159,15 @@ def summarize_run_operations(
         if isinstance(case.get("completion_tokens"), int)
     )
 
+    def attempts_of(case: dict[str, object]) -> int:
+        # Absent means the run predates the retry, when a case was exactly one call.
+        value = case.get("external_call_attempts")
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return value
+        return 1
+
+    retried = [case for case in external if attempts_of(case) > 1]
+
     accepted_costs = [case.get("estimated_cost_usd") for case in accepted]
     billable_costs = [
         usage_of(case, "estimated_cost_usd") for case in usage_calls
@@ -183,6 +197,9 @@ def summarize_run_operations(
         parse_success_rate=_ratio(len(parsed), len(external)),
         fact_gate_pass_rate=_ratio(len(fact_passed), len(parsed)),
         acceptance_rate=_ratio(len(accepted), len(external)),
+        external_calls=sum(attempts_of(case) for case in external),
+        truncation_retries=len(retried),
+        truncation_retries_recovered=sum(1 for case in retried if case.get("annotation_used")),
         error_categories=dict(sorted(raw_errors.items())),
         availability_failures=grouped.get("availability", 0),
         format_failures=grouped.get("format", 0),
@@ -297,6 +314,7 @@ def build_operations_report(
 ) -> dict[str, object]:
     """Assemble a publishable operations report with no model text or evidence bodies."""
     external_total = sum(run.external_attempted for run in runs)
+    call_total = sum(run.external_calls for run in runs)
     usage_total = sum(run.usage_observed_calls for run in runs)
     pricing: list[dict[str, object]] | None = None
     if (
@@ -320,7 +338,12 @@ def build_operations_report(
             "Operational monitoring and cost rollup over frozen local Golden runs. "
             "Not a provider SLA and not an independent evaluation."
         ),
-        "external_calls_total": external_total,
+        "external_cases_total": external_total,
+        "external_calls_total": call_total,
+        "truncation_retries_total": sum(run.truncation_retries for run in runs),
+        "truncation_retries_recovered_total": sum(
+            run.truncation_retries_recovered for run in runs
+        ),
         "usage_observed_calls_total": usage_total,
         "usage_coverage_rate_total": _ratio(usage_total, external_total),
         "unrecoverable_usage_calls_total": external_total - usage_total,
@@ -332,6 +355,12 @@ def build_operations_report(
             "Monetary cost stays null unless contract prices are configured.",
             "Latency covers whole cases on a single local machine, including "
             "deterministic template work, and is not an online serving SLA.",
+            "error_categories lists terminal failures only. A truncation that a retry "
+            "recovered appears in truncation_retries, not in format_failures, so a zero "
+            "format-failure count does not mean no truncation occurred.",
+            "parse_success_rate is per case. Where truncation_retries is non-zero it is "
+            "not a first-attempt rate, and usage_coverage_rate stays on the case basis "
+            "so its denominator matches.",
         ],
     }
 

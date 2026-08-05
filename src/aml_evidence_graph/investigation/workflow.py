@@ -19,6 +19,7 @@ from aml_evidence_graph.evidence.package import (
     RiskEvidencePackage,
     SarDraft,
     TypologyReference,
+    add_usage,
 )
 from aml_evidence_graph.evidence.typology import LocalBM25TypologyRetriever
 from aml_evidence_graph.investigation.llm import (
@@ -40,6 +41,8 @@ class InvestigationState(TypedDict, total=False):
     annotation: InvestigationAnnotation | None
     annotation_error: str | None
     unusable_call_usage: AnnotationUsage | None
+    external_call_attempts: int
+    external_usage_complete: bool
     retrieval_error: str | None
     fact_validation: FactValidationResult | None
     tool_call_count: int
@@ -162,7 +165,12 @@ def _annotate(
 ) -> InvestigationState:
     """Optionally ask an external model for non-factual analysis after retrieval."""
     if annotator is None:
-        return {"annotation": None}
+        return {"annotation": None, "external_call_attempts": 0}
+
+    def usage_complete(attempts: int, *usages: AnnotationUsage | None) -> bool:
+        """True when every attempt reported usage, so a summed total is a real bill."""
+        return attempts == sum(usage is not None for usage in usages)
+
     try:
         annotation = annotator.annotate(
             state["evidence"],
@@ -173,18 +181,35 @@ def _annotate(
             "annotation": None,
             "annotation_error": error.category,
             # Billed but unusable: keep the tokens so cost accounting stays complete.
-            "unusable_call_usage": error.usage,
+            # A failed retry bills twice, so both attempts are totalled here.
+            "unusable_call_usage": add_usage(error.superseded_usage, error.usage),
+            "external_call_attempts": error.attempts,
+            "external_usage_complete": usage_complete(
+                error.attempts,
+                error.usage,
+                *((error.superseded_usage,) if error.attempts > 1 else ()),
+            ),
         }
     except Exception:
         return {
             "annotation": None,
             "annotation_error": "external_annotation_error",
             "unusable_call_usage": None,
+            # A non-provider exception gives no attempt count; one call was still tried.
+            "external_call_attempts": 1,
+            "external_usage_complete": False,
         }
     return {
         "annotation": annotation,
         "annotation_error": None,
-        "unusable_call_usage": None,
+        # Present only when a truncated attempt was discarded before this one succeeded.
+        "unusable_call_usage": annotation.superseded_usage,
+        "external_call_attempts": annotation.attempt_count,
+        "external_usage_complete": usage_complete(
+            annotation.attempt_count,
+            annotation.usage,
+            *((annotation.superseded_usage,) if annotation.attempt_count > 1 else ()),
+        ),
     }
 
 
@@ -314,11 +339,17 @@ def _draft_report(state: InvestigationState) -> InvestigationState:
         annotation_error_category=state.get("annotation_error"),
         # A fact-gate rejection drops the annotation from the report, but the call was
         # still billed, so its usage moves to the unusable-call basis instead of vanishing.
+        # Any attempt discarded before it is already on that basis and stays there.
         unusable_call_usage=(
             state.get("unusable_call_usage")
             if validation.valid
-            else (annotation.usage if annotation is not None else None)
+            else add_usage(
+                state.get("unusable_call_usage"),
+                annotation.usage if annotation is not None else None,
+            )
         ),
+        external_call_attempts=state.get("external_call_attempts", 0),
+        external_usage_complete=state.get("external_usage_complete", True),
         tool_call_count=state.get("tool_call_count", 0),
     )
     return {"report": report}
