@@ -11,8 +11,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import re
 from pathlib import Path
+
+from aml_evidence_graph.evidence.package import (
+    InvestigationAnnotation,
+    RiskEvidencePackage,
+)
+from aml_evidence_graph.investigation.llm import find_field_names_in_prose
 
 RUBRIC = {
     "evidence_grounded": (
@@ -147,27 +152,28 @@ VERDICTS: dict[str, tuple[bool | None, str]] = {
 
 
 def _prose_leaks(case: dict[str, object], result: dict[str, object]) -> list[str]:
-    """Flag feature or rule names spelled out in the prose sections.
+    """Flag supplied names echoed into the prose, using the production detector.
 
-    Conservative on purpose: it requires two distinctive words from a name to appear
-    adjacently, so it under-counts. Not a preregistered criterion - reported only.
+    The first version of this review used a local detector that looked only at feature
+    and rule names and matched on distinctive words alone. It under-counted twice over:
+    it ignored typology titles and model names, which the prompt forbids equally, and
+    collapsing a name to its distinctive words made it fire on vocabulary the prompt
+    mandates. Both are fixed in find_field_names_in_prose, which this now calls, so the
+    review and any future run are measured by one instrument.
     """
-    evidence = case["evidence"]
-    names = [feature["name"] for feature in evidence["key_features"]]
-    names += [rule["rule_id"] for rule in evidence["rule_hits"]]
-    prose = " ".join(
-        [*result["analytical_considerations"], *result["recommended_questions"]]
-    ).lower()
-    leaked = []
-    for name in names:
-        words = [
-            word
-            for word in re.split(r"[_-]", name.lower())
-            if word not in ("context", "flag", "presence", "rule")
-        ]
-        if len(words) >= 2 and " ".join(words[:2]) in prose:
-            leaked.append(name)
-    return leaked
+    evidence = RiskEvidencePackage.model_validate(case["evidence"])
+    annotation = InvestigationAnnotation(
+        prompt_version="reviewed",
+        model_name="reviewed",
+        evidence_references=list(result["evidence_references"]),
+        analytical_considerations=list(result["analytical_considerations"]),
+        recommended_questions=list(result["recommended_questions"]),
+    )
+    return find_field_names_in_prose(
+        annotation,
+        evidence=evidence,
+        references=list(evidence.typology_references),
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -307,14 +313,23 @@ def main() -> None:
             "affected_case_ids": [item["case_id"] for item in leaking],
             "detail": (
                 "The v6 and v7 system instructions forbid copying, spelling out or "
-                "paraphrasing any feature, rule or typology name into "
-                "analytical_considerations or recommended_questions. Applying the same "
-                "conservative detector to frozen runs gives 0/26 on the v6 development "
-                "set, 1/27 on the v7 development set, 5/20 on Holdout v3 and 7/20 here. "
+                "paraphrasing any feature, rule, model or typology name into "
+                "analytical_considerations or recommended_questions. Applying the "
+                "production detector to frozen runs gives 2/26 on the v6 development "
+                "set, 4/27 on the v7 development set, 11/20 on Holdout v3 and 9/20 here. "
                 "The boundary therefore holds on the names the prompt was developed "
-                "against and fails on roughly a third of unseen ones. This is prompt "
+                "against and fails on roughly half of unseen ones. This is prompt "
                 "overfitting to the development set, and it is the exact failure mode v6 "
                 "was written to fix."
+            ),
+            "measurement_correction": (
+                "First reported as 5/20 and 7/20 by a local detector that inspected only "
+                "feature and rule names, ignoring typology titles and model names, and "
+                "that matched on a name's distinctive words alone, which made it fire on "
+                "phrasing the prompt mandates. The corrected figures are roughly double "
+                "and reverse the v6/v7 ordering, so the earlier hint that v7 was worse "
+                "on this axis does not survive. At n=20 neither ordering is meaningful; "
+                "the finding is that both fail comparably on unseen sets."
             ),
             "why_it_does_not_change_this_verdict": (
                 "The frozen rubric has no prose-boundary criterion, and Holdout v3 "
@@ -323,12 +338,13 @@ def main() -> None:
                 "which preregistration exists to prevent."
             ),
             "affects": (
-                "Both v6 and v7, at a similar rate. It is not a v7 regression and does "
-                "not reopen v6's promotion, whose gate never tested this axis."
+                "Both v6 and v7, at a similar rate: 11/20 against 9/20, a gap far inside "
+                "what 20 cases can resolve. It is not a v7 regression and does not reopen "
+                "v6's promotion, whose gate never tested this axis."
             ),
             "required_follow_up": (
-                "Add a prose-boundary criterion to the rubric for Holdout v5, treat 5/20 "
-                "and 7/20 as its first measurements, and fix the instruction in a new "
+                "Add a prose-boundary criterion to the rubric for Holdout v5, treat 11/20 "
+                "and 9/20 as its first measurements, and fix the instruction in a new "
                 "prompt version gated by its own preregistered run."
             ),
         },

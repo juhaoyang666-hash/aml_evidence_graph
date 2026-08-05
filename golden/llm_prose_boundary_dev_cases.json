@@ -1,0 +1,637 @@
+[
+  {
+    "case_id": "prose-dev-wide-01-custody",
+    "case_category": "typology",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "prose-dev-alert-000",
+      "generated_at": "2026-08-05T05:00:00Z",
+      "transaction_id": "prose-dev-transaction-000",
+      "event_timestamp": "2023-08-01T12:00:00Z",
+      "model_probabilities": {
+        "catboost": 0.31,
+        "gat": 0.42
+      },
+      "fusion_probability": 0.37,
+      "rule_hits": [
+        {
+          "rule_id": "RULE-CUSTODY-TRANSFER",
+          "rule_version": "2026.1",
+          "feature": "custody_transfer_context",
+          "observed_value": 2.0,
+          "threshold": 1.0,
+          "operator": "gt",
+          "explanation": "Synthetic development rule hit; not a case conclusion."
+        }
+      ],
+      "key_features": [
+        {
+          "name": "custody_transfer_context",
+          "value": 1.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        },
+        {
+          "name": "dormancy_break_context",
+          "value": 2.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        },
+        {
+          "name": "velocity_shift_context",
+          "value": 3.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        }
+      ],
+      "graph_evidence": {
+        "source_node_index": 0,
+        "destination_node_index": 1,
+        "historical_source_out_degree": 1,
+        "historical_destination_in_degree": 2,
+        "prior_directed_edge_count": 0,
+        "prior_reverse_edge_count": 1,
+        "two_hop_intermediary_count": 0,
+        "two_hop_intermediary_node_indices": [],
+        "snapshot_as_of": "2023-08-01T00:00:00Z",
+        "interpretation_limit": "Synthetic development evidence; history-only structure is not a case conclusion."
+      },
+      "typology_references": [
+        {
+          "typology_id": "TYPOLOGY-MONEY-MULE",
+          "version": "2026.1",
+          "title": "Money Mule / 跑分过渡账户",
+          "source": "prose-boundary-development"
+        },
+        {
+          "typology_id": "TYPOLOGY-CYCLE",
+          "version": "2026.1",
+          "title": "Circular / Cycle Transfers",
+          "source": "prose-boundary-development"
+        }
+      ],
+      "source_versions": {
+        "golden": "llm-prose-boundary-development"
+      },
+      "missing_evidence": [],
+      "uncertainty_notes": [
+        "Unverified custody lead awaiting corroboration."
+      ]
+    },
+    "expected_typology_ids": [
+      "TYPOLOGY-MONEY-MULE"
+    ],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "prose-dev-wide-02-remittance",
+    "case_category": "typology",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "prose-dev-alert-001",
+      "generated_at": "2026-08-05T05:00:00Z",
+      "transaction_id": "prose-dev-transaction-001",
+      "event_timestamp": "2023-08-02T12:00:00Z",
+      "model_probabilities": {
+        "catboost": 0.32,
+        "gat": 0.43
+      },
+      "fusion_probability": 0.38,
+      "rule_hits": [
+        {
+          "rule_id": "RULE-REMITTANCE-CORRIDOR",
+          "rule_version": "2026.1",
+          "feature": "remittance_corridor_context",
+          "observed_value": 3.0,
+          "threshold": 2.0,
+          "operator": "gt",
+          "explanation": "Synthetic development rule hit; not a case conclusion."
+        }
+      ],
+      "key_features": [
+        {
+          "name": "remittance_corridor_context",
+          "value": 2.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        },
+        {
+          "name": "endorsement_chain_context",
+          "value": 3.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        },
+        {
+          "name": "provenance_trail_context",
+          "value": 4.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        }
+      ],
+      "graph_evidence": null,
+      "typology_references": [
+        {
+          "typology_id": "TYPOLOGY-TRADE-BASED",
+          "version": "2026.1",
+          "title": "Trade-Based Money Laundering / 贸易型洗钱",
+          "source": "prose-boundary-development"
+        },
+        {
+          "typology_id": "TYPOLOGY-FUNNEL-ACCOUNT",
+          "version": "2026.1",
+          "title": "Funnel Account / 异地漏斗账户",
+          "source": "prose-boundary-development"
+        }
+      ],
+      "source_versions": {
+        "golden": "llm-prose-boundary-development"
+      },
+      "missing_evidence": [],
+      "uncertainty_notes": [
+        "Unverified remittance lead awaiting corroboration."
+      ]
+    },
+    "expected_typology_ids": [
+      "TYPOLOGY-TRADE-BASED"
+    ],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "prose-dev-wide-03-disbursement",
+    "case_category": "typology",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "prose-dev-alert-002",
+      "generated_at": "2026-08-05T05:00:00Z",
+      "transaction_id": "prose-dev-transaction-002",
+      "event_timestamp": "2023-08-03T12:00:00Z",
+      "model_probabilities": {
+        "catboost": 0.33,
+        "gat": 0.44
+      },
+      "fusion_probability": 0.39,
+      "rule_hits": [
+        {
+          "rule_id": "RULE-DISBURSEMENT-SPLIT",
+          "rule_version": "2026.1",
+          "feature": "disbursement_split_context",
+          "observed_value": 4.0,
+          "threshold": 3.0,
+          "operator": "gt",
+          "explanation": "Synthetic development rule hit; not a case conclusion."
+        }
+      ],
+      "key_features": [
+        {
+          "name": "disbursement_split_context",
+          "value": 3.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        },
+        {
+          "name": "reconciliation_gap_context",
+          "value": 4.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        },
+        {
+          "name": "proximity_cluster_context",
+          "value": 5.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        }
+      ],
+      "graph_evidence": {
+        "source_node_index": 4,
+        "destination_node_index": 5,
+        "historical_source_out_degree": 3,
+        "historical_destination_in_degree": 4,
+        "prior_directed_edge_count": 2,
+        "prior_reverse_edge_count": 1,
+        "two_hop_intermediary_count": 2,
+        "two_hop_intermediary_node_indices": [],
+        "snapshot_as_of": "2023-08-03T00:00:00Z",
+        "interpretation_limit": "Synthetic development evidence; history-only structure is not a case conclusion."
+      },
+      "typology_references": [
+        {
+          "typology_id": "TYPOLOGY-PAYMENT-PROCESSOR",
+          "version": "2026.1",
+          "title": "Third-Party Payment Processor Abuse / 第三方支付处理商滥用",
+          "source": "prose-boundary-development"
+        },
+        {
+          "typology_id": "TYPOLOGY-CASH-WITHDRAWAL",
+          "version": "2026.1",
+          "title": "Cash Withdrawal",
+          "source": "prose-boundary-development"
+        }
+      ],
+      "source_versions": {
+        "golden": "llm-prose-boundary-development"
+      },
+      "missing_evidence": [],
+      "uncertainty_notes": [
+        "Unverified disbursement lead awaiting corroboration."
+      ]
+    },
+    "expected_typology_ids": [
+      "TYPOLOGY-PAYMENT-PROCESSOR"
+    ],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "prose-dev-wide-04-aggregation",
+    "case_category": "typology",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "prose-dev-alert-003",
+      "generated_at": "2026-08-05T05:00:00Z",
+      "transaction_id": "prose-dev-transaction-003",
+      "event_timestamp": "2023-08-04T12:00:00Z",
+      "model_probabilities": {
+        "catboost": 0.33999999999999997,
+        "gat": 0.44999999999999996
+      },
+      "fusion_probability": 0.4,
+      "rule_hits": [
+        {
+          "rule_id": "RULE-AGGREGATION-DEPTH",
+          "rule_version": "2026.1",
+          "feature": "aggregation_depth_context",
+          "observed_value": 5.0,
+          "threshold": 4.0,
+          "operator": "gt",
+          "explanation": "Synthetic development rule hit; not a case conclusion."
+        }
+      ],
+      "key_features": [
+        {
+          "name": "aggregation_depth_context",
+          "value": 4.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        },
+        {
+          "name": "settlement_lag_context",
+          "value": 5.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        },
+        {
+          "name": "beneficiary_reuse_context",
+          "value": 6.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        }
+      ],
+      "graph_evidence": {
+        "source_node_index": 6,
+        "destination_node_index": 7,
+        "historical_source_out_degree": 4,
+        "historical_destination_in_degree": 5,
+        "prior_directed_edge_count": 0,
+        "prior_reverse_edge_count": 0,
+        "two_hop_intermediary_count": 3,
+        "two_hop_intermediary_node_indices": [],
+        "snapshot_as_of": "2023-08-04T00:00:00Z",
+        "interpretation_limit": "Synthetic development evidence; history-only structure is not a case conclusion."
+      },
+      "typology_references": [
+        {
+          "typology_id": "TYPOLOGY-BENEFICIAL-OWNERSHIP",
+          "version": "2026.1",
+          "title": "Concealed Beneficial Ownership / 隐匿受益所有人",
+          "source": "prose-boundary-development"
+        },
+        {
+          "typology_id": "TYPOLOGY-VIRTUAL-ASSET",
+          "version": "2026.1",
+          "title": "Virtual-Asset Conversion and Mixing / 虚拟资产转换与混币",
+          "source": "prose-boundary-development"
+        }
+      ],
+      "source_versions": {
+        "golden": "llm-prose-boundary-development"
+      },
+      "missing_evidence": [],
+      "uncertainty_notes": [
+        "Unverified aggregation lead awaiting corroboration."
+      ]
+    },
+    "expected_typology_ids": [
+      "TYPOLOGY-BENEFICIAL-OWNERSHIP"
+    ],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "prose-dev-typo-01-dormancy",
+    "case_category": "typology",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "prose-dev-alert-004",
+      "generated_at": "2026-08-05T05:00:00Z",
+      "transaction_id": "prose-dev-transaction-004",
+      "event_timestamp": "2023-08-05T12:00:00Z",
+      "model_probabilities": {
+        "catboost": 0.35,
+        "gat": 0.45999999999999996
+      },
+      "fusion_probability": 0.41,
+      "rule_hits": [],
+      "key_features": [
+        {
+          "name": "dormancy_break_context",
+          "value": 5.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        }
+      ],
+      "graph_evidence": null,
+      "typology_references": [
+        {
+          "typology_id": "TYPOLOGY-MONEY-MULE",
+          "version": "2026.1",
+          "title": "Money Mule / 跑分过渡账户",
+          "source": "prose-boundary-development"
+        }
+      ],
+      "source_versions": {
+        "golden": "llm-prose-boundary-development"
+      },
+      "missing_evidence": [],
+      "uncertainty_notes": [
+        "Unverified dormancy lead."
+      ]
+    },
+    "expected_typology_ids": [
+      "TYPOLOGY-MONEY-MULE"
+    ],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "prose-dev-typo-02-provenance",
+    "case_category": "typology",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "prose-dev-alert-005",
+      "generated_at": "2026-08-05T05:00:00Z",
+      "transaction_id": "prose-dev-transaction-005",
+      "event_timestamp": "2023-08-06T12:00:00Z",
+      "model_probabilities": {
+        "catboost": 0.36,
+        "gat": 0.47
+      },
+      "fusion_probability": 0.42,
+      "rule_hits": [],
+      "key_features": [
+        {
+          "name": "provenance_trail_context",
+          "value": 6.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        }
+      ],
+      "graph_evidence": null,
+      "typology_references": [
+        {
+          "typology_id": "TYPOLOGY-TRADE-BASED",
+          "version": "2026.1",
+          "title": "Trade-Based Money Laundering / 贸易型洗钱",
+          "source": "prose-boundary-development"
+        }
+      ],
+      "source_versions": {
+        "golden": "llm-prose-boundary-development"
+      },
+      "missing_evidence": [],
+      "uncertainty_notes": [
+        "Unverified provenance lead."
+      ]
+    },
+    "expected_typology_ids": [
+      "TYPOLOGY-TRADE-BASED"
+    ],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "prose-dev-typo-03-proximity",
+    "case_category": "typology",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "prose-dev-alert-006",
+      "generated_at": "2026-08-05T05:00:00Z",
+      "transaction_id": "prose-dev-transaction-006",
+      "event_timestamp": "2023-08-07T12:00:00Z",
+      "model_probabilities": {
+        "catboost": 0.37,
+        "gat": 0.48
+      },
+      "fusion_probability": 0.43,
+      "rule_hits": [],
+      "key_features": [
+        {
+          "name": "proximity_cluster_context",
+          "value": 7.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        }
+      ],
+      "graph_evidence": null,
+      "typology_references": [
+        {
+          "typology_id": "TYPOLOGY-CYCLE",
+          "version": "2026.1",
+          "title": "Circular / Cycle Transfers",
+          "source": "prose-boundary-development"
+        }
+      ],
+      "source_versions": {
+        "golden": "llm-prose-boundary-development"
+      },
+      "missing_evidence": [],
+      "uncertainty_notes": [
+        "Unverified proximity lead."
+      ]
+    },
+    "expected_typology_ids": [
+      "TYPOLOGY-CYCLE"
+    ],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "prose-dev-low-01-no-records",
+    "case_category": "low_evidence",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "prose-dev-alert-007",
+      "generated_at": "2026-08-05T05:00:00Z",
+      "transaction_id": "prose-dev-transaction-007",
+      "event_timestamp": "2023-08-08T12:00:00Z",
+      "model_probabilities": {
+        "catboost": 0.38,
+        "gat": 0.49
+      },
+      "fusion_probability": 0.44,
+      "rule_hits": [],
+      "key_features": [],
+      "graph_evidence": null,
+      "typology_references": [],
+      "source_versions": {
+        "golden": "llm-prose-boundary-development"
+      },
+      "missing_evidence": [
+        "Every supporting record category is unavailable."
+      ],
+      "uncertainty_notes": []
+    },
+    "expected_typology_ids": [],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "prose-dev-low-02-empty-list",
+    "case_category": "low_evidence",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "prose-dev-alert-008",
+      "generated_at": "2026-08-05T05:00:00Z",
+      "transaction_id": "prose-dev-transaction-008",
+      "event_timestamp": "2023-08-09T12:00:00Z",
+      "model_probabilities": {
+        "catboost": 0.39,
+        "gat": 0.5
+      },
+      "fusion_probability": 0.45,
+      "rule_hits": [],
+      "key_features": [
+        {
+          "name": "reconciliation_gap_context",
+          "value": 9.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        }
+      ],
+      "graph_evidence": null,
+      "typology_references": [],
+      "source_versions": {
+        "golden": "llm-prose-boundary-development"
+      },
+      "missing_evidence": [],
+      "uncertainty_notes": []
+    },
+    "expected_typology_ids": [],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "prose-dev-low-03-partial",
+    "case_category": "low_evidence",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "prose-dev-alert-009",
+      "generated_at": "2026-08-05T05:00:00Z",
+      "transaction_id": "prose-dev-transaction-009",
+      "event_timestamp": "2023-08-10T12:00:00Z",
+      "model_probabilities": {
+        "catboost": 0.4,
+        "gat": 0.51
+      },
+      "fusion_probability": 0.45999999999999996,
+      "rule_hits": [],
+      "key_features": [
+        {
+          "name": "settlement_lag_context",
+          "value": 10.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        }
+      ],
+      "graph_evidence": null,
+      "typology_references": [],
+      "source_versions": {
+        "golden": "llm-prose-boundary-development"
+      },
+      "missing_evidence": [
+        "Timing records are unavailable."
+      ],
+      "uncertainty_notes": []
+    },
+    "expected_typology_ids": [],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "prose-dev-low-04-scores-only",
+    "case_category": "low_evidence",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "prose-dev-alert-010",
+      "generated_at": "2026-08-05T05:00:00Z",
+      "transaction_id": "prose-dev-transaction-010",
+      "event_timestamp": "2023-08-11T12:00:00Z",
+      "model_probabilities": {
+        "catboost": 0.41000000000000003,
+        "gat": 0.52
+      },
+      "fusion_probability": 0.47,
+      "rule_hits": [],
+      "key_features": [],
+      "graph_evidence": null,
+      "typology_references": [],
+      "source_versions": {
+        "golden": "llm-prose-boundary-development"
+      },
+      "missing_evidence": [
+        "Feature records are unavailable."
+      ],
+      "uncertainty_notes": []
+    },
+    "expected_typology_ids": [],
+    "expect_rejected_facts": false
+  },
+  {
+    "case_id": "prose-dev-low-05-sparse-graph",
+    "case_category": "low_evidence",
+    "evidence": {
+      "schema_version": "1.0",
+      "alert_id": "prose-dev-alert-011",
+      "generated_at": "2026-08-05T05:00:00Z",
+      "transaction_id": "prose-dev-transaction-011",
+      "event_timestamp": "2023-08-12T12:00:00Z",
+      "model_probabilities": {
+        "catboost": 0.42,
+        "gat": 0.53
+      },
+      "fusion_probability": 0.48,
+      "rule_hits": [],
+      "key_features": [
+        {
+          "name": "beneficiary_reuse_context",
+          "value": 12.0,
+          "window": "30d",
+          "source": "prose_boundary_dev_feature"
+        }
+      ],
+      "graph_evidence": {
+        "source_node_index": 22,
+        "destination_node_index": 23,
+        "historical_source_out_degree": 12,
+        "historical_destination_in_degree": 13,
+        "prior_directed_edge_count": 2,
+        "prior_reverse_edge_count": 0,
+        "two_hop_intermediary_count": 3,
+        "two_hop_intermediary_node_indices": [],
+        "snapshot_as_of": "2023-08-12T00:00:00Z",
+        "interpretation_limit": "Synthetic development evidence; history-only structure is not a case conclusion."
+      },
+      "typology_references": [],
+      "source_versions": {
+        "golden": "llm-prose-boundary-development"
+      },
+      "missing_evidence": [
+        "Network context is incomplete."
+      ],
+      "uncertainty_notes": []
+    },
+    "expected_typology_ids": [],
+    "expect_rejected_facts": false
+  }
+]

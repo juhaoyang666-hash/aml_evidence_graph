@@ -503,4 +503,5 @@ def test_holdout_v4_verdict_records_a_zero_benefit_promotion() -> None:
     assert adjudication["derived_metrics"]["retry_attributable_parse_gain"] == 0.0
     assert adjudication["promotion_decision"]["measured_field_benefit"] == 0.0
     # The out-of-rubric prose finding must travel with the verdict, not be dropped.
-    assert adjudication["out_of_rubric_finding"]["cases_affected"] == "7/20"
+    assert adjudication["out_of_rubric_finding"]["cases_affected"] == "9/20"
+    assert adjudication["out_of_rubric_finding"]["measurement_correction"]

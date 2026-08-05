@@ -332,6 +332,99 @@ def _decode_annotation_content(content: object) -> dict[str, Any]:
     return decoded
 
 
+# Words that carry no identifying force on their own. Dropped before matching so a name
+# like `relationship_gap_context` is matched on "relationship gap" rather than on the
+# shared suffix every synthetic feature happens to use.
+_GENERIC_NAME_WORDS: frozenset[str] = frozenset(
+    {
+        "context",
+        "flag",
+        "presence",
+        "rule",
+        "state",
+        "value",
+        "values",
+        "and",
+        "of",
+        "the",
+        "abuse",
+        "based",
+        "concealed",
+        "third",
+        "party",
+    }
+)
+_WORD_SPLIT = re.compile(r"[^a-z0-9]+")
+
+
+def _name_tokens(name: str) -> list[str]:
+    return [token for token in _WORD_SPLIT.split(name.lower()) if token]
+
+
+def find_field_names_in_prose(
+    annotation: InvestigationAnnotation,
+    *,
+    evidence: RiskEvidencePackage,
+    references: list[TypologyReference],
+) -> list[str]:
+    """Report supplied field, rule, model and typology names echoed into the prose.
+
+    The prompt forbids copying, spelling out or paraphrasing any such name into
+    ``analytical_considerations`` or ``recommended_questions``. Holdout v4 showed that
+    boundary holding on the names the prompt was developed against and failing on about
+    a third of unseen ones, which no automatic check would have caught, because the
+    fact gate only looks for digits and entity tokens.
+
+    Deliberately conservative, so a reported leak is a leak: a multi-word name must have
+    two consecutive distinctive words appear adjacently, and a single-word name must
+    appear as a whole word of at least four characters. It therefore under-counts, and
+    its output is a lower bound rather than an audit.
+    """
+    prose = " ".join(
+        [*annotation.analytical_considerations, *annotation.recommended_questions]
+    )
+    haystack = f" {' '.join(_WORD_SPLIT.split(prose.lower()))} "
+    # A typology's identifier and its title are two spellings of one name, so they are
+    # reported under a single label. Counting them separately would show one leak twice
+    # and inflate any rate built on this.
+    candidates: list[tuple[str, tuple[str, ...]]] = [
+        *[(name, (name,)) for name in evidence.model_probabilities],
+        *[(rule.rule_id, (rule.rule_id,)) for rule in evidence.rule_hits],
+        *[(rule.feature, (rule.feature,)) for rule in evidence.rule_hits],
+        *[(feature.name, (feature.name,)) for feature in evidence.key_features],
+        *[
+            (reference.typology_id, (reference.typology_id, reference.title))
+            for reference in (*references, *evidence.typology_references)
+        ],
+    ]
+
+    def matches(name: str) -> bool:
+        tokens = _name_tokens(name)
+        if len(tokens) == 1:
+            # A genuinely single-word name, like a model identifier. Whole-word match,
+            # with a length floor so a short token cannot fire on ordinary prose.
+            return len(tokens[0]) >= 4 and f" {tokens[0]} " in haystack
+        # For multi-word names, require two ORIGINAL adjacent words, not two surviving
+        # distinctive ones. Dropping generic words first collapses a name such as
+        # `corroboration_state_context` to "corroboration" and then fires on prose the
+        # prompt actually mandates ("corroborating context"), or on a missing-evidence
+        # category the annotation is allowed to restate. At least one word of the pair
+        # must still be distinctive, so the suffix every synthetic name shares cannot
+        # match on its own.
+        pairs = zip(tokens, tokens[1:], strict=False)
+        return any(
+            (first not in _GENERIC_NAME_WORDS or second not in _GENERIC_NAME_WORDS)
+            and f" {first} {second} " in haystack
+            for first, second in pairs
+        )
+
+    leaked: list[str] = []
+    for label, spellings in candidates:
+        if label not in leaked and any(matches(name) for name in spellings):
+            leaked.append(label)
+    return leaked
+
+
 def validate_annotation(
     annotation: InvestigationAnnotation,
     *,

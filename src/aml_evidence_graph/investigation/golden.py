@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -17,10 +18,14 @@ from aml_evidence_graph.evidence.package import (
     InvestigationAnnotation,
     InvestigationReport,
     RiskEvidencePackage,
+    TypologyReference,
 )
 from aml_evidence_graph.evidence.typology import LocalBM25TypologyRetriever, load_typology_documents
 from aml_evidence_graph.investigation.evaluation import evaluate_investigation_report
-from aml_evidence_graph.investigation.llm import EvidenceAnnotationClient
+from aml_evidence_graph.investigation.llm import (
+    EvidenceAnnotationClient,
+    find_field_names_in_prose,
+)
 from aml_evidence_graph.investigation.workflow import run_investigation_traced
 from aml_evidence_graph.settings import Settings
 from aml_evidence_graph.tracking.run import create_run_manifest
@@ -88,6 +93,10 @@ class GoldenCaseResult:
     wasted_completion_tokens: int | None
     wasted_estimated_cost_usd: float | None
     external_call_attempts: int
+    # Supplied names echoed into the prose, which the prompt forbids. Measured, not
+    # gated: rejecting on it would have discarded roughly half of Holdout v4's
+    # annotations, and the fix belongs in the prompt rather than in a filter.
+    prose_field_names_leaked: list[str]
     evidence_references: list[str]
     analytical_considerations: list[str]
     recommended_questions: list[str]
@@ -118,6 +127,14 @@ class GoldenSetSummary:
     truncation_retry_recovered_count: int
     external_parse_success_rate: float | None
     external_fact_validation_pass_rate: float | None
+    # Share of accepted annotations that echoed a supplied name into their prose. A
+    # lower bound: the detector requires two adjacent words and so under-counts.
+    prose_field_name_leak_rate: float | None
+    # How many distinct names leaked, not just how many annotations leaked at all. The
+    # binary rate proved too coarse to separate prompt candidates: it moved by one case
+    # where the name count moved by 70%.
+    prose_field_name_leak_count: int
+    prose_field_names_per_annotation: float | None
     llm_annotation_rate: float
     token_usage_coverage_rate: float
     reported_prompt_tokens: int
@@ -167,6 +184,32 @@ def _sum_cost(values: list[float | None]) -> float | None:
     if any(value is None for value in values):
         return None
     return sum(value for value in values if value is not None)
+
+
+_CONSIDERATION = re.compile(r"^Consider (?P<id>\S+) v(?P<version>\S+?): (?P<title>.*?)\. ")
+
+
+def _referenced_typologies(report: InvestigationReport) -> list[TypologyReference]:
+    """Recover the typologies the annotation actually saw, retrieved ones included.
+
+    The evidence package alone is not enough: retrieval adds references the case never
+    carried, and those names are exactly as forbidden in the prose as supplied ones.
+    Parsed back from the deterministic line the draft renders for each reference.
+    """
+    references: list[TypologyReference] = []
+    for line in report.typology_considerations:
+        match = _CONSIDERATION.match(line)
+        if match is None:
+            continue
+        references.append(
+            TypologyReference(
+                typology_id=match["id"],
+                version=match["version"],
+                title=match["title"],
+                source="reconstructed_from_report",
+            )
+        )
+    return references
 
 
 def _usage_field_total(
@@ -380,6 +423,15 @@ def evaluate_golden_set(
                 wasted_completion_tokens=_wasted_usage_value(report, "completion_tokens"),
                 wasted_estimated_cost_usd=_wasted_usage_value(report, "estimated_cost_usd"),
                 external_call_attempts=report.external_call_attempts,
+                prose_field_names_leaked=(
+                    find_field_names_in_prose(
+                        exposed_annotation,
+                        evidence=case.evidence,
+                        references=_referenced_typologies(report),
+                    )
+                    if exposed_annotation is not None
+                    else []
+                ),
                 evidence_references=(
                     list(exposed_annotation.evidence_references)
                     if exposed_annotation is not None
@@ -506,6 +558,21 @@ def evaluate_golden_set(
             sum(result.fact_validation_passed is True for result in parsed_external_results)
             / len(parsed_external_results)
             if parsed_external_results
+            else None
+        ),
+        prose_field_name_leak_rate=(
+            sum(bool(result.prose_field_names_leaked) for result in annotations)
+            / len(annotations)
+            if annotations
+            else None
+        ),
+        prose_field_name_leak_count=sum(
+            len(result.prose_field_names_leaked) for result in annotations
+        ),
+        prose_field_names_per_annotation=(
+            sum(len(result.prose_field_names_leaked) for result in annotations)
+            / len(annotations)
+            if annotations
             else None
         ),
         llm_annotation_rate=len(annotations) / len(results),
