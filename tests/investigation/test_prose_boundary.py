@@ -262,38 +262,5 @@ def test_each_leaked_name_is_reported_once() -> None:
     assert leaked == ["controller_tenure_context"]
 
 
-# --- a separate, larger gap found while building Holdout v5 -----------------------
-
-
-def test_worded_magnitude_claim_currently_evades_the_fact_gate() -> None:
-    """DOCUMENTED GAP, not desired behaviour. Pinned so it cannot change unnoticed.
-
-    The fact gate rejects numeric literals and account/transaction/alert tokens. It has
-    no coverage for a magnitude claim expressed in words, so an annotation can tell a
-    reviewer that a withheld score "sits in the top decile" and be accepted. The system
-    instructions do forbid this, but a prompt is not enforcement, and Holdout v1 already
-    showed the model making exactly this kind of names-only inference.
-
-    This is a safety gap rather than a style one: it puts a fabricated magnitude in front
-    of a human reviewer. Fixing it changes what the gate rejects, so it needs its own
-    prompt/validator version and its own preregistered run, and must not be folded into a
-    holdout measuring something else.
-    """
-    from aml_evidence_graph.investigation.llm import validate_annotation
-
-    annotation = InvestigationAnnotation(
-        prompt_version="test",
-        model_name="test",
-        evidence_references=["fusion_probability"],
-        analytical_considerations=[
-            "The withheld score sits in the top decile, which confirms the typology."
-        ],
-        recommended_questions=["Should the top-decile band drive filing?"],
-    )
-    evidence = _evidence()
-    evidence = evidence.model_copy(update={"fusion_probability": 0.9})
-
-    result = validate_annotation(annotation, evidence=evidence, references=[])
-
-    assert result.valid is True, "gap closed - update this test and the docs"
-    assert result.errors == []
+# The fact-gate magnitude gap that this file used to pin is now closed and lives in
+# tests/investigation/test_magnitude_gate.py, which tests the rule rather than the hole.

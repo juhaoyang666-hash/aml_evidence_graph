@@ -425,6 +425,114 @@ def find_field_names_in_prose(
     return leaked
 
 
+# Magnitude and ranking words. The prompt already forbids describing a withheld value
+# this way; this is the enforcement the gate was missing. Holdout v5's probe showed that
+# "the withheld score sits in the top decile" passed with zero errors, because the gate
+# only ever looked for digits and entity tokens.
+_MAGNITUDE_TERMS = re.compile(
+    r"\b(elevated|high|higher|highest|low|lower|lowest|increased|decreased|unusual|"
+    r"anomalous|divergent|significant|substantial|severe|decile|quartile|percentile)\b",
+    flags=re.IGNORECASE,
+)
+# A denial is not a claim. "No direction of risk (e.g. elevated or decreased) can be
+# inferred" is the behaviour the prompt asks for, and must not be rejected as one.
+_DENIAL_CUES: tuple[str, ...] = (
+    "no ",
+    "not ",
+    "never ",
+    "cannot",
+    "can't",
+    "without",
+    "neither",
+    "nor ",
+    "non-",
+    "nothing",
+    "none ",
+    "unable",
+    "preclude",
+    "prevent",
+    "refrain",
+)
+# "withheld" is deliberately absent. It reads like a hedge but denies nothing: "the
+# withheld score sits in the top decile" is the exact sentence that exposed this gap,
+# and treating the word as a cue would let it through.
+_SENTENCE_SPLIT = re.compile(r"(?<=[.;:])\s+")
+
+
+def find_unsupported_magnitude_claims(
+    annotation: InvestigationAnnotation,
+    *,
+    evidence: RiskEvidencePackage,
+    references: list[TypologyReference],
+) -> list[str]:
+    """Report asserted magnitude or ranking claims about withheld evidence.
+
+    Every value is withheld from the provider, so any statement that one is high, low,
+    elevated or in some decile is fabricated regardless of how plausible it sounds. The
+    fact gate previously caught only digits and entity tokens, which let a worded claim
+    reach a human reviewer intact.
+
+    Two exemptions, both measured rather than assumed. A term inside a denial is allowed,
+    because refusing to infer direction is exactly what the prompt demands. A term that
+    restates supplied wording is allowed - a case whose note says "low evidence" may be
+    described as low-evidence, and a rule named RULE-AMOUNT-HIGH may be referred to as a
+    high-amount rule. Both exemptions are phrase-level: a note containing "high risk"
+    does not license the sentence "the score is high".
+    """
+    supplied_names = [
+        *[rule.rule_id for rule in evidence.rule_hits],
+        *[rule.feature for rule in evidence.rule_hits],
+        *[feature.name for feature in evidence.key_features],
+        *[reference.title for reference in (*references, *evidence.typology_references)],
+    ]
+    name_bags = [set(_name_tokens(name)) for name in supplied_names]
+    supplied_text = " ".join(
+        _WORD_SPLIT.split(
+            " ".join(
+                [*evidence.missing_evidence, *evidence.uncertainty_notes, *supplied_names]
+            ).lower()
+        )
+    )
+
+    claims: list[str] = []
+    for section in (
+        annotation.analytical_considerations,
+        annotation.recommended_questions,
+    ):
+        for entry in section:
+            for sentence in _SENTENCE_SPLIT.split(entry):
+                lowered = sentence.lower()
+                words = _WORD_SPLIT.split(lowered)
+                for match in _MAGNITUDE_TERMS.finditer(sentence):
+                    term = match.group(1).lower()
+                    if any(cue in lowered[: match.start()] for cue in _DENIAL_CUES):
+                        continue
+                    index = len(_WORD_SPLIT.split(lowered[: match.start()])) - 1
+                    neighbours = {
+                        words[position]
+                        for position in (index - 1, index + 1)
+                        if 0 <= position < len(words) and words[position] != term
+                    }
+                    pairs = {f"{other} {term}" for other in neighbours}
+                    pairs |= {f"{term} {other}" for other in neighbours}
+                    if any(pair in supplied_text for pair in pairs):
+                        continue
+                    # Match a supplied name loosely enough to survive a plural: the rule
+                    # RULE-AMOUNT-HIGH licenses "a rule hit for high amounts".
+                    singulars = {
+                        word[:-1] if word.endswith("s") and len(word) > 3 else word
+                        for word in neighbours
+                    }
+                    if any(
+                        term in bag and ((neighbours | singulars) & bag)
+                        for bag in name_bags
+                    ):
+                        continue
+                    claims.append(sentence.strip())
+                    break
+    return claims
+
+
 def validate_annotation(
     annotation: InvestigationAnnotation,
     *,
@@ -447,6 +555,17 @@ def validate_annotation(
                     f"{section_name} must not introduce numeric values or entity tokens."
                 )
                 break
+    magnitude_claims = find_unsupported_magnitude_claims(
+        annotation, evidence=evidence, references=references
+    )
+    if magnitude_claims:
+        # Every value was withheld, so a magnitude claim about one is fabricated even
+        # when it carries no digits. Reporting the count rather than the sentence keeps
+        # model text out of audit records.
+        errors.append(
+            "Annotation must not assert a magnitude or ranking for withheld evidence "
+            f"({len(magnitude_claims)} occurrence(s))."
+        )
     return FactValidationResult(valid=not errors, errors=errors)
 
 
