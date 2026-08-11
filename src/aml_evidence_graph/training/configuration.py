@@ -26,7 +26,7 @@ def load_model_configuration(path: Path) -> dict[str, Any]:
     document = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(document, dict):
         raise ValueError("Model configuration must be a YAML mapping.")
-    required_sections = {"version", "catboost", "graphsage", "fusion"}
+    required_sections = {"version", "catboost", "lightgbm", "graphsage", "fusion"}
     missing = sorted(required_sections.difference(document))
     if missing:
         raise ValueError("Model configuration is missing sections: " + ", ".join(missing))
@@ -44,6 +44,14 @@ def catboost_parameters_from_configuration(document: dict[str, Any]) -> dict[str
     """Return CatBoost parameters while leaving the run seed under CLI control."""
     parameters = dict(document["catboost"])
     parameters.pop("random_seed", None)
+    return parameters
+
+
+def lightgbm_parameters_from_configuration(document: dict[str, Any]) -> dict[str, Any]:
+    """Return promoted LightGBM parameters while keeping weights and seed centralized."""
+    parameters = dict(document["lightgbm"])
+    for name in ("random_state", "random_seed", "scale_pos_weight", "class_weight"):
+        parameters.pop(name, None)
     return parameters
 
 

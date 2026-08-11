@@ -11,6 +11,7 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
   "catboost>=1.2.7",
   "fastapi>=0.115.0",
+  "lightgbm>=4.6,<5",
   "numpy>=1.26.4",
   "pandas>=2.2.3",
   "polars>=1.9.0",
@@ -45,6 +46,9 @@ benchmark = [
 batch = [
   "duckdb>=1.0.0",
 ]
+boosting = [
+  "xgboost>=3.0,<4",
+]
 mlops = [
   "mlflow>=3.0.0",
 ]
@@ -71,7 +75,8 @@ aml-generate-table-oof = "aml_evidence_graph.training.oof:main"
 aml-evaluate-golden = "aml_evidence_graph.investigation.golden:main"
 aml-profile-data = "aml_evidence_graph.ingestion.profile:main"
 aml-train-graphsage = "aml_evidence_graph.training.run_graphsage:main"
-aml-train-table = "aml_evidence_graph.training.table_baseline:main"
+aml-train-table = "aml_evidence_graph.training.lightgbm_baseline:main"
+aml-train-catboost-legacy = "aml_evidence_graph.training.table_baseline:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aml_evidence_graph"]

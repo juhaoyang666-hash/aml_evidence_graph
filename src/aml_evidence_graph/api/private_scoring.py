@@ -50,6 +50,7 @@ class PrivateFeaturePartitionScoringService:
     fusion_dir: Path | None = None
     graphsage_device: str = "auto"
     _models: object = field(init=False, repr=False)
+    _primary_table_score_name: str = field(init=False, repr=False)
     _graphsage: LoadedGraphSAGEArtifact | None = field(init=False, default=None, repr=False)
     _graph_stat_models: object | None = field(init=False, default=None, repr=False)
     _fusion: object | None = field(init=False, default=None, repr=False)
@@ -59,6 +60,9 @@ class PrivateFeaturePartitionScoringService:
         if not 0 <= self.alert_threshold <= 1:
             raise ValueError("alert_threshold must be in [0, 1].")
         self._models = load_table_model_artifacts(self.table_model_dir)
+        self._primary_table_score_name = str(
+            getattr(self._models, "primary_score_name", "catboost")
+        )
         if self.graphsage_artifact_path is not None:
             from aml_evidence_graph.models.graph_loading import load_graphsage_artifact
 
@@ -69,7 +73,13 @@ class PrivateFeaturePartitionScoringService:
         if self.fusion_dir is not None:
             self._fusion, self._calibration = load_persisted_fusion_artifacts(self.fusion_dir)
             component_names = set(self._fusion.model_names)
-            supported = {"logistic", "catboost", "graph_stats_catboost", "graphsage"}
+            supported = {
+                "lightgbm",
+                "logistic",
+                "catboost",
+                "graph_stats_catboost",
+                "graphsage",
+            }
             unsupported = sorted(component_names.difference(supported))
             if unsupported:
                 raise ValueError(
@@ -254,7 +264,7 @@ class PrivateFeaturePartitionScoringService:
             decision_score = (
                 float(fusion_scores[row_position])
                 if fusion_scores is not None
-                else float(component_scores["catboost"][row_position])
+                else float(component_scores[self._primary_table_score_name][row_position])
             )
             if decision_score < threshold:
                 continue

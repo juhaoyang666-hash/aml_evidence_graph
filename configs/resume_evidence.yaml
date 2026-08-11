@@ -19,14 +19,12 @@ llm_holdout_protocol_paths:
   - "golden/llm_holdout_protocol_v4.json"
   - "golden/llm_holdout_protocol_v5.json"
 sources:
-  - source_id: "current_catboost_fe_v2"
-    display_name: "CatBoost FE v2 主线"
-    artifact_dir: "artifacts/table_baseline_fe_v2"
-    component: "catboost"
+  - source_id: "current_lightgbm_fe_v2"
+    display_name: "LightGBM FE v2 主线"
+    artifact_dir: "artifacts/table_lightgbm_fe_v2"
     required: true
-    legacy_minimum_test_rows: 1000000
-    score_path: "artifacts/table_baseline_fe_v2/scores/table_test_scores.parquet"
-    score_column: "catboost"
+    score_path: "artifacts/table_lightgbm_fe_v2/scores/table_test_scores.parquet"
+    score_column: "lightgbm"
     expected_test_start_date: "2023-07-01"
     expected_test_end_date: "2023-08-23"
   - source_id: "current_gat_novelty"
@@ -40,12 +38,12 @@ sources:
     bootstrap_path: "artifacts/gat_cold_start_v3_novelty_only_60d_seed20260723_frozen_test/paired_vs_gat_v1_local_replay.json"
     minimum_bootstrap_iterations: 200
   - source_id: "current_oof_fusion"
-    display_name: "CatBoost FE v2 + 本机 GAT v1 OOF 融合"
-    artifact_dir: "artifacts/fusion_test_catboost_fe_v2_gat_v1_local_replay"
+    display_name: "LightGBM FE v2 + 本机 GAT v1 OOF 融合"
+    artifact_dir: "artifacts/fusion_test_lightgbm_fe_v2_gat_v1"
     required: true
-    score_path: "artifacts/fusion_test_catboost_fe_v2_gat_v1_local_replay/test_fusion_scores.parquet"
+    score_path: "artifacts/fusion_test_lightgbm_fe_v2_gat_v1/test_fusion_scores.parquet"
     score_column: "fusion_calibrated_probability"
     expected_test_start_date: "2023-07-01"
     expected_test_end_date: "2023-08-23"
-    bootstrap_path: "artifacts/fusion_test_catboost_fe_v2_gat_v1_local_replay/metrics.json"
+    bootstrap_path: "artifacts/fusion_test_lightgbm_fe_v2_gat_v1/metrics.json"
     minimum_bootstrap_iterations: 200

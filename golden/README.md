@@ -30,7 +30,7 @@
   `independent_from_system_development=false`。
 - 这些集合可用于项目回归、Bad Case 和求职工程证据，不是独立第三方合规专家面板、银行生产
   验收或真实案件标签。
-- `exclude`、`answerable`、`no_answer` 和生成侧期望状态只服务各自评测，不参与 CatBoost、GAT
+- `exclude`、`answerable`、`no_answer` 和生成侧期望状态只服务各自评测，不参与 LightGBM、GAT
   或融合器训练。
 
 ## 生成 Golden（34 案）

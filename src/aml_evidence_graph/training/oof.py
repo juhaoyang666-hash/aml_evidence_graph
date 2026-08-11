@@ -21,12 +21,14 @@ from aml_evidence_graph.graph.snapshots import (
     fit_edge_feature_scaler,
     transform_edge_features,
 )
+from aml_evidence_graph.models.boosting import fit_lightgbm_for_partitions
 from aml_evidence_graph.models.tabular import fit_table_models_for_partitions
 from aml_evidence_graph.tracking.run import create_run_manifest
 from aml_evidence_graph.training.configuration import (
     DEFAULT_MODEL_CONFIG_PATH,
     catboost_parameters_from_configuration,
     graphsage_parameters_from_configuration,
+    lightgbm_parameters_from_configuration,
     load_model_configuration,
 )
 from aml_evidence_graph.training.graphsage import (
@@ -35,7 +37,10 @@ from aml_evidence_graph.training.graphsage import (
     predict_graphsage,
 )
 from aml_evidence_graph.training.run_graphsage import select_graph_edge_features
-from aml_evidence_graph.training.table_baseline import load_feature_split
+from aml_evidence_graph.training.table_baseline import (
+    deterministic_negative_downsample,
+    load_feature_split,
+)
 
 
 @dataclass(frozen=True)
@@ -96,9 +101,14 @@ def generate_table_oof_predictions(
     n_splits: int = 3,
     minimum_training_months: int = 2,
     random_seed: int = 20260722,
+    model_family: str = "lightgbm",
+    lightgbm_params: dict[str, Any] | None = None,
     catboost_params: dict[str, Any] | None = None,
+    maximum_training_negative_rows: int | None = 500_000,
 ) -> pl.DataFrame:
-    """Generate CatBoost-family OOF scores from strictly earlier training months."""
+    """Generate primary LightGBM or legacy CatBoost OOF from earlier months only."""
+    if model_family not in {"lightgbm", "catboost"}:
+        raise ValueError("model_family must be lightgbm or catboost.")
     required = {
         CANONICAL.transaction_id,
         CANONICAL.event_ts,
@@ -126,17 +136,31 @@ def generate_table_oof_predictions(
             raise ValueError(f"OOF fold {fold.fold_id} training period has one label class.")
         if validation_frame[CANONICAL.is_laundering].n_unique() < 2:
             raise ValueError(f"OOF fold {fold.fold_id} validation period has one label class.")
-        table_models = fit_table_models_for_partitions(
-            fit_frame,
-            validation_frame,
-            random_seed=random_seed,
-            catboost_params=catboost_params,
-            excluded_feature_prefixes=("graph_",),
-        )
-        scores = {
-            "catboost": table_models.predict_proba(validation_frame)["catboost"],
-        }
-        if graph_columns:
+        if model_family == "lightgbm":
+            sampled_fit = deterministic_negative_downsample(
+                fit_frame,
+                maximum_negative_rows=maximum_training_negative_rows,
+            )
+            table_models = fit_lightgbm_for_partitions(
+                sampled_fit,
+                validation_frame,
+                random_seed=random_seed,
+                parameters=lightgbm_params,
+                excluded_feature_prefixes=("graph_",),
+            )
+            scores = table_models.predict_proba(validation_frame)
+        else:
+            table_models = fit_table_models_for_partitions(
+                fit_frame,
+                validation_frame,
+                random_seed=random_seed,
+                catboost_params=catboost_params,
+                excluded_feature_prefixes=("graph_",),
+            )
+            scores = {
+                "catboost": table_models.predict_proba(validation_frame)["catboost"],
+            }
+        if graph_columns and model_family == "catboost":
             graph_models = fit_table_models_for_partitions(
                 fit_frame,
                 validation_frame,
@@ -261,6 +285,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--random-seed", type=int, default=20260722)
     parser.add_argument("--model-config", type=Path, default=DEFAULT_MODEL_CONFIG_PATH)
     parser.add_argument("--model", choices=("table", "graphsage"), default="table")
+    parser.add_argument(
+        "--table-model",
+        choices=("lightgbm", "catboost"),
+        default="lightgbm",
+        help="Primary table family; catboost is retained only for historical replay.",
+    )
+    parser.add_argument("--max-training-negative-rows", type=int, default=500_000)
     parser.add_argument("--device", default="auto")
     parser.add_argument(
         "--max-gpus",
@@ -284,7 +315,10 @@ def main() -> None:
             n_splits=args.splits,
             minimum_training_months=args.minimum_training_months,
             random_seed=args.random_seed,
+            model_family=args.table_model,
+            lightgbm_params=lightgbm_parameters_from_configuration(model_configuration),
             catboost_params=catboost_parameters_from_configuration(model_configuration),
+            maximum_training_negative_rows=args.max_training_negative_rows,
         )
     else:
         graphsage_parameters = graphsage_parameters_from_configuration(model_configuration)
@@ -313,6 +347,7 @@ def main() -> None:
             "fold_count": args.splits,
             "minimum_training_months": args.minimum_training_months,
             "model": args.model,
+            "table_model": args.table_model if args.model == "table" else None,
             "oof_rows": predictions.height,
         },
     )

@@ -56,6 +56,8 @@ def _package_versions() -> dict[str, str | None]:
     packages = (
         "aml-evidence-graph",
         "catboost",
+        "lightgbm",
+        "xgboost",
         "pandas",
         "pyarrow",
         "scikit-learn",

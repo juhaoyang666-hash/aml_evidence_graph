@@ -37,14 +37,16 @@ def test_expanding_time_oof_predictions_are_only_for_later_months() -> None:
         frame,
         n_splits=2,
         minimum_training_months=2,
-        catboost_params={"iterations": 10, "early_stopping_rounds": 3},
+        model_family="lightgbm",
+        lightgbm_params={"n_estimators": 10, "num_leaves": 7, "min_child_samples": 1},
+        maximum_training_negative_rows=None,
     )
 
     assert folds[0].training_months == ("2022-10", "2022-11")
     assert predictions.height == 8
     assert set(predictions["oof_fold_id"].to_list()) == {1, 2}
-    catboost = predictions["catboost"]
-    assert ((catboost >= 0) & (catboost <= 1)).all()
+    lightgbm = predictions["lightgbm"]
+    assert ((lightgbm >= 0) & (lightgbm <= 1)).all()
 
 
 def test_graphsage_oof_predictions_do_not_use_later_month_edges() -> None:

@@ -18,7 +18,7 @@
 - **历史图边分类**：同协议比较 GraphSAGE、GAT、RGCN、PNA；在最优 GAT 上继续迭代时点新颖性。
 - **可审计融合**：只用训练期 expanding-time OOF 拟合融合器，验证期校准与锁定阈值，测试只披露。
 - **受控调查链**：RiskEvidencePackage、白名单工具、Typology 检索、事实校验、人工审批与独立审计。
-- **工程闭环**：Spark PIT 等价、MLflow candidate gate、FastAPI、Docker、结构化日志、CI 和 163 项测试。
+- **工程闭环**：Spark PIT 等价、MLflow candidate gate、FastAPI、Docker、结构化日志、CI 和 270 项通过测试（另 1 项按环境跳过）。
 
 ## 两分钟 Mock Demo
 
@@ -54,7 +54,7 @@ Mock 分数和页面内容只用于工程演示，不能当作 SAML-D 指标或�
 ```mermaid
 flowchart LR
     A["SAML-D 交易"] --> B["PIT 特征 / 历史有向图"]
-    B --> C["规则 / LR / CatBoost"]
+    B --> C["规则 / LR / LightGBM"]
     B --> D["GAT 边分类"]
     C --> E["训练期 OOF 融合"]
     D --> E
@@ -79,15 +79,23 @@ flowchart LR
 | 模型 | 环境 / 角色 | 测试 PR-AUC | 0.1% 告警预算证据 | 当前状态 |
 |---|---|---:|---|---|
 | **GAT + 时点新颖性** | **主线图排序器** | **0.9714** | P/R `0.9814 / 0.8439` | 冻结时间外测试；峰值排序模型 |
-| **CatBoost FE v2 + GAT v1** | **OOF 融合策略** | **0.9505** | P/R `0.9737 / 0.8373` | 展示 stacking/校准；低于单 GAT |
-| **CatBoost FE v2** | **主线表格模型** | **0.8754** | P/R `0.8999 / 0.7739` | 相对 CatBoost v1 提升 `+0.0662` |
+| **LightGBM FE v2 + GAT v1** | **OOF 融合策略** | **0.9561** | P/R `0.9827 / 0.8450` | 200 次 Bootstrap；低于单 GAT + 时点新颖性 |
+| **LightGBM FE v2** | **主线表格模型** | **0.9014** | P/R `0.9403 / 0.8086` | 双 seed、OOF、解释和服务加载均已完成 |
+| CatBoost FE v2 | 历史表格对照 | 0.8754 | P/R `0.8999 / 0.7739` | 被 LightGBM 替换；保留可复现实验 |
+| XGBoost FE v2 | 新表格对照 | 0.8969 | P/R `0.9359 / 0.8047` | 显著高于 CatBoost，低于 LightGBM |
 | Logistic Regression | 线性表格对照 | 0.1966 | P/R `0.2809 / 0.2416` | 保留 v1 同协议基线 |
 | 规则 v2026.2 | 业务基线 | 0.0015 | P/R `0.0019 / 0.0017` | 训练期定阈规则 |
 
-CatBoost 在 50% 召回下相对训练期定阈规则减少约 99.86% 告警。必须同时披露：当前融合
-使用的是本机重训 GAT v1，而不是时点新颖性 GAT，且**低于主线单 GAT**；`graph_stats`、
+LightGBM 在 50% 召回下相对训练期定阈规则减少约 99.86% 告警。必须同时披露：当前融合
+使用的是本机 GAT v1 replay，而不是时点新颖性 GAT，且**低于主线单 GAT**；`graph_stats`、
 度数交互和三路融合只作合成机制对照，不进入主线。run_id、Bootstrap 和切片见[实验结果](docs/实验结果.md)与
 [简历证据](docs/简历证据.md)。
+
+同协议表格对照中，LightGBM / XGBoost 相对 CatBoost FE v2 的测试 PR-AUC 点差为
+`+0.02599 / +0.02146`，200 次配对 Bootstrap 95% CI 分别为
+`[+0.02084,+0.03196] / [+0.01562,+0.02726]`。LightGBM 已补齐 4,524,912 条
+expanding-time OOF、冻结融合、模型持久化、局部 SHAP/全局重要性和 FastAPI 受控加载，
+因此正式替换 CatBoost 为表格主线；CatBoost 与 XGBoost 仅保留为版本化对照。
 
 时点新颖性相对本机 v1 replay 的 PR-AUC 点差为 `+0.01922`，200 次配对 Bootstrap 95% CI
 `[+0.01152,+0.02798]`；部分已见账户与 Smurfing 切片退化，因此对外必须限定为合成数据上的
@@ -104,14 +112,16 @@ GraphSAGE `0.8777` 不再占用当前主线表位置；它与 RGCN、PNA 一并�
 
 | 能力 | 当前证据 | 边界 |
 |---|---|---|
-| 生成 Golden | 开发集 34 案 + 三套互斥预注册 Holdout（各 24 案）；Schema/事实快照、幻觉拦截、无证据拒答均通过 | 项目裁定，不是第三方专家面板 |
+| 生成 Golden | 开发集 34 案 + 五套互斥预注册 Holdout（各 24 案）；Schema/事实快照、幻觉拦截和无证据拒答均纳入门禁 | 项目裁定，不是第三方专家面板 |
 | Typology 检索 | 11 篇语料、130 条开发评测；另有 50 条项目盲法集 | 检索只给调查线索，不参与评分 |
 | Answerability gate | 项目盲法集无答案误召回率 60.0% → 13.3%，Recall@3 保持 75.7% | 裁定者参与开发，不是独立合规验收 |
 | 受控 Agent | 60 案路由/工具/审核/恢复回归五项指标均为 1.0 | 确定性无 LLM 基线 |
 | ECNU 调查注释 | 预注册 Holdout：20 次调用解析率 75.0%；15 条安全输出事实门 100%，人审 Grounding 80.0%、Overall 73.3% | 独立于 Prompt 调整但项目内复核；未通过预注册质量门 |
 | Prompt v4 候选 | Holdout v2：20 次调用仅 2 次解析成功；两条安全输出人审均通过 | 解析率 10.0%，未过 80% 门槛，不晋升 |
 | Prompt v5 诊断候选 | 独立合成诊断矩阵定位到 350 token 截断风险；既有开发集 6 例解析 100%、事实门 83.3% | 非盲开发回归，不构成晋升证据 |
-| **Prompt v6 主线** | 全新预注册 Holdout v3：解析/事实门 100%，人审 Grounding/Overall 95%，注入抵抗 100% | 20 条外部输出均由项目内盲审；通过全部门槛并替换 v3 为默认 |
+| Prompt v6 | 全新预注册 Holdout v3：解析/事实门 100%，人审 Grounding/Overall 95%，注入抵抗 100% | 通过全部门槛，随后由 v7 替换 |
+| **Prompt v7 主线** | 预注册 Holdout v4：解析/事实门、Grounding/Overall 和注入抵抗均 100% | 当前默认；截断重试触发 0 次，不宣称重试带来实测增益 |
+| Prompt v8 候选 | Holdout v5：解析、事实门和 Grounding 100%，Overall 95% | 一次逐字复述注入指令，未过注入抵抗门槛，不晋升 |
 | Human-in-the-loop | checkpoint、approve/edit/reject、幂等键、两 worker 租约续期与 fencing | 单机 SQLite 原型，不是跨主机高可用 |
 
 外部 LLM 只接收最小化后的证据类别和引用元信息；返回内容必须通过引用白名单及数字/实体校验，
@@ -122,14 +132,14 @@ GraphSAGE `0.8777` 不再占用当前主线表位置；它与 RGCN、PNA 一并�
 
 - Spark `local[8]` 在 9,504,852 行上重放 5 个代表性 PIT 特征，完整/增量逐交易 match rate
   均为 `1.0`；窗口严格为 `[t-window,t)`。
-- MLflow 记录 v1/FE v2 的 CatBoost、GAT、融合三组同协议 candidate；选型 gate 只读取 validation，
+- MLflow 记录表格、GAT 与融合的同协议 candidate；选型 gate 只读取 validation，
   测试指标标记为不可用于选择。
 - DuckDB/Polars 代表性窗口特征与官方 PIT match rate 均为 `1.0`。
 - FastAPI 支持 Mock 演示、受控本地评分、调查、人审恢复和结构化审计；完整融合 HTTP 基准与
   单机两 worker 争用边界均有记录。
 - 当前融合与 GAT + 时点新颖性均已生成独立版本的账户、资金路径和案件候选视图；这些是
   冻结交易分数后的无标签聚合，不是账户监督标签或新增模型指标。
-- GitHub Actions 执行依赖检查、Ruff、实验脚本入口、163 项测试、Golden smoke 和发布 smoke。
+- GitHub Actions 执行依赖检查、Ruff、实验脚本入口、270 项通过测试（另 1 项按环境跳过）、Golden smoke 和发布 smoke。
 
 详情见[批量特征重放](docs/批量特征重放.md)、[服务性能基准](docs/服务性能基准.md)和
 [项目改进进度](docs/项目改进进度.md)。

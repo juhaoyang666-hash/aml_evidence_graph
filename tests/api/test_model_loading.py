@@ -8,6 +8,10 @@ import torch
 from aml_evidence_graph.api.private_scoring import PrivateFeaturePartitionScoringService
 from aml_evidence_graph.api.services import InMemoryEvidenceStore
 from aml_evidence_graph.graph.snapshots import DailyGraphSnapshotBuilder, TemporalNodeIndexer
+from aml_evidence_graph.models.boosting import (
+    fit_lightgbm_for_partitions,
+    save_lightgbm_artifacts,
+)
 from aml_evidence_graph.models.edge_classifiers import GATEdgeClassifier, build_edge_classifier
 from aml_evidence_graph.models.graph_loading import load_graphsage_artifact
 from aml_evidence_graph.models.graphsage import GraphSAGEEdgeClassifier
@@ -124,6 +128,48 @@ def test_private_partition_scorer_uses_controlled_date_and_opaque_alerts(
     evidence = store.get(result.alert_ids[0])
     assert evidence is not None
     assert evidence.rule_hits[0].rule_id == "RULE-TEST"
+
+
+def test_private_partition_scorer_uses_promoted_lightgbm_score(tmp_path: Path) -> None:
+    training = pl.DataFrame(
+        {
+            "transaction_id": [f"train-{index}" for index in range(8)],
+            "event_ts": [f"2022-10-{index + 1:02d}T00:00:00Z" for index in range(8)],
+            "source_row_number": range(8),
+            "is_laundering": [0, 1] * 4,
+            "amount": [float(index) for index in range(8)],
+        }
+    )
+    validation = training.with_columns(
+        pl.col("transaction_id").str.replace("train", "validation")
+    )
+    models = fit_lightgbm_for_partitions(
+        training,
+        validation,
+        parameters={"n_estimators": 10, "num_leaves": 7, "min_child_samples": 1},
+    )
+    model_dir = tmp_path / "table_primary"
+    save_lightgbm_artifacts(models, model_dir)
+    feature_root = tmp_path / "features"
+    target = feature_root / "event_date=2023-07-01" / "split=test"
+    target.mkdir(parents=True)
+    training.head(2).drop("is_laundering").write_parquet(target / "part.parquet")
+    store = InMemoryEvidenceStore()
+    scorer = PrivateFeaturePartitionScoringService(
+        feature_root=feature_root,
+        table_model_dir=model_dir,
+        evidence_store=store,
+        alert_threshold=0,
+        source_version="lightgbm-primary-test",
+        selected_feature_names=("amount",),
+    )
+
+    result = scorer.score_partition("2023-07-01")
+    evidence = store.get(result.alert_ids[0])
+
+    assert len(result.alert_ids) == 2
+    assert evidence is not None
+    assert set(evidence.model_probabilities) == {"lightgbm"}
 
 
 def test_persisted_graphsage_artifact_can_score_label_free_snapshots(tmp_path: Path) -> None:

@@ -16,6 +16,19 @@ catboost:
   eval_metric: PRAUC
   random_seed: 20260722
 
+lightgbm:
+  n_estimators: 1200
+  learning_rate: 0.05
+  num_leaves: 63
+  min_child_samples: 100
+  max_depth: -1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  reg_alpha: 0.1
+  reg_lambda: 1.0
+  deterministic: true
+  force_col_wise: true
+
 graphsage:
   architecture: rgcn
   hidden_dim: 64
